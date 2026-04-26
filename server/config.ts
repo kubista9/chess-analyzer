@@ -4,7 +4,7 @@ import os from "node:os";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
-const rootDir = path.resolve(__dirname, "..");
+const rootDir = process.cwd();
 
 export const config = {
   rootDir,
