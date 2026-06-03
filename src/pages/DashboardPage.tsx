@@ -39,9 +39,7 @@ export function DashboardPage() {
   return (
     <div className="page-content">
       <section className="page-header">
-        <span className="eyebrow">Analysis dashboard</span>
         <h1>Dashboard</h1>
-        <p>Your latest Chess.com analysis results, trends, and training signals.</p>
       </section>
 
       {snapshot ? (

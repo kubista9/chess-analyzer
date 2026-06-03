@@ -50,12 +50,7 @@ export function AnalysisLauncher() {
   return (
     <section className="hero">
       <div className="hero-copy">
-        <span className="eyebrow">Public Chess.com analytics</span>
         <h1>Run a local review pipeline for 1, 5, 10, or 25 recent games.</h1>
-        <p>
-          This app refreshes your public Chess.com archive, scans only games missing from the local cache,
-          and turns them into win-rate trends, opening diagnostics, and a personalized training plan.
-        </p>
       </div>
 
       <form className="hero-form" onSubmit={handleSubmit}>
