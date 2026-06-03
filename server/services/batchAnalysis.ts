@@ -15,7 +15,7 @@ import { config } from "../config.js";
 import { parseGame, pieceValue, playerColorForGame } from "./gameParser.js";
 import { StockfishSession } from "./stockfish.js";
 import { buildHighlights, buildMetricCards, buildOpeningReport, buildTrainingPlan } from "./trainingPlan.js";
-import { fetchRecentGames } from "./chessCom.js";
+import { fetchRecentGamesWithCacheStatus } from "./chessCom.js";
 import { readJsonFile, safeKey, writeJsonFile } from "../store/fileStore.js";
 
 interface BatchProgress {
@@ -34,6 +34,15 @@ function scanCachePath(username: string, gameId: string): string {
 
 function snapshotCachePath(username: string, limit: number): string {
   return path.join(config.cacheDir, "snapshots", `${safeKey(username)}-${limit}.json`);
+}
+
+function formatCacheTimestamp(timestamp: string): string {
+  return new Date(timestamp).toLocaleString("en-GB", {
+    month: "short",
+    day: "numeric",
+    hour: "2-digit",
+    minute: "2-digit"
+  });
 }
 
 function scoreFromPerspective(scoreCp: number, sideToMove: PlayerColor, perspective: PlayerColor): number {
@@ -129,6 +138,7 @@ async function buildGameSummary(
     endTime: game.endTime,
     moves: parsed.moves.length,
     timeClass: game.timeClass,
+    timeControl: game.timeControl,
     accuracy: calculateAccuracy(avgCentipawnLoss),
     avgCentipawnLoss,
     categories,
@@ -149,15 +159,67 @@ async function scanOrLoadGameSummary(
   username: string,
   game: ArchiveGame
 ): Promise<HistoryGameSummary> {
-  const cachePath = scanCachePath(username, game.id);
-  const cached = await readJsonFile<CachedScan>(cachePath);
-  if (cached?.summary) {
-    return cached.summary;
+  const cached = await loadCachedGameSummary(username, game.id);
+  if (cached) {
+    return {
+      ...cached,
+      timeControl: cached.timeControl ?? game.timeControl
+    };
   }
 
   const summary = await buildGameSummary(session, username, game);
-  await writeJsonFile(cachePath, { summary });
+  await writeCachedGameSummary(username, game.id, summary);
   return summary;
+}
+
+async function loadCachedGameSummary(username: string, gameId: string): Promise<HistoryGameSummary | null> {
+  const cachePath = scanCachePath(username, gameId);
+  const cached = await readJsonFile<CachedScan>(cachePath);
+  return cached?.summary ?? null;
+}
+
+async function writeCachedGameSummary(
+  username: string,
+  gameId: string,
+  summary: HistoryGameSummary
+): Promise<void> {
+  const cachePath = scanCachePath(username, gameId);
+  await writeJsonFile(cachePath, { summary });
+}
+
+function buildDashboardSnapshot(
+  username: string,
+  limit: number,
+  summaries: HistoryGameSummary[]
+): DashboardSnapshot {
+  const sortedSummaries = [...summaries].sort((left, right) => right.endTime - left.endTime);
+  const metrics = buildMetricCards(sortedSummaries);
+  const topOpenings = buildOpeningReport(sortedSummaries);
+  const snapshot: DashboardSnapshot = {
+    username,
+    analyzedAt: new Date().toISOString(),
+    limit,
+    games: sortedSummaries,
+    metrics,
+    trends: sortedSummaries
+      .slice(0, 12)
+      .map((game) => ({
+        label: new Date(game.endTime * 1000).toLocaleDateString("en-GB", {
+          month: "short",
+          day: "numeric"
+        }),
+        winRate: game.result === "win" ? 100 : game.result === "draw" ? 50 : 0,
+        accuracy: game.accuracy,
+        blunders: game.categories.blunder
+      }))
+      .reverse(),
+    topOpenings,
+    trainingPlan: buildTrainingPlan(username, sortedSummaries, topOpenings),
+    highlights: []
+  };
+  snapshot.highlights = buildHighlights(snapshot);
+
+  return snapshot;
 }
 
 export async function runBulkAnalysis(
@@ -166,58 +228,83 @@ export async function runBulkAnalysis(
   onProgress?: (progress: BatchProgress) => void
 ): Promise<DashboardSnapshot> {
   const cachePath = snapshotCachePath(username, limit);
-  const cachedSnapshot = await readJsonFile<DashboardSnapshot>(cachePath);
-  if (cachedSnapshot) {
-    return cachedSnapshot;
+  const recentGames = await fetchRecentGamesWithCacheStatus(username, limit, { refresh: true });
+  const { games } = recentGames;
+
+  if (!games.length) {
+    throw new Error(`No supported recent rapid, blitz, bullet, or daily games found for ${username}.`);
   }
 
-  const games = await fetchRecentGames(username, limit);
-  const session = new StockfishSession();
-  await session.initialize();
+  const previousFetch = recentGames.cache.previousFetchedAt
+    ? formatCacheTimestamp(recentGames.cache.previousFetchedAt)
+    : null;
+  onProgress?.({
+    completedGames: 0,
+    totalGames: games.length,
+    message: previousFetch
+      ? `Last Chess.com fetch was ${previousFetch}; found ${recentGames.cache.newGames} new stored game(s).`
+      : `Fetched Chess.com games for ${username}.`
+  });
+
+  const cachedSummaries = new Map<string, HistoryGameSummary>();
+  const missingGameIds = new Set<string>();
+  for (const game of games) {
+    const cachedSummary = await loadCachedGameSummary(username, game.id);
+    if (cachedSummary) {
+      cachedSummaries.set(game.id, {
+        ...cachedSummary,
+        timeControl: cachedSummary.timeControl ?? game.timeControl
+      });
+    } else {
+      missingGameIds.add(game.id);
+    }
+  }
+
+  let session: StockfishSession | null = null;
+  let analyzedNewGames = 0;
 
   try {
     const summaries: HistoryGameSummary[] = [];
     for (const [index, game] of games.entries()) {
-      const summary = await scanOrLoadGameSummary(session, username, game);
+      const cachedSummary = cachedSummaries.get(game.id);
+      if (cachedSummary) {
+        summaries.push(cachedSummary);
+
+        onProgress?.({
+          completedGames: index + 1,
+          totalGames: games.length,
+          message:
+            missingGameIds.size > 0
+              ? `Using cached scan ${index + 1}/${games.length}: ${cachedSummary.opponent}`
+              : `All ${games.length} selected game(s) were already analyzed locally.`
+        });
+
+        continue;
+      }
+
+      if (!session) {
+        session = new StockfishSession();
+        await session.initialize();
+      }
+
+      const summary = await buildGameSummary(session, username, game);
+      await writeCachedGameSummary(username, game.id, summary);
+      analyzedNewGames += 1;
       summaries.push(summary);
 
       onProgress?.({
         completedGames: index + 1,
         totalGames: games.length,
-        message: `Scanning ${index + 1}/${games.length}: ${summary.opponent} (${summary.openingFamily})`
+        message: `Analyzing new game ${analyzedNewGames}/${missingGameIds.size}: ${summary.opponent} (${summary.openingFamily})`
       });
     }
 
-    const metrics = buildMetricCards(summaries);
-    const topOpenings = buildOpeningReport(summaries);
-    const snapshot: DashboardSnapshot = {
-      username,
-      analyzedAt: new Date().toISOString(),
-      limit,
-      games: summaries.sort((left, right) => right.endTime - left.endTime),
-      metrics,
-      trends: summaries
-        .slice(0, 12)
-        .map((game) => ({
-          label: new Date(game.endTime * 1000).toLocaleDateString("en-GB", {
-            month: "short",
-            day: "numeric"
-          }),
-          winRate: game.result === "win" ? 100 : game.result === "draw" ? 50 : 0,
-          accuracy: game.accuracy,
-          blunders: game.categories.blunder
-        }))
-        .reverse(),
-      topOpenings,
-      trainingPlan: buildTrainingPlan(username, summaries, topOpenings),
-      highlights: []
-    };
-    snapshot.highlights = buildHighlights(snapshot);
+    const snapshot = buildDashboardSnapshot(username, limit, summaries);
 
     await writeJsonFile(cachePath, snapshot);
     return snapshot;
   } finally {
-    session.close();
+    session?.close();
   }
 }
 

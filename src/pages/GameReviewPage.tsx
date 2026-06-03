@@ -1,5 +1,5 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
-import { useParams } from "react-router-dom";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useParams, useSearchParams } from "react-router-dom";
 import { Chess } from "chess.js";
 import { Chessboard } from "react-chessboard";
 import type { Arrow, CustomSquareStyles } from "react-chessboard/dist/chessboard/types";
@@ -11,11 +11,10 @@ import {
   Sparkles,
   Target
 } from "lucide-react";
-import type { AnnotatedMove, JobState, MoveCategory, ReviewSummary } from "../../shared/types";
+import type { AnnotatedMove, JobState, MoveCategory, PlayerColor, ReviewSummary } from "../../shared/types";
 import { startGameReview } from "../api/client";
 import { useJobPolling } from "../hooks/useJobPolling";
 import { useWorkspace } from "../hooks/useWorkspace";
-import { resultLabel } from "../utils/formatters";
 
 type ReviewMode = "show" | "best" | "retry";
 
@@ -45,7 +44,7 @@ const reviewCopy: Record<
   good: {
     badge: "Excellent",
     sentence: "is excellent",
-    tone: "#8ad55f"
+    tone: "#81b64c"
   },
   mistake: {
     badge: "Inaccuracy",
@@ -202,8 +201,56 @@ function railLabel(move: AnnotatedMove): string {
   return `${move.moveNumber}. ${move.san}`;
 }
 
+function oppositeColor(color: PlayerColor): PlayerColor {
+  return color === "white" ? "black" : "white";
+}
+
+function colorLabel(color: PlayerColor): string {
+  return color === "white" ? "White" : "Black";
+}
+
+function BoardPlayerLabel({
+  color,
+  isUser,
+  name
+}: {
+  color: PlayerColor;
+  isUser?: boolean;
+  name: string;
+}) {
+  return (
+    <div className="review-board-player">
+      <div className="review-board-player-main">
+        <span className={`review-board-color-dot review-board-color-${color}`} aria-hidden="true" />
+        <span className="review-board-player-name">{name}</span>
+        {isUser ? <span className="review-board-you">You</span> : null}
+      </div>
+      <span className={`review-board-color-label review-board-color-label-${color}`}>
+        {colorLabel(color)}
+      </span>
+    </div>
+  );
+}
+
+function calculateReviewBoardSize(columnWidth = 0): number {
+  if (typeof window === "undefined") {
+    return 560;
+  }
+
+  const availableHeight = window.innerWidth < 900 ? window.innerHeight - 180 : window.innerHeight - 190;
+
+  if (window.innerWidth < 900) {
+    return Math.round(Math.max(300, Math.min(560, window.innerWidth - 56, availableHeight)));
+  }
+
+  const availableWidth = columnWidth > 0 ? columnWidth : window.innerWidth * 0.42;
+
+  return Math.round(Math.max(420, Math.min(920, availableWidth, availableHeight)));
+}
+
 export function GameReviewPage() {
   const { gameId } = useParams();
+  const [searchParams] = useSearchParams();
   const { snapshot, reviewCache, setReview, reviewJobs, setReviewJob } = useWorkspace();
   const game = snapshot?.games.find((entry) => entry.id === gameId) ?? null;
   const review = gameId ? reviewCache[gameId] : null;
@@ -211,6 +258,41 @@ export function GameReviewPage() {
   const [selectedPly, setSelectedPly] = useState<number | null>(null);
   const [mode, setMode] = useState<ReviewMode>("show");
   const [error, setError] = useState<string | null>(null);
+  const [boardSize, setBoardSize] = useState(calculateReviewBoardSize);
+  const reviewStageRef = useRef<HTMLElement | null>(null);
+  const reviewBoardColumnRef = useRef<HTMLDivElement | null>(null);
+  const focusedReviewKeyRef = useRef<string | null>(null);
+  const requestedPly = useMemo(() => {
+    const value = Number(searchParams.get("ply"));
+    return Number.isFinite(value) && value > 0 ? value : null;
+  }, [searchParams]);
+  const requestedMode = searchParams.get("mode") === "retry" ? "retry" : "show";
+
+  useEffect(() => {
+    let frameId = 0;
+    const handleResize = () => {
+      window.cancelAnimationFrame(frameId);
+      frameId = window.requestAnimationFrame(() => {
+        const columnWidth = reviewBoardColumnRef.current?.getBoundingClientRect().width ?? 0;
+        setBoardSize(calculateReviewBoardSize(columnWidth));
+      });
+    };
+
+    handleResize();
+    const resizeObserver =
+      typeof ResizeObserver === "undefined" ? null : new ResizeObserver(handleResize);
+
+    if (reviewBoardColumnRef.current) {
+      resizeObserver?.observe(reviewBoardColumnRef.current);
+    }
+
+    window.addEventListener("resize", handleResize);
+    return () => {
+      window.cancelAnimationFrame(frameId);
+      resizeObserver?.disconnect();
+      window.removeEventListener("resize", handleResize);
+    };
+  }, [review?.moves.length]);
 
   const handleReviewUpdate = useCallback(
     (job: JobState<ReviewSummary>) => {
@@ -228,16 +310,54 @@ export function GameReviewPage() {
 
   useJobPolling(reviewJob, handleReviewUpdate);
 
+  const handleStartReview = useCallback(async () => {
+    if (!snapshot || !game) {
+      return;
+    }
+
+    setError(null);
+    try {
+      const job = await startGameReview({
+        username: snapshot.username,
+        gameId: game.id,
+        gameSummary: game
+      });
+      setReviewJob(game.id, job);
+      if (job.status === "completed" && job.result) {
+        setReview(game.id, job.result);
+      }
+    } catch (submissionError) {
+      setError(submissionError instanceof Error ? submissionError.message : "Could not start review.");
+    }
+  }, [game, setReview, setReviewJob, snapshot]);
+
+  useEffect(() => {
+    if (review || reviewJob || !snapshot || !game) {
+      return;
+    }
+
+    void handleStartReview();
+  }, [game, handleStartReview, review, reviewJob, snapshot]);
+
   useEffect(() => {
     if (!review?.moves.length) {
       return;
     }
 
-    setSelectedPly((current) =>
-      current !== null && review.moves.some((move) => move.ply === current) ? current : review.moves[0].ply
-    );
-    setMode("show");
-  }, [review, gameId]);
+    const requestedMove =
+      requestedPly === null
+        ? null
+        : review.moves.find((move) => move.ply >= requestedPly) ?? review.moves.at(-1) ?? null;
+
+    setSelectedPly((current) => {
+      if (requestedMove) {
+        return requestedMove.ply;
+      }
+
+      return current !== null && review.moves.some((move) => move.ply === current) ? current : review.moves[0].ply;
+    });
+    setMode(requestedMove ? requestedMode : "show");
+  }, [review, gameId, requestedMode, requestedPly]);
 
   const selectedIndex = useMemo(() => {
     if (!review?.moves.length || selectedPly === null) {
@@ -259,6 +379,22 @@ export function GameReviewPage() {
     return review.moves[0];
   }, [review, selectedIndex]);
 
+  useEffect(() => {
+    if (!review?.moves.length || !selectedMove || !gameId) {
+      return;
+    }
+
+    const reviewKey = `${gameId}-${review.moves.length}`;
+    if (focusedReviewKeyRef.current === reviewKey) {
+      return;
+    }
+
+    focusedReviewKeyRef.current = reviewKey;
+    window.requestAnimationFrame(() => {
+      reviewStageRef.current?.scrollIntoView({ block: "start" });
+    });
+  }, [gameId, review, selectedMove]);
+
   const modeState = useMemo(() => {
     if (!selectedMove) {
       return null;
@@ -266,6 +402,23 @@ export function GameReviewPage() {
 
     return buildModeState(selectedMove, mode);
   }, [selectedMove, mode]);
+
+  const boardPlayers = useMemo(() => {
+    if (!snapshot || !game) {
+      return null;
+    }
+
+    return {
+      top: {
+        color: oppositeColor(game.color),
+        name: game.opponent
+      },
+      bottom: {
+        color: game.color,
+        name: snapshot.username
+      }
+    };
+  }, [game, snapshot]);
 
   const railMoves = useMemo(() => {
     if (!review?.moves.length || selectedIndex < 0) {
@@ -276,24 +429,6 @@ export function GameReviewPage() {
     const end = Math.min(review.moves.length, selectedIndex + 4);
     return review.moves.slice(start, end);
   }, [review, selectedIndex]);
-
-  const handleStartReview = async () => {
-    if (!snapshot || !game) {
-      return;
-    }
-
-    setError(null);
-    try {
-      const job = await startGameReview({
-        username: snapshot.username,
-        gameId: game.id,
-        gameSummary: game
-      });
-      setReviewJob(game.id, job);
-    } catch (submissionError) {
-      setError(submissionError instanceof Error ? submissionError.message : "Could not start review.");
-    }
-  };
 
   const goToIndex = (nextIndex: number) => {
     if (!review?.moves.length) {
@@ -326,8 +461,8 @@ export function GameReviewPage() {
       <section className="page-header">
         <div>
           <span className="eyebrow">Deep review</span>
-          <h1>Post-Game Analysis</h1>
-          <p>Run the review once, then move through the game with guided controls instead of manually opening each move.</p>
+          <h1>Game Review</h1>
+          <p>Move through this game with the board, engine notes, and controls in one review workspace.</p>
         </div>
       </section>
 
@@ -343,161 +478,163 @@ export function GameReviewPage() {
         </section>
       ) : (
         <>
-          <section className="panel review-hero">
-            <div>
-              <span className="eyebrow">{game.openingFamily}</span>
-              <h2>{game.opponent}</h2>
-              <p>
-                {game.color} · {resultLabel(game.result)} · {game.moves} plies · {game.timeClass}
-              </p>
-            </div>
-            <div className="review-actions">
-              <button className="primary-button" onClick={handleStartReview} disabled={reviewJob?.status === "running"}>
-                {review ? "Re-run Deep Review" : "Run Deep Review"}
-              </button>
-              {reviewJob ? (
-                <div className="job-inline">
-                  <span>{reviewJob.message}</span>
-                  <span>{reviewJob.progress}%</span>
-                </div>
-              ) : null}
-            </div>
-          </section>
-
           {error ? <div className="error-text">{error}</div> : null}
 
           {review && selectedMove && modeState ? (
-            <section className="review-stage-shell">
+            <section className="review-stage-shell" ref={reviewStageRef}>
               <article className="panel review-stage-panel">
-                <div className="review-eval-wrap">
-                  <div className="review-eval-score">{formatEval(modeState.scoreCp)}</div>
-                  <div className="review-eval-bar">
-                    <div
-                      className="review-eval-fill"
-                      style={{ width: `${evalBarPercent(modeState.scoreCp)}%` }}
-                    />
+                <div className="review-board-column" ref={reviewBoardColumnRef}>
+                  <div className="review-board-stack" style={{ width: boardSize }}>
+                    {boardPlayers ? (
+                      <BoardPlayerLabel
+                        color={boardPlayers.top.color}
+                        name={boardPlayers.top.name}
+                      />
+                    ) : null}
+                    <div className="board-wrap review-board-wrap">
+                      <Chessboard
+                        id="review-board"
+                        position={modeState.position}
+                        boardWidth={boardSize}
+                        boardOrientation={game.color}
+                        arePiecesDraggable={false}
+                        areArrowsAllowed={false}
+                        showBoardNotation={false}
+                        customArrows={modeState.arrows}
+                        customSquareStyles={modeState.squareStyles}
+                        customDarkSquareStyle={{ backgroundColor: "#779954" }}
+                        customLightSquareStyle={{ backgroundColor: "#eeeed2" }}
+                        customBoardStyle={{
+                          borderRadius: "10px",
+                          overflow: "hidden",
+                          boxShadow: "0 24px 40px rgba(0, 0, 0, 0.32)"
+                        }}
+                      />
+                    </div>
+                    {boardPlayers ? (
+                      <BoardPlayerLabel
+                        color={boardPlayers.bottom.color}
+                        isUser
+                        name={boardPlayers.bottom.name}
+                      />
+                    ) : null}
                   </div>
                 </div>
 
-                <div className="review-callout">
-                  <div className="review-callout-copy">
-                    <span className="review-callout-badge" style={{ backgroundColor: modeState.tone }}>
-                      {modeState.badge}
-                    </span>
-                    <h2>{modeState.headline}</h2>
-                    <p>{modeState.summary}</p>
-                  </div>
-                  <div className="review-callout-score">{formatEval(modeState.scoreCp)}</div>
-                </div>
-
-                <div className="board-wrap review-board-wrap">
-                  <Chessboard
-                    id="review-board"
-                    position={modeState.position}
-                    boardWidth={720}
-                    boardOrientation={game.color}
-                    arePiecesDraggable={false}
-                    areArrowsAllowed={false}
-                    showBoardNotation={false}
-                    customArrows={modeState.arrows}
-                    customSquareStyles={modeState.squareStyles}
-                    customDarkSquareStyle={{ backgroundColor: "#7b9967" }}
-                    customLightSquareStyle={{ backgroundColor: "#ece8c9" }}
-                    customBoardStyle={{
-                      borderRadius: "22px",
-                      overflow: "hidden",
-                      boxShadow: "0 24px 40px rgba(0, 0, 0, 0.32)"
-                    }}
-                  />
-                </div>
-
-                <div className="review-line-note">
-                  <strong>{mode === "best" ? "Engine says" : "Review note"}</strong>
-                  <span>{modeState.line}</span>
-                </div>
-
-                <div className="review-rail">
-                  <button className="review-nav-button" onClick={goPrev} disabled={selectedIndex <= 0}>
-                    <ChevronLeft size={20} />
-                  </button>
-
-                  <div className="review-rail-track">
-                    {railMoves.map((move) => {
-                      const label = getReviewLabel(move);
-                      const isActive = move.ply === selectedMove.ply;
-
-                      return (
-                        <button
-                          key={`${move.ply}-${move.uci}`}
-                          className={`review-rail-chip${isActive ? " review-rail-chip-active" : ""}`}
-                          onClick={() => {
-                            setSelectedPly(move.ply);
-                            setMode("show");
-                          }}
-                        >
-                          <span className="review-rail-chip-label">{railLabel(move)}</span>
-                          <span className="review-rail-chip-tag" style={{ color: label.tone }}>
-                            {label.badge}
-                          </span>
-                        </button>
-                      );
-                    })}
+                <aside className="review-controls-panel">
+                  <div className="review-eval-wrap">
+                    <div className="review-eval-score">{formatEval(modeState.scoreCp)}</div>
+                    <div className="review-eval-bar">
+                      <div
+                        className="review-eval-fill"
+                        style={{ width: `${evalBarPercent(modeState.scoreCp)}%` }}
+                      />
+                    </div>
                   </div>
 
-                  <button
-                    className="review-nav-button"
-                    onClick={goNext}
-                    disabled={!review.moves.length || selectedIndex >= review.moves.length - 1}
-                  >
-                    <ChevronRight size={20} />
-                  </button>
-                </div>
-
-                <div className="review-toolbar">
-                  <div className="review-mode-actions">
-                    <button
-                      className={`review-action-chip${mode === "show" ? " review-action-chip-active" : ""}`}
-                      onClick={() => setMode("show")}
-                    >
-                      <Eye size={16} />
-                      <span>Show</span>
-                    </button>
-                    <button
-                      className={`review-action-chip${mode === "best" ? " review-action-chip-active" : ""}`}
-                      onClick={() => setMode("best")}
-                    >
-                      <Sparkles size={16} />
-                      <span>Best</span>
-                    </button>
-                    <button
-                      className={`review-action-chip${mode === "retry" ? " review-action-chip-active" : ""}`}
-                      onClick={() => setMode("retry")}
-                    >
-                      <RotateCcw size={16} />
-                      <span>Retry</span>
-                    </button>
+                  <div className="review-callout">
+                    <div className="review-callout-copy">
+                      <span className="review-callout-badge" style={{ backgroundColor: modeState.tone }}>
+                        {modeState.badge}
+                      </span>
+                      <h2>{modeState.headline}</h2>
+                      <p>{modeState.summary}</p>
+                    </div>
+                    <div className="review-callout-score">{formatEval(modeState.scoreCp)}</div>
                   </div>
 
-                  <div className="review-step-actions">
-                    <button className="review-step-back" onClick={goPrev} disabled={selectedIndex <= 0}>
+                  <div className="review-line-note">
+                    <strong>{mode === "best" ? "Engine says" : "Review note"}</strong>
+                    <span>{modeState.line}</span>
+                  </div>
+
+                  <div className="review-toolbar">
+                    <div className="review-mode-actions">
+                      <button
+                        className={`review-action-chip${mode === "show" ? " review-action-chip-active" : ""}`}
+                        onClick={() => setMode("show")}
+                      >
+                        <Eye size={16} />
+                        <span>Show</span>
+                      </button>
+                      <button
+                        className={`review-action-chip${mode === "best" ? " review-action-chip-active" : ""}`}
+                        onClick={() => setMode("best")}
+                      >
+                        <Sparkles size={16} />
+                        <span>Best</span>
+                      </button>
+                      <button
+                        className={`review-action-chip${mode === "retry" ? " review-action-chip-active" : ""}`}
+                        onClick={() => setMode("retry")}
+                      >
+                        <RotateCcw size={16} />
+                        <span>Retry</span>
+                      </button>
+                    </div>
+
+                    <div className="review-step-actions">
+                      <button className="review-step-back" onClick={goPrev} disabled={selectedIndex <= 0}>
+                        <ChevronLeft size={20} />
+                      </button>
+                      <button
+                        className="review-step-next"
+                        onClick={goNext}
+                        disabled={!review.moves.length || selectedIndex >= review.moves.length - 1}
+                      >
+                        <Target size={18} />
+                        <span>{selectedIndex >= review.moves.length - 1 ? "End of review" : "Next move"}</span>
+                      </button>
+                    </div>
+                  </div>
+
+                  <div className="review-rail">
+                    <button className="review-nav-button" onClick={goPrev} disabled={selectedIndex <= 0}>
                       <ChevronLeft size={20} />
                     </button>
+
+                    <div className="review-rail-track">
+                      {railMoves.map((move) => {
+                        const label = getReviewLabel(move);
+                        const isActive = move.ply === selectedMove.ply;
+
+                        return (
+                          <button
+                            key={`${move.ply}-${move.uci}`}
+                            className={`review-rail-chip${isActive ? " review-rail-chip-active" : ""}`}
+                            onClick={() => {
+                              setSelectedPly(move.ply);
+                              setMode("show");
+                            }}
+                          >
+                            <span className="review-rail-chip-label">{railLabel(move)}</span>
+                            <span className="review-rail-chip-tag" style={{ color: label.tone }}>
+                              {label.badge}
+                            </span>
+                          </button>
+                        );
+                      })}
+                    </div>
+
                     <button
-                      className="review-step-next"
+                      className="review-nav-button"
                       onClick={goNext}
                       disabled={!review.moves.length || selectedIndex >= review.moves.length - 1}
                     >
-                      <Target size={18} />
-                      <span>{selectedIndex >= review.moves.length - 1 ? "End of review" : "Next move"}</span>
+                      <ChevronRight size={20} />
                     </button>
                   </div>
-                </div>
+                </aside>
               </article>
             </section>
           ) : (
             <section className="panel empty-panel">
-              <h2>Deep review not started yet</h2>
-              <p>This page is ready for the guided review flow once you run the Stockfish review for a selected game.</p>
+              <h2>{reviewJob ? "Preparing deep review" : "Deep review starting"}</h2>
+              <p>
+                {reviewJob
+                  ? "Stockfish is building the move-by-move review for this game."
+                  : "This review will start automatically for the selected game."}
+              </p>
             </section>
           )}
         </>

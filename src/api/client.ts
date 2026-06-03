@@ -1,4 +1,5 @@
 import type { DashboardSnapshot, JobState, ReviewSummary } from "../../shared/types";
+import type { BulkAnalysisLimit } from "../../shared/constants";
 
 async function request<T>(input: RequestInfo, init?: RequestInit): Promise<T> {
   const response = await fetch(input, {
@@ -16,7 +17,7 @@ async function request<T>(input: RequestInfo, init?: RequestInit): Promise<T> {
   return response.json() as Promise<T>;
 }
 
-export async function startBulkAnalysis(username: string, limit: 50 | 100 | 150): Promise<JobState<DashboardSnapshot>> {
+export async function startBulkAnalysis(username: string, limit: BulkAnalysisLimit): Promise<JobState<DashboardSnapshot>> {
   return request<JobState<DashboardSnapshot>>("/api/bulk-analysis", {
     method: "POST",
     body: JSON.stringify({ username, limit })

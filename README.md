@@ -1,12 +1,12 @@
 # Chess Analyst
 
-Local-first Chess.com analysis for recent public games. You provide a Chess.com username and the app pulls the latest 50, 100, or 150 rapid, blitz, and bullet games, then runs Stockfish-backed analysis to surface:
+Local-first Chess.com analysis for recent public games. You provide a Chess.com username and the app pulls the latest 1, 5, 10, or 25 rapid, blitz, and bullet games, then runs Stockfish-backed analysis to surface:
 
 - Dashboard metrics like win rate, accuracy, blunders, average game length, and rating context
 - A filtered game-history table with opening search plus result/color filters
 - A deep review page for a selected game with move labels such as `best`, `good`, `mistake`, `miss`, and `blunder`
 - Opening diagnostics grouped by opening family
-- A rule-based weekly training plan built from your recurring mistakes
+- Practice-game recommendations and a rule-based weekly training plan built from your recurring mistakes
 
 ## Stack
 

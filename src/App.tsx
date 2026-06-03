@@ -4,6 +4,7 @@ import { WorkspaceProvider } from "./hooks/useWorkspace";
 import { DashboardPage } from "./pages/DashboardPage";
 import { GameHistoryPage } from "./pages/GameHistoryPage";
 import { GameReviewPage } from "./pages/GameReviewPage";
+import { HomePage } from "./pages/HomePage";
 import { OpeningReportPage } from "./pages/OpeningReportPage";
 import { TrainingPlanPage } from "./pages/TrainingPlanPage";
 
@@ -13,9 +14,10 @@ export default function App() {
       <BrowserRouter>
         <Routes>
           <Route element={<AppShell />}>
-            <Route path="/" element={<DashboardPage />} />
+            <Route path="/" element={<HomePage />} />
+            <Route path="/dashboard" element={<DashboardPage />} />
             <Route path="/history" element={<GameHistoryPage />} />
-            <Route path="/review" element={<GameReviewPage />} />
+            <Route path="/review" element={<Navigate to="/history" replace />} />
             <Route path="/review/:gameId" element={<GameReviewPage />} />
             <Route path="/openings" element={<OpeningReportPage />} />
             <Route path="/training" element={<TrainingPlanPage />} />

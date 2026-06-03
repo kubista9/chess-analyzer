@@ -7,6 +7,8 @@ import type {
   HistoryGameSummary,
   MetricCard,
   OpeningReportItem,
+  PracticeDrill,
+  PracticeGameRecommendation,
   TrainingPlan
 } from "../../shared/types.js";
 
@@ -21,6 +23,33 @@ function winRate(games: HistoryGameSummary[]): number {
 
   const wins = games.filter((game) => game.result === "win").length;
   return (wins / games.length) * 100;
+}
+
+function buildPracticeDrill(game: HistoryGameSummary, title: string, prompt: string): PracticeDrill {
+  return {
+    title,
+    gameId: game.id,
+    opponent: game.opponent,
+    result: game.result,
+    openingName: game.openingName,
+    ply: game.firstMajorErrorPly,
+    prompt
+  };
+}
+
+function topDrillGames(
+  games: HistoryGameSummary[],
+  scoreGame: (game: HistoryGameSummary) => number,
+  limit: number
+): HistoryGameSummary[] {
+  return [...games]
+    .filter((game) => scoreGame(game) > 0)
+    .sort((left, right) => scoreGame(right) - scoreGame(left))
+    .slice(0, limit);
+}
+
+function fallbackRecentGames(games: HistoryGameSummary[], limit: number): HistoryGameSummary[] {
+  return games.slice(0, limit);
 }
 
 export function buildMetricCards(games: HistoryGameSummary[]): MetricCard[] {
@@ -48,23 +77,10 @@ export function buildMetricCards(games: HistoryGameSummary[]): MetricCard[] {
       helper: "Your headline result across the analyzed sample."
     },
     {
-      key: "avg-accuracy",
-      label: "Average accuracy",
-      value: formatPercentage(avgAccuracy),
-      tone: (avgAccuracy ?? 0) >= 80 ? "positive" : "warning",
-      helper: "A quick signal for how closely your play tracked engine recommendations."
-    },
-    {
       key: "draw-rate",
       label: "Draw rate",
       value: formatPercentage(drawRate),
       helper: "Useful for spotting whether you press enough in equal positions."
-    },
-    {
-      key: "avg-moves",
-      label: "Average game length",
-      value: `${avgMoves.toFixed(0)} plies`,
-      helper: "Shorter games often hint at opening issues or tactical collapses."
     },
     {
       key: "white-win-rate",
@@ -163,6 +179,7 @@ export function buildTrainingPlan(
   const openingWithMostRisk = openings.find((opening) => opening.avgBlunders >= 0.8) ?? openings[0];
   const endgameAccuracy = average(games.map((game) => game.phaseAccuracy.endgame));
   const openingAccuracy = average(games.map((game) => game.phaseAccuracy.opening));
+  const needsEndgamePractice = (endgameAccuracy ?? 0) < 74;
 
   const focusAreas = [
     {
@@ -202,7 +219,7 @@ export function buildTrainingPlan(
     });
   }
 
-  if ((endgameAccuracy ?? 0) < 74) {
+  if (needsEndgamePractice) {
     focusAreas.push({
       title: "Stabilize your endgames",
       reason: "Your endgame accuracy is trailing the rest of your game, which makes winning positions harder to convert.",
@@ -212,6 +229,113 @@ export function buildTrainingPlan(
         "Replay your last five endgames and stop at the first move where the engine swings.",
         "Practice simplifying only when the resulting king activity still favors you."
       ]
+    });
+  }
+
+  const blunderDrills = topDrillGames(
+    games,
+    (game) => game.categories.blunder * 3 + game.categories.mistake,
+    3
+  );
+  const tacticalDrills = topDrillGames(
+    games,
+    (game) => game.categories.miss * 3 + (game.winProbabilitySwing ?? 0) / 10,
+    3
+  );
+  const openingRepairGames = openingWithMostRisk
+    ? games
+        .filter((game) => game.openingFamily === openingWithMostRisk.openingFamily)
+        .sort((left, right) => right.categories.blunder - left.categories.blunder)
+        .slice(0, 3)
+    : [];
+  const endgameDrills = games
+    .filter((game) => (game.phaseAccuracy.endgame ?? 100) < 74)
+    .sort((left, right) => (left.phaseAccuracy.endgame ?? 100) - (right.phaseAccuracy.endgame ?? 100))
+    .slice(0, 3);
+
+  const practiceGames: PracticeGameRecommendation[] = [
+    {
+      title: "Blunder-check rapid set",
+      games: "3 games",
+      timeControl: avgBlunders > 1.2 ? "15+10 rapid" : "10+5 rapid",
+      focus: "Slow down before irreversible moves.",
+      instructions: [
+        "Before every capture, pawn break, or queen move, pause and scan checks, captures, and threats.",
+        "Spend at least 20 seconds on the first move after the opening leaves book.",
+        "Resign nothing until you have checked for one forcing defensive resource."
+      ],
+      reviewPrompt: "After each game, write down the first move where your evaluation changed sharply and what signal you missed.",
+      successMetric: "Finish the set with no more than one unforced blunder.",
+      drills: (blunderDrills.length ? blunderDrills : fallbackRecentGames(games, 3)).map((game) =>
+        buildPracticeDrill(
+          game,
+          `Retry the first danger moment vs ${game.opponent}`,
+          "Start in Retry mode and find the forcing-move scan you missed before checking the answer."
+        )
+      )
+    },
+    {
+      title: `${openingWithMostRisk?.openingFamily ?? "Main opening"} repair games`,
+      games: "2 games",
+      timeControl: "10+5 rapid",
+      focus: `Practice the plans in ${openingWithMostRisk?.openingFamily ?? "your most common opening"}.`,
+      instructions: [
+        "Aim for your intended setup rather than memorizing long forcing lines.",
+        "Name the pawn break you are playing for before move 10.",
+        "If the opening goes off script, choose development and king safety over material hunting."
+      ],
+      reviewPrompt: "Only review the first 12 plies and mark the first moment your plan became unclear.",
+      successMetric: "Reach a playable middlegame with all minor pieces developed.",
+      drills: (openingRepairGames.length ? openingRepairGames : fallbackRecentGames(games, 3)).map((game) =>
+        buildPracticeDrill(
+          game,
+          `Replay the opening vs ${game.opponent}`,
+          "Review the opening phase and name the pawn break or piece setup before revealing the engine line."
+        )
+      )
+    },
+    {
+      title: "Tactical conversion games",
+      games: "3 games",
+      timeControl: avgMisses > 0.6 ? "5+3 blitz" : "3+2 blitz",
+      focus: "Turn promising positions into concrete threats.",
+      instructions: [
+        "When ahead or attacking, list two candidate moves before choosing.",
+        "Look for loose pieces and overloaded defenders before trading.",
+        "Use your clock to calculate forcing lines instead of playing the first good-looking move."
+      ],
+      reviewPrompt: "Open each win and find one position where a stronger forcing move existed.",
+      successMetric: "Convert at least one advantage without giving back the initiative.",
+      drills: (tacticalDrills.length ? tacticalDrills : fallbackRecentGames(games, 3)).map((game) =>
+        buildPracticeDrill(
+          game,
+          `Find the missed tactic vs ${game.opponent}`,
+          "Use Retry mode, list two candidate moves, then compare with Best before moving on."
+        )
+      )
+    }
+  ];
+
+  if (needsEndgamePractice) {
+    practiceGames.push({
+      title: "Endgame conversion games",
+      games: "2 games",
+      timeControl: "15+10 rapid",
+      focus: "Practice simplifying into endings you can actually win.",
+      instructions: [
+        "When ahead, trade pieces only if your king activity or pawn structure improves.",
+        "In rook endings, activate the rook before chasing pawns.",
+        "Use increment time to calculate pawn races instead of moving instantly."
+      ],
+      reviewPrompt: "Review the final 20 plies and identify the first king or rook activity mistake.",
+      successMetric: "Reach one endgame where you can explain the winning or drawing plan.",
+      drills: (endgameDrills.length ? endgameDrills : fallbackRecentGames(games, 2)).map((game) =>
+        buildPracticeDrill(
+          game,
+          `Convert the ending vs ${game.opponent}`,
+          "Jump to the key review moment, then continue forward and explain every trade before checking the engine."
+        )
+      )
     });
   }
 
@@ -250,8 +374,9 @@ export function buildTrainingPlan(
 
   return {
     headline: `${username}, your best improvement path is cleaner tactical discipline plus sharper opening recall.`,
-    summary: `Across ${games.length} games, you're currently averaging ${formatPercentage(avgAccuracy)} accuracy. The fastest gain now is cutting obvious collapses and turning more promising positions into full points.`,
+    summary: `Across ${games.length} games, you're currently averaging ${formatPercentage(avgAccuracy)} accuracy. The plan below turns those leaks into practice games with a clear job for each session.`,
     focusAreas,
+    practiceGames,
     weeklySchedule
   };
 }

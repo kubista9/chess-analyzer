@@ -40,6 +40,7 @@ export interface HistoryGameSummary {
   endTime: number;
   moves: number;
   timeClass: TimeClass;
+  timeControl?: string;
   accuracy: number | null;
   avgCentipawnLoss: number | null;
   categories: Record<MoveCategory, number>;
@@ -89,10 +90,32 @@ export interface TrainingSession {
   details: string;
 }
 
+export interface PracticeGameRecommendation {
+  title: string;
+  games: string;
+  timeControl: string;
+  focus: string;
+  instructions: string[];
+  reviewPrompt: string;
+  successMetric: string;
+  drills?: PracticeDrill[];
+}
+
+export interface PracticeDrill {
+  title: string;
+  gameId: string;
+  opponent: string;
+  result: GameResult;
+  openingName: string;
+  ply: number | null;
+  prompt: string;
+}
+
 export interface TrainingPlan {
   headline: string;
   summary: string;
   focusAreas: TrainingFocusArea[];
+  practiceGames?: PracticeGameRecommendation[];
   weeklySchedule: TrainingSession[];
 }
 

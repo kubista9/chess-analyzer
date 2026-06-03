@@ -1,11 +1,10 @@
-import { NavLink, Outlet } from "react-router-dom";
-import { BookOpen, ChartColumnBig, History, Search, Target } from "lucide-react";
+import { Link, NavLink, Outlet } from "react-router-dom";
+import { BookOpen, ChartColumnBig, History, Target } from "lucide-react";
 import { useWorkspace } from "../hooks/useWorkspace";
 
 const navItems = [
-  { to: "/", label: "Dashboard", icon: ChartColumnBig },
+  { to: "/dashboard", label: "Dashboard", icon: ChartColumnBig },
   { to: "/history", label: "Game History", icon: History },
-  { to: "/review", label: "Post-Game Analysis", icon: Search },
   { to: "/openings", label: "Opening Report", icon: BookOpen },
   { to: "/training", label: "Game Plan", icon: Target }
 ];
@@ -16,13 +15,13 @@ export function AppShell() {
   return (
     <div className="app-shell">
       <aside className="sidebar">
-        <div className="brand">
+        <Link className="brand" to="/" aria-label="Go to home">
           <div className="brand-mark">♟</div>
           <div>
             <div className="brand-title">Chess Analyst</div>
             <div className="brand-subtitle">Local-first review lab</div>
           </div>
-        </div>
+        </Link>
 
         <nav className="sidebar-nav">
           {navItems.map((item) => {

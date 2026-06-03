@@ -19,6 +19,7 @@ interface WorkspaceContextValue {
 }
 
 const STORAGE_KEY = "chess-analyst-workspace-v1";
+const REVIEW_STORAGE_KEY = "chess-analyst-reviews-v1";
 const WorkspaceContext = createContext<WorkspaceContextValue | null>(null);
 
 function loadStoredSnapshot(): DashboardSnapshot | null {
@@ -34,12 +35,35 @@ function loadStoredSnapshot(): DashboardSnapshot | null {
   }
 }
 
+function loadStoredReviews(): Record<string, ReviewSummary> {
+  try {
+    const raw = window.localStorage.getItem(REVIEW_STORAGE_KEY);
+    if (!raw) {
+      return {};
+    }
+
+    return JSON.parse(raw) as Record<string, ReviewSummary>;
+  } catch {
+    return {};
+  }
+}
+
+function storeReviews(reviews: Record<string, ReviewSummary>): void {
+  try {
+    window.localStorage.setItem(REVIEW_STORAGE_KEY, JSON.stringify(reviews));
+  } catch {
+    // Keep the in-memory cache even if local storage is full or unavailable.
+  }
+}
+
 export function WorkspaceProvider({ children }: { children: ReactNode }) {
   const [snapshot, setSnapshotState] = useState<DashboardSnapshot | null>(() =>
     typeof window === "undefined" ? null : loadStoredSnapshot()
   );
   const [bulkJob, setBulkJob] = useState<JobState<DashboardSnapshot> | null>(null);
-  const [reviewCache, setReviewCache] = useState<Record<string, ReviewSummary>>({});
+  const [reviewCache, setReviewCache] = useState<Record<string, ReviewSummary>>(() =>
+    typeof window === "undefined" ? {} : loadStoredReviews()
+  );
   const [reviewJobs, setReviewJobs] = useState<Record<string, JobState<ReviewSummary> | null>>({});
 
   const setSnapshot = (nextSnapshot: DashboardSnapshot | null) => {
@@ -47,6 +71,8 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
 
     if (!nextSnapshot) {
       window.localStorage.removeItem(STORAGE_KEY);
+      window.localStorage.removeItem(REVIEW_STORAGE_KEY);
+      setReviewCache({});
       return;
     }
 
@@ -61,7 +87,11 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
       setBulkJob,
       reviewCache,
       setReview: (gameId, review) => {
-        setReviewCache((current) => ({ ...current, [gameId]: review }));
+        setReviewCache((current) => {
+          const next = { ...current, [gameId]: review };
+          storeReviews(next);
+          return next;
+        });
       },
       reviewJobs,
       setReviewJob: (gameId, job) => {

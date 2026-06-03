@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useState, type FormEvent } from "react";
+import { useMemo } from "react";
 import {
   Area,
   AreaChart,
@@ -8,10 +8,6 @@ import {
   XAxis,
   YAxis
 } from "recharts";
-import { BULK_ANALYSIS_LIMITS } from "../../shared/constants";
-import type { DashboardSnapshot, JobState } from "../../shared/types";
-import { startBulkAnalysis } from "../api/client";
-import { useJobPolling } from "../hooks/useJobPolling";
 import { useWorkspace } from "../hooks/useWorkspace";
 
 const metricExplainers = [
@@ -30,96 +26,22 @@ const metricExplainers = [
 ];
 
 export function DashboardPage() {
-  const { snapshot, setSnapshot, bulkJob, setBulkJob } = useWorkspace();
-  const [username, setUsername] = useState(snapshot?.username ?? "");
-  const [limit, setLimit] = useState<50 | 100 | 150>((snapshot?.limit as 50 | 100 | 150 | undefined) ?? 50);
-  const [error, setError] = useState<string | null>(null);
+  const { snapshot } = useWorkspace();
 
-  const handleJobUpdate = useCallback(
-    (job: JobState<DashboardSnapshot>) => {
-      setBulkJob(job);
-      if (job?.status === "completed" && job.result) {
-        setSnapshot(job.result);
-      }
-    },
-    [setBulkJob, setSnapshot]
+  const topMetrics = useMemo(
+    () =>
+      snapshot?.metrics
+        .filter((metric) => !["avg-accuracy", "avg-moves"].includes(metric.key))
+        .slice(0, 6) ?? [],
+    [snapshot]
   );
-
-  useJobPolling(bulkJob, handleJobUpdate);
-
-  const isLoading = bulkJob?.status === "queued" || bulkJob?.status === "running";
-
-  const handleSubmit = async (event: FormEvent) => {
-    event.preventDefault();
-    setError(null);
-
-    try {
-      const job = await startBulkAnalysis(username, limit);
-      setBulkJob(job);
-    } catch (submissionError) {
-      setError(submissionError instanceof Error ? submissionError.message : "Could not start analysis.");
-    }
-  };
-
-  const topMetrics = useMemo(() => snapshot?.metrics.slice(0, 6) ?? [], [snapshot]);
 
   return (
     <div className="page-content">
-      <section className="hero">
-        <div className="hero-copy">
-          <span className="eyebrow">Public Chess.com analytics</span>
-          <h1>Run a local review pipeline for your last 50, 100, or 150 games.</h1>
-          <p>
-            This app fetches your public Chess.com archive, scans your games with Stockfish, and turns
-            them into win-rate trends, opening diagnostics, and a personalized training plan.
-          </p>
-        </div>
-
-        <form className="hero-form" onSubmit={handleSubmit}>
-          <label className="field">
-            <span>Chess.com username</span>
-            <input
-              value={username}
-              onChange={(event) => setUsername(event.target.value)}
-              placeholder="e.g. hikaru"
-              required
-            />
-          </label>
-
-          <label className="field">
-            <span>Games to analyze</span>
-            <div className="limit-toggle">
-              {BULK_ANALYSIS_LIMITS.map((option) => (
-                <button
-                  key={option}
-                  type="button"
-                  className={`limit-chip${limit === option ? " limit-chip-active" : ""}`}
-                  onClick={() => setLimit(option)}
-                >
-                  {option}
-                </button>
-              ))}
-            </div>
-          </label>
-
-          <button className="primary-button" type="submit" disabled={isLoading}>
-            {isLoading ? "Running bulk analysis..." : "Start Deep Analysis"}
-          </button>
-
-          {bulkJob ? (
-            <div className="job-panel">
-              <div className="job-header">
-                <span>{bulkJob.message}</span>
-                <span>{bulkJob.progress}%</span>
-              </div>
-              <div className="progress-track">
-                <div className="progress-fill" style={{ width: `${bulkJob.progress}%` }} />
-              </div>
-            </div>
-          ) : null}
-
-          {error ? <div className="error-text">{error}</div> : null}
-        </form>
+      <section className="page-header">
+        <span className="eyebrow">Analysis dashboard</span>
+        <h1>Dashboard</h1>
+        <p>Your latest Chess.com analysis results, trends, and training signals.</p>
       </section>
 
       {snapshot ? (
@@ -214,8 +136,8 @@ export function DashboardPage() {
           <span className="eyebrow">Ready when you are</span>
           <h2>No analysis loaded yet</h2>
           <p>
-            Enter a public Chess.com username above to populate the dashboard, history, opening report,
-            and training pages.
+            Go to Home from the Chess Analyst logo and enter a public Chess.com username to populate the
+            dashboard, history, opening report, and training pages.
           </p>
         </section>
       )}

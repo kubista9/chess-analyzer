@@ -1,4 +1,6 @@
-export const BULK_ANALYSIS_LIMITS = [50, 100, 150] as const;
+export const BULK_ANALYSIS_LIMITS = [1, 5, 10, 25] as const;
+export type BulkAnalysisLimit = (typeof BULK_ANALYSIS_LIMITS)[number];
+export const DEFAULT_BULK_ANALYSIS_LIMIT: BulkAnalysisLimit = 10;
 
 export const MOVE_CATEGORIES = [
   "brilliant",
@@ -10,7 +12,7 @@ export const MOVE_CATEGORIES = [
   "blunder"
 ] as const;
 
-export const SUPPORTED_TIME_CLASSES = ["bullet", "blitz", "rapid"] as const;
+export const SUPPORTED_TIME_CLASSES = ["bullet", "blitz", "rapid", "daily"] as const;
 
 export const CHESS_PHASES = ["opening", "middlegame", "endgame"] as const;
 

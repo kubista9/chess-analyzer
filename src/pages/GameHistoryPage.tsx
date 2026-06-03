@@ -1,12 +1,94 @@
 import { useMemo, useState } from "react";
-import { useNavigate } from "react-router-dom";
-import type { GameResult, PlayerColor } from "../../shared/types";
+import { Link } from "react-router-dom";
+import { Equal, Minus, Plus, Rocket, Sun, Timer, Zap } from "lucide-react";
+import type { LucideIcon } from "lucide-react";
+import type { GameResult, PlayerColor, TimeClass } from "../../shared/types";
 import { useWorkspace } from "../hooks/useWorkspace";
-import { formatDate, resultLabel } from "../utils/formatters";
+import { resultLabel } from "../utils/formatters";
+
+const timeClassMeta: Record<TimeClass, { label: string; fallback: string; Icon: LucideIcon }> = {
+  bullet: {
+    label: "Bullet",
+    fallback: "1 min",
+    Icon: Rocket
+  },
+  blitz: {
+    label: "Blitz",
+    fallback: "3 min",
+    Icon: Zap
+  },
+  rapid: {
+    label: "Rapid",
+    fallback: "10 min",
+    Icon: Timer
+  },
+  daily: {
+    label: "Daily",
+    fallback: "1 day",
+    Icon: Sun
+  }
+};
+
+function formatDuration(seconds: number): string | null {
+  if (!Number.isFinite(seconds) || seconds <= 0) {
+    return null;
+  }
+
+  if (seconds >= 86400) {
+    const days = Math.round(seconds / 86400);
+    return `${days} day${days === 1 ? "" : "s"}`;
+  }
+
+  if (seconds >= 3600) {
+    const hours = Math.round(seconds / 3600);
+    return `${hours} hr${hours === 1 ? "" : "s"}`;
+  }
+
+  if (seconds >= 60) {
+    return `${Math.round(seconds / 60)} min`;
+  }
+
+  return `${seconds} sec`;
+}
+
+function formatTimeControl(timeControl: string | undefined, timeClass: TimeClass): string {
+  const fallback = timeClassMeta[timeClass].fallback;
+  if (!timeControl) {
+    return fallback;
+  }
+
+  const dailyParts = timeControl.split("/");
+  if (dailyParts.length > 1) {
+    const seconds = Number(dailyParts.at(-1));
+    return formatDuration(seconds) ?? fallback;
+  }
+
+  const baseSeconds = Number(timeControl.split("+")[0]);
+  return formatDuration(baseSeconds) ?? fallback;
+}
+
+function formatHistoryDate(timestamp: number): string {
+  return new Date(timestamp * 1000).toLocaleDateString("en-US", {
+    month: "short",
+    day: "numeric",
+    year: "numeric"
+  });
+}
+
+function scorePair(result: GameResult): { player: string; opponent: string } {
+  if (result === "win") {
+    return { player: "1", opponent: "0" };
+  }
+
+  if (result === "loss") {
+    return { player: "0", opponent: "1" };
+  }
+
+  return { player: "0.5", opponent: "0.5" };
+}
 
 export function GameHistoryPage() {
   const { snapshot } = useWorkspace();
-  const navigate = useNavigate();
   const [resultFilter, setResultFilter] = useState<"all" | GameResult>("all");
   const [colorFilter, setColorFilter] = useState<"all" | PlayerColor>("all");
   const [openingQuery, setOpeningQuery] = useState("");
@@ -40,9 +122,7 @@ export function GameHistoryPage() {
     <div className="page-content">
       <section className="page-header">
         <div>
-          <span className="eyebrow">Game archive</span>
           <h1>Game History</h1>
-          <p>Filter by result, color, and opening family, then launch a deep review for a selected game.</p>
         </div>
       </section>
 
@@ -74,43 +154,75 @@ export function GameHistoryPage() {
             />
           </div>
 
-          <div className="table-wrap">
-            <table className="game-table">
-              <thead>
-                <tr>
-                  <th>Date</th>
-                  <th>Opponent</th>
-                  <th>Color</th>
-                  <th>Opening</th>
-                  <th>Result</th>
-                  <th>Moves</th>
-                  <th>Accuracy</th>
-                  <th>Action</th>
-                </tr>
-              </thead>
-              <tbody>
-                {filteredGames.map((game) => (
-                  <tr key={game.id}>
-                    <td>{formatDate(game.endTime)}</td>
-                    <td>{game.opponent}</td>
-                    <td>
-                      <span className={`pill pill-${game.color}`}>{game.color}</span>
-                    </td>
-                    <td title={game.openingName}>{game.openingName}</td>
-                    <td>
-                      <span className={`pill pill-${game.result}`}>{resultLabel(game.result)}</span>
-                    </td>
-                    <td>{game.moves}</td>
-                    <td>{game.accuracy?.toFixed(1) ?? "—"}</td>
-                    <td>
-                      <button className="secondary-button" onClick={() => navigate(`/review/${game.id}`)}>
-                        Analyze
-                      </button>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+          <div className="history-list">
+            <div className="history-list-title">Game History ({filteredGames.length})</div>
+            <div className="history-list-header" aria-hidden="true">
+              <span />
+              <span>Players</span>
+              <span>Result</span>
+              <span>Review</span>
+              <span>Moves</span>
+              <span>Date</span>
+            </div>
+
+            {filteredGames.map((game) => {
+              const { Icon, label } = timeClassMeta[game.timeClass];
+              const scores = scorePair(game.result);
+              const white = game.color === "white"
+                ? { name: snapshot.username, rating: game.playerRating, isPlayer: true }
+                : { name: game.opponent, rating: game.opponentRating, isPlayer: false };
+              const black = game.color === "black"
+                ? { name: snapshot.username, rating: game.playerRating, isPlayer: true }
+                : { name: game.opponent, rating: game.opponentRating, isPlayer: false };
+              const whiteScore = game.color === "white" ? scores.player : scores.opponent;
+              const blackScore = game.color === "black" ? scores.player : scores.opponent;
+              const ResultIcon = game.result === "win" ? Plus : game.result === "loss" ? Minus : Equal;
+
+              return (
+                <article className={`history-game-row game-row-${game.result}`} key={game.id}>
+                  <div className={`history-speed time-class-${game.timeClass}`} title={label}>
+                    <Icon size={28} strokeWidth={2.8} aria-hidden="true" />
+                    <span>{formatTimeControl(game.timeControl, game.timeClass)}</span>
+                  </div>
+
+                  <div className="history-players">
+                    <div className="history-player-row">
+                      <span className="history-color-dot history-color-white" />
+                      <strong>{white.name}</strong>
+                      <span>({white.rating})</span>
+                    </div>
+                    <div className="history-player-row">
+                      <span className="history-color-dot history-color-black" />
+                      <strong>{black.name}</strong>
+                      <span>({black.rating})</span>
+                    </div>
+                    <div className="history-opening-line" title={game.openingName}>
+                      {game.openingFamily}
+                    </div>
+                  </div>
+
+                  <div className="history-result-stack" aria-label={`${resultLabel(game.result)} for ${snapshot.username}`}>
+                    <div className="history-score-pair">
+                      <span>{whiteScore}</span>
+                      <span>{blackScore}</span>
+                    </div>
+                    <span className={`history-result-marker history-result-${game.result}`}>
+                      <ResultIcon size={16} strokeWidth={3} aria-hidden="true" />
+                    </span>
+                  </div>
+
+                  <div className="history-review-cell">
+                    <Link className="history-review-button" to={`/review/${game.id}?autostart=1`}>
+                      Review
+                    </Link>
+                    <span>{game.accuracy === null ? "No accuracy" : `${game.accuracy.toFixed(1)}% accuracy`}</span>
+                  </div>
+
+                  <div className="history-moves">{game.moves}</div>
+                  <div className="history-date">{formatHistoryDate(game.endTime)}</div>
+                </article>
+              );
+            })}
           </div>
         </section>
       )}

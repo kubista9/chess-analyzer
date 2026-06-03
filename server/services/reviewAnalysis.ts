@@ -21,13 +21,17 @@ function reviewCachePath(username: string, gameId: string): string {
   return path.join(config.cacheDir, "reviews", safeKey(username), `${safeKey(gameId)}.json`);
 }
 
+export async function readCachedGameReview(username: string, gameId: string): Promise<ReviewSummary | null> {
+  return readJsonFile<ReviewSummary>(reviewCachePath(username, gameId));
+}
+
 export async function runGameReview(
   username: string,
   gameId: string,
   fallbackGameSummary: HistoryGameSummary | null = null
 ): Promise<ReviewSummary> {
   const cachePath = reviewCachePath(username, gameId);
-  const cached = await readJsonFile<ReviewSummary>(cachePath);
+  const cached = await readCachedGameReview(username, gameId);
   if (cached) {
     return cached;
   }

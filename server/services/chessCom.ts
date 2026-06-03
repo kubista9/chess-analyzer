@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { SUPPORTED_TIME_CLASSES } from "../../shared/constants.js";
+import { BULK_ANALYSIS_LIMITS, SUPPORTED_TIME_CLASSES } from "../../shared/constants.js";
 import { familyFromOpening } from "../../shared/chess.js";
 import type { ArchiveGame, PlayerColor, TimeClass } from "../../shared/types.js";
 import { config } from "../config.js";
@@ -33,6 +33,28 @@ const gameSchema = z.object({
 const archiveResponseSchema = z.object({
   games: z.array(gameSchema)
 });
+
+interface RawGamesCache {
+  createdAt: string;
+  games: ArchiveGame[];
+}
+
+interface FetchRecentGamesOptions {
+  refresh?: boolean;
+  minimumStoredGames?: number;
+}
+
+export interface RecentGamesResult {
+  games: ArchiveGame[];
+  cache: {
+    previousFetchedAt: string | null;
+    fetchedAt: string;
+    refreshed: boolean;
+    newGames: number;
+  };
+}
+
+const defaultStoredGameCount = BULK_ANALYSIS_LIMITS[BULK_ANALYSIS_LIMITS.length - 1];
 
 function openingFromPgn(pgn: string): string | null {
   const match = pgn.match(/\[Opening "(.+)"\]/);
@@ -131,12 +153,43 @@ function rawGamesCachePath(username: string): string {
   return `${config.cacheDir}/raw-games/${safeKey(username)}.json`;
 }
 
-export async function fetchRecentGames(username: string, limit: number): Promise<ArchiveGame[]> {
+function sortNewestFirst(games: ArchiveGame[]): ArchiveGame[] {
+  return [...games].sort((left, right) => right.endTime - left.endTime);
+}
+
+function mergeGamesById(freshGames: ArchiveGame[], cachedGames: ArchiveGame[]): ArchiveGame[] {
+  const merged = new Map<string, ArchiveGame>();
+
+  for (const game of [...freshGames, ...cachedGames]) {
+    if (!merged.has(game.id)) {
+      merged.set(game.id, game);
+    }
+  }
+
+  return sortNewestFirst([...merged.values()]);
+}
+
+export async function fetchRecentGamesWithCacheStatus(
+  username: string,
+  limit: number,
+  options: FetchRecentGamesOptions = {}
+): Promise<RecentGamesResult> {
   const normalized = username.trim().toLowerCase();
   const cachePath = rawGamesCachePath(normalized);
-  const cached = await readJsonFile<{ createdAt: string; games: ArchiveGame[] }>(cachePath);
-  if (cached?.games.length && cached.games.length >= limit) {
-    return cached.games.slice(0, limit);
+  const cached = await readJsonFile<RawGamesCache>(cachePath);
+  const cachedGames = sortNewestFirst(cached?.games ?? []);
+  const targetStoredGames = Math.max(limit, options.minimumStoredGames ?? defaultStoredGameCount);
+
+  if (!options.refresh && cachedGames.length >= limit) {
+    return {
+      games: cachedGames.slice(0, limit),
+      cache: {
+        previousFetchedAt: cached?.createdAt ?? null,
+        fetchedAt: cached?.createdAt ?? new Date().toISOString(),
+        refreshed: false,
+        newGames: 0
+      }
+    };
   }
 
   const archivesPayload = archiveListSchema.parse(
@@ -144,9 +197,12 @@ export async function fetchRecentGames(username: string, limit: number): Promise
   );
 
   const collected: ArchiveGame[] = [];
+  const cachedIds = new Set(cachedGames.map((game) => game.id));
+  const latestCachedGameId = cachedGames[0]?.id ?? null;
   const archives = [...archivesPayload.archives].reverse();
+  let reachedCachedBoundary = false;
 
-  for (const archiveUrl of archives) {
+  archiveLoop: for (const archiveUrl of archives) {
     const archivePayload = archiveResponseSchema.parse(await fetchJson(archiveUrl));
 
     for (const rawGame of [...archivePayload.games].reverse()) {
@@ -155,23 +211,46 @@ export async function fetchRecentGames(username: string, limit: number): Promise
         continue;
       }
 
-      collected.push(parsed);
-      if (collected.length >= Math.max(limit, 150)) {
-        break;
+      if (parsed.id === latestCachedGameId) {
+        reachedCachedBoundary = true;
       }
-    }
 
-    if (collected.length >= Math.max(limit, 150)) {
-      break;
+      if (!cachedIds.has(parsed.id)) {
+        collected.push(parsed);
+      }
+
+      const mergedGameCount = collected.length + cachedGames.length;
+      if (mergedGameCount >= targetStoredGames && (!latestCachedGameId || reachedCachedBoundary)) {
+        break archiveLoop;
+      }
+
+      if (!reachedCachedBoundary && collected.length >= targetStoredGames) {
+        break archiveLoop;
+      }
     }
   }
 
+  const fetchedAt = new Date().toISOString();
+  const games = mergeGamesById(collected, cachedGames);
   await writeJsonFile(cachePath, {
-    createdAt: new Date().toISOString(),
-    games: collected
+    createdAt: fetchedAt,
+    games
   });
 
-  return collected.slice(0, limit);
+  return {
+    games: games.slice(0, limit),
+    cache: {
+      previousFetchedAt: cached?.createdAt ?? null,
+      fetchedAt,
+      refreshed: true,
+      newGames: collected.length
+    }
+  };
+}
+
+export async function fetchRecentGames(username: string, limit: number): Promise<ArchiveGame[]> {
+  const result = await fetchRecentGamesWithCacheStatus(username, limit);
+  return result.games;
 }
 
 export async function findGameForUser(username: string, gameId: string): Promise<ArchiveGame | null> {
@@ -183,6 +262,6 @@ export async function findGameForUser(username: string, gameId: string): Promise
     return cachedGame;
   }
 
-  const freshGames = await fetchRecentGames(username, 150);
+  const freshGames = await fetchRecentGames(username, defaultStoredGameCount);
   return freshGames.find((game) => game.id === gameId) ?? null;
 }
