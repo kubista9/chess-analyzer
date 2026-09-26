@@ -237,13 +237,16 @@ function calculateReviewBoardSize(columnWidth = 0): number {
     return 560;
   }
 
-  const availableHeight = window.innerWidth < 900 ? window.innerHeight - 180 : window.innerHeight - 190;
+  const isCompactLayout = window.innerWidth < 900;
+  const availableHeight = isCompactLayout ? window.innerHeight - 220 : window.innerHeight - 190;
+  const availableWidth = columnWidth > 0
+    ? columnWidth
+    : window.innerWidth - (isCompactLayout ? 72 : 0);
 
-  if (window.innerWidth < 900) {
-    return Math.round(Math.max(300, Math.min(560, window.innerWidth - 56, availableHeight)));
+  if (isCompactLayout) {
+    const minimumSize = Math.min(240, availableWidth);
+    return Math.round(Math.max(minimumSize, Math.min(560, availableWidth, availableHeight)));
   }
-
-  const availableWidth = columnWidth > 0 ? columnWidth : window.innerWidth * 0.42;
 
   return Math.round(Math.max(420, Math.min(920, availableWidth, availableHeight)));
 }

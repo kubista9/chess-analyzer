@@ -1,5 +1,6 @@
-import { Link, NavLink, Outlet } from "react-router-dom";
-import { BookOpen, ChartColumnBig, History, Target } from "lucide-react";
+import { useEffect, useState } from "react";
+import { Link, NavLink, Outlet, useLocation } from "react-router-dom";
+import { BookOpen, ChartColumnBig, History, Menu, Target, X } from "lucide-react";
 import { useWorkspace } from "../hooks/useWorkspace";
 
 const navItems = [
@@ -11,17 +12,98 @@ const navItems = [
 
 export function AppShell() {
   const { snapshot } = useWorkspace();
+  const location = useLocation();
+  const [isMenuOpen, setIsMenuOpen] = useState(false);
+  const [isCompact, setIsCompact] = useState(false);
+  const isNavAccessible = !isCompact || isMenuOpen;
+
+  useEffect(() => {
+    const mediaQuery = window.matchMedia("(max-width: 1180px)");
+    const updateCompactLayout = () => setIsCompact(mediaQuery.matches);
+
+    updateCompactLayout();
+    mediaQuery.addEventListener("change", updateCompactLayout);
+
+    return () => mediaQuery.removeEventListener("change", updateCompactLayout);
+  }, []);
+
+  useEffect(() => {
+    setIsMenuOpen(false);
+  }, [location.pathname]);
+
+  useEffect(() => {
+    if (!isCompact || !isMenuOpen) {
+      return undefined;
+    }
+
+    const originalOverflow = document.body.style.overflow;
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        setIsMenuOpen(false);
+      }
+    };
+
+    document.body.style.overflow = "hidden";
+    window.addEventListener("keydown", handleKeyDown);
+
+    return () => {
+      document.body.style.overflow = originalOverflow;
+      window.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [isCompact, isMenuOpen]);
 
   return (
-    <div className="app-shell">
-      <aside className="sidebar">
-        <Link className="brand" to="/" aria-label="Go to home">
+    <div className={`app-shell${isMenuOpen ? " mobile-menu-open" : ""}`}>
+      <header className="mobile-topbar">
+        <Link className="mobile-brand" to="/" aria-label="Go to home">
           <div className="brand-mark">♟</div>
-          <div>
+          <div className="mobile-brand-copy">
             <div className="brand-title">Chess Analyst</div>
             <div className="brand-subtitle">Local-first review lab</div>
           </div>
         </Link>
+
+        <button
+          className="mobile-menu-button"
+          type="button"
+          aria-controls="primary-navigation"
+          aria-expanded={isMenuOpen}
+          aria-label={isMenuOpen ? "Close navigation menu" : "Open navigation menu"}
+          onClick={() => setIsMenuOpen((isOpen) => !isOpen)}
+        >
+          {isMenuOpen ? <X size={22} /> : <Menu size={22} />}
+        </button>
+      </header>
+
+      <button
+        className="mobile-menu-backdrop"
+        type="button"
+        aria-label="Close navigation menu"
+        aria-hidden={!isMenuOpen}
+        tabIndex={isMenuOpen ? 0 : -1}
+        onClick={() => setIsMenuOpen(false)}
+      />
+
+      <aside className="sidebar" id="primary-navigation" aria-hidden={!isNavAccessible}>
+        <div className="sidebar-header">
+          <Link className="brand" to="/" aria-label="Go to home" tabIndex={isNavAccessible ? undefined : -1}>
+            <div className="brand-mark">♟</div>
+            <div>
+              <div className="brand-title">Chess Analyst</div>
+              <div className="brand-subtitle">Local-first review lab</div>
+            </div>
+          </Link>
+
+          <button
+            className="sidebar-close-button"
+            type="button"
+            aria-label="Close navigation menu"
+            tabIndex={isMenuOpen ? 0 : -1}
+            onClick={() => setIsMenuOpen(false)}
+          >
+            <X size={20} />
+          </button>
+        </div>
 
         <nav className="sidebar-nav">
           {navItems.map((item) => {
@@ -33,6 +115,8 @@ export function AppShell() {
                 className={({ isActive }) =>
                   `nav-link${isActive ? " nav-link-active" : ""}`
                 }
+                tabIndex={isNavAccessible ? undefined : -1}
+                onClick={() => setIsMenuOpen(false)}
               >
                 <Icon size={18} />
                 <span>{item.label}</span>

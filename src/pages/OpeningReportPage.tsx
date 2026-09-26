@@ -9,6 +9,8 @@ interface OpeningPreview {
   idea: string;
 }
 
+const OPENING_PREVIEW_BOARD_WIDTH = 190;
+
 const previewLines: Array<{
   match: string[];
   title: string;
@@ -201,7 +203,7 @@ export function OpeningReportPage() {
                       <Chessboard
                         id={`opening-preview-${normalizeOpeningName(opening.openingFamily).replace(/\s+/g, "-")}`}
                         position={preview.fen}
-                        boardWidth={210}
+                        boardWidth={OPENING_PREVIEW_BOARD_WIDTH}
                         arePiecesDraggable={false}
                         areArrowsAllowed={false}
                         showBoardNotation={false}

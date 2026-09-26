@@ -25,9 +25,14 @@
   box-sizing: border-box;
 }
 
+html {
+  min-width: 0;
+}
+
 body {
   margin: 0;
   min-height: 100vh;
+  overflow-x: hidden;
   background:
     radial-gradient(circle at top left, rgba(129, 182, 76, 0.18), transparent 28%),
     radial-gradient(circle at bottom right, rgba(119, 153, 84, 0.12), transparent 34%),
@@ -45,6 +50,7 @@ button,
 input,
 select {
   font: inherit;
+  min-width: 0;
 }
 
 #root {
@@ -55,13 +61,21 @@ select {
   display: grid;
   grid-template-columns: 280px 1fr;
   min-height: 100vh;
+  min-width: 0;
 }
 
 .sidebar {
+  min-width: 0;
   padding: 28px 22px;
   border-right: 1px solid rgba(238, 238, 210, 0.08);
   background: rgba(33, 31, 29, 0.96);
   backdrop-filter: blur(14px);
+}
+
+.mobile-topbar,
+.mobile-menu-backdrop,
+.sidebar-close-button {
+  display: none;
 }
 
 .brand {
@@ -142,10 +156,15 @@ h3 {
 }
 
 .page-shell {
+  min-width: 0;
+  overflow-x: clip;
   padding: 30px;
 }
 
 .page-content {
+  min-width: 0;
+  max-width: 1480px;
+  margin: 0 auto;
   display: flex;
   flex-direction: column;
   gap: 24px;
@@ -190,10 +209,12 @@ h3 {
   display: grid;
   grid-template-columns: 1.3fr 420px;
   gap: 24px;
+  min-width: 0;
   padding: 30px;
 }
 
 .hero-copy {
+  min-width: 0;
   padding-right: 24px;
 }
 
@@ -216,6 +237,7 @@ h3 {
 }
 
 .hero-form {
+  min-width: 0;
   padding: 22px;
   border-radius: 22px;
   background: linear-gradient(180deg, rgba(38, 36, 33, 0.98), rgba(31, 30, 28, 0.95));
@@ -230,6 +252,7 @@ h3 {
 input,
 select {
   width: 100%;
+  min-height: 48px;
   padding: 13px 14px;
   border-radius: 14px;
   border: 1px solid rgba(238, 238, 210, 0.12);
@@ -239,6 +262,7 @@ select {
 
 .limit-toggle {
   display: flex;
+  flex-wrap: wrap;
   gap: 10px;
 }
 
@@ -251,6 +275,8 @@ select {
 }
 
 .limit-chip {
+  flex: 1 1 64px;
+  min-height: 44px;
   padding: 12px 16px;
   border-radius: 999px;
   background: rgba(238, 238, 210, 0.08);
@@ -263,6 +289,7 @@ select {
 }
 
 .primary-button {
+  min-height: 50px;
   padding: 15px 18px;
   border-radius: 16px;
   background: linear-gradient(180deg, #95bb58, #76a13f);
@@ -302,6 +329,7 @@ select {
 .job-header,
 .job-inline {
   display: flex;
+  gap: 8px;
   justify-content: space-between;
   color: var(--muted);
   font-size: 0.92rem;
@@ -372,6 +400,7 @@ select {
 }
 
 .panel {
+  min-width: 0;
   padding: 24px;
 }
 
@@ -381,6 +410,7 @@ select {
 }
 
 .chart-wrap {
+  min-width: 0;
   margin-top: 18px;
   height: 300px;
 }
@@ -449,6 +479,7 @@ select {
 }
 
 .history-list {
+  min-width: 0;
   overflow: hidden;
   border-radius: 16px;
   border: 1px solid rgba(238, 238, 210, 0.08);
@@ -719,6 +750,7 @@ select {
 
 .opening-card {
   position: relative;
+  min-width: 0;
   padding: 24px;
   border-radius: 24px;
   outline: 0;
@@ -738,7 +770,13 @@ select {
 .schedule-card {
   display: flex;
   justify-content: space-between;
+  align-items: flex-start;
   gap: 16px;
+}
+
+.opening-card-header > div,
+.practice-card-header > div {
+  min-width: 0;
 }
 
 .opening-card h2 {
@@ -751,9 +789,11 @@ select {
 }
 
 .opening-pill {
+  flex: 0 0 auto;
   padding: 10px 14px;
   background: rgba(129, 182, 76, 0.2);
   color: #aee06a;
+  white-space: nowrap;
 }
 
 .opening-stats {
@@ -761,6 +801,10 @@ select {
   grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 14px;
   margin: 18px 0;
+}
+
+.opening-stats > div {
+  min-width: 0;
 }
 
 .opening-stats span {
@@ -776,7 +820,7 @@ select {
   right: 18px;
   width: min(560px, calc(100% - 36px));
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 210px;
+  grid-template-columns: minmax(0, 1fr) 190px;
   gap: 18px;
   align-items: center;
   padding: 18px;
@@ -879,6 +923,7 @@ select {
 
 .practice-time {
   flex: 0 0 auto;
+  max-width: 100%;
   padding: 8px 11px;
   border-radius: 999px;
   background: rgba(129, 182, 76, 0.2);
@@ -916,6 +961,7 @@ select {
 }
 
 .practice-drill-card {
+  min-width: 0;
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
   gap: 14px;
@@ -961,6 +1007,7 @@ select {
 
 .focus-target,
 .schedule-duration {
+  max-width: 100%;
   padding: 8px 12px;
   background: rgba(129, 182, 76, 0.2);
   color: #aee06a;
@@ -995,10 +1042,12 @@ select {
 .review-stage-shell {
   display: flex;
   width: 100%;
+  min-width: 0;
 }
 
 .review-stage-panel {
   width: 100%;
+  min-width: 0;
   display: grid;
   grid-template-columns: minmax(0, 3fr) minmax(0, 2fr);
   gap: 22px;
@@ -1014,6 +1063,7 @@ select {
 }
 
 .review-board-stack {
+  min-width: 0;
   max-width: 100%;
   display: flex;
   flex-direction: column;
@@ -1202,6 +1252,10 @@ select {
   color: var(--paper);
 }
 
+.review-line-note span {
+  overflow-wrap: anywhere;
+}
+
 .review-line-note strong {
   font-size: 0.9rem;
   color: var(--lime);
@@ -1249,6 +1303,7 @@ select {
   gap: 10px;
   overflow-x: auto;
   padding: 4px 2px;
+  scrollbar-width: thin;
 }
 
 .review-rail-chip {
@@ -1303,6 +1358,7 @@ select {
 .review-action-chip,
 .review-step-back,
 .review-step-next {
+  min-width: 0;
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -1347,21 +1403,132 @@ select {
 
 @media (max-width: 1180px) {
   .app-shell {
-    grid-template-columns: 1fr;
+    display: block;
+    min-height: 100vh;
+  }
+
+  .mobile-topbar {
+    position: sticky;
+    top: 0;
+    z-index: 20;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 14px;
+    min-height: 72px;
+    padding: 14px 18px;
+    border-bottom: 1px solid rgba(238, 238, 210, 0.08);
+    background: rgba(33, 31, 29, 0.96);
+    backdrop-filter: blur(14px);
+  }
+
+  .mobile-brand {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    min-width: 0;
+  }
+
+  .mobile-brand .brand-mark {
+    width: 38px;
+    height: 38px;
+    border-radius: 12px;
+    font-size: 22px;
+    flex: 0 0 auto;
+  }
+
+  .mobile-brand-copy {
+    min-width: 0;
+  }
+
+  .mobile-brand .brand-title,
+  .mobile-brand .brand-subtitle {
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .mobile-menu-button,
+  .sidebar-close-button {
+    display: grid;
+    place-items: center;
+    width: 44px;
+    height: 44px;
+    flex: 0 0 auto;
+    border: 1px solid var(--panel-line);
+    border-radius: 14px;
+    background: rgba(238, 238, 210, 0.08);
+    color: var(--text);
+    cursor: pointer;
   }
 
   .sidebar {
-    position: sticky;
+    position: fixed;
     top: 0;
-    z-index: 10;
-    border-right: 0;
-    border-bottom: 1px solid rgba(238, 238, 210, 0.08);
+    bottom: 0;
+    left: 0;
+    z-index: 30;
+    width: min(320px, calc(100vw - 42px));
+    overflow-y: auto;
+    border-right: 1px solid rgba(238, 238, 210, 0.08);
+    border-bottom: 0;
+    box-shadow: 24px 0 54px rgba(0, 0, 0, 0.36);
+    transform: translateX(-105%);
+    transition: transform 180ms ease;
+  }
+
+  .mobile-menu-open .sidebar {
+    transform: translateX(0);
+  }
+
+  .sidebar-header {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 14px;
+    margin-bottom: 32px;
+  }
+
+  .sidebar-header .brand {
+    min-width: 0;
+    margin-bottom: 0;
+  }
+
+  .sidebar-header .brand-title,
+  .sidebar-header .brand-subtitle {
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .mobile-menu-backdrop {
+    position: fixed;
+    inset: 0;
+    z-index: 25;
+    display: block;
+    padding: 0;
+    border: 0;
+    background: rgba(0, 0, 0, 0.54);
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 180ms ease;
+  }
+
+  .mobile-menu-open .mobile-menu-backdrop {
+    opacity: 1;
+    pointer-events: auto;
+  }
+
+  .page-shell {
+    padding: 24px 20px 32px;
   }
 
   .hero,
-  .dual-grid,
-  .section-grid {
+  .dual-grid {
     grid-template-columns: 1fr;
+  }
+
+  .section-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
   .filters-row {
@@ -1388,7 +1555,13 @@ select {
 
   .opening-preview {
     left: 18px;
-    grid-template-columns: 1fr;
+    right: 18px;
+    grid-template-columns: minmax(0, 1fr) 190px;
+  }
+
+  .review-stage-panel {
+    gap: 18px;
+    padding: 18px;
   }
 
   .review-callout,
@@ -1410,6 +1583,7 @@ select {
 @media (max-width: 900px) {
   .review-stage-panel {
     grid-template-columns: 1fr;
+    padding: 18px;
   }
 
   .review-controls-panel {
@@ -1423,8 +1597,98 @@ select {
 }
 
 @media (max-width: 760px) {
+  .page-shell {
+    padding: 18px 14px 28px;
+  }
+
+  .page-content {
+    gap: 18px;
+  }
+
+  .page-header h1,
+  .hero h1 {
+    margin: 8px 0 8px;
+    font-size: 1.9rem;
+    line-height: 1.12;
+  }
+
+  .hero,
+  .panel {
+    padding: 18px;
+    border-radius: 20px;
+  }
+
+  .hero {
+    gap: 18px;
+  }
+
+  .hero-copy {
+    padding-right: 0;
+  }
+
+  .hero-form {
+    padding: 16px;
+    border-radius: 18px;
+  }
+
+  .primary-button {
+    width: 100%;
+    text-align: center;
+  }
+
+  .job-header,
+  .job-inline {
+    flex-wrap: wrap;
+  }
+
+  .section-grid {
+    grid-template-columns: 1fr;
+    gap: 14px;
+  }
+
+  .stat-card {
+    padding: 18px;
+    border-radius: 18px;
+  }
+
+  .stat-value {
+    font-size: 1.7rem;
+  }
+
+  .dual-grid {
+    gap: 16px;
+  }
+
+  .panel h2 {
+    font-size: 1.28rem;
+    line-height: 1.18;
+  }
+
+  .chart-wrap {
+    height: 240px;
+    margin-top: 14px;
+  }
+
+  .list-row {
+    padding: 12px 14px;
+    border-radius: 14px;
+  }
+
+  .filters-row {
+    gap: 10px;
+  }
+
   .practice-grid {
     grid-template-columns: 1fr;
+  }
+
+  .history-list {
+    border-radius: 14px;
+  }
+
+  .history-list-title {
+    padding: 18px 16px;
+    font-size: 1.25rem;
   }
 
   .history-list-header {
@@ -1432,27 +1696,48 @@ select {
   }
 
   .history-game-row {
-    grid-template-columns: 72px minmax(0, 1fr) auto;
+    grid-template-columns: 64px minmax(0, 1fr) auto;
     grid-template-areas:
       "speed players result"
       "speed review review"
       "speed moves date";
+    gap: 12px;
     min-height: 0;
+    padding: 16px;
     padding-top: 18px;
     padding-bottom: 18px;
   }
 
   .history-speed {
     grid-area: speed;
+    min-width: 54px;
+    font-size: 0.92rem;
+  }
+
+  .history-speed svg {
+    width: 24px;
+    height: 24px;
   }
 
   .history-players {
     grid-area: players;
   }
 
+  .history-player-row {
+    gap: 7px;
+    font-size: 0.98rem;
+  }
+
+  .history-opening-line {
+    padding-left: 19px;
+    font-size: 0.8rem;
+  }
+
   .history-result-stack {
     grid-area: result;
+    gap: 10px;
     justify-content: end;
+    font-size: 1rem;
   }
 
   .history-review-cell {
@@ -1473,5 +1758,295 @@ select {
   .history-date {
     grid-area: date;
     text-align: right;
+  }
+
+  .history-moves,
+  .history-date {
+    font-size: 0.95rem;
+  }
+
+  .opening-card {
+    padding: 18px;
+    border-radius: 18px;
+  }
+
+  .opening-card-header {
+    flex-wrap: wrap;
+  }
+
+  .opening-stats {
+    gap: 10px;
+  }
+
+  .opening-preview {
+    position: static;
+    width: 100%;
+    margin-top: 18px;
+    padding: 16px;
+    grid-template-columns: 1fr;
+    opacity: 1;
+    pointer-events: auto;
+    transform: none;
+    visibility: visible;
+  }
+
+  .practice-card {
+    padding: 18px;
+  }
+
+  .practice-card-header {
+    flex-wrap: wrap;
+  }
+
+  .practice-drill-card {
+    grid-template-columns: 1fr;
+    align-items: stretch;
+  }
+
+  .practice-drill-link {
+    width: 100%;
+  }
+
+  .focus-card {
+    padding: 18px;
+  }
+
+  .review-stage-panel {
+    padding: 14px;
+    border-radius: 20px;
+  }
+
+  .review-board-stack {
+    gap: 8px;
+  }
+
+  .review-board-player {
+    min-height: 38px;
+    padding: 8px 10px;
+    gap: 10px;
+  }
+
+  .review-controls-panel {
+    padding: 14px;
+    border-radius: 16px;
+    gap: 14px;
+  }
+
+  .review-callout {
+    padding: 14px;
+  }
+
+  .review-callout-copy h2 {
+    font-size: 1.2rem;
+  }
+
+  .review-toolbar {
+    padding: 12px;
+    gap: 10px;
+  }
+
+  .review-mode-actions {
+    gap: 8px;
+  }
+
+  .review-action-chip {
+    padding: 11px 10px;
+    gap: 7px;
+  }
+
+  .review-step-back {
+    width: 48px;
+    height: 48px;
+  }
+
+  .review-step-next {
+    padding: 13px 14px;
+  }
+
+  .review-rail {
+    grid-template-columns: 40px minmax(0, 1fr) 40px;
+    gap: 8px;
+  }
+
+  .review-nav-button {
+    width: 40px;
+    height: 40px;
+  }
+
+  .review-rail-chip {
+    padding: 9px 10px;
+    gap: 8px;
+  }
+}
+
+@media (max-width: 520px) {
+  .mobile-topbar {
+    min-height: 64px;
+    padding: 10px 12px;
+  }
+
+  .mobile-brand .brand-subtitle {
+    display: none;
+  }
+
+  .mobile-menu-button,
+  .sidebar-close-button {
+    width: 42px;
+    height: 42px;
+    border-radius: 12px;
+  }
+
+  .sidebar {
+    width: min(300px, calc(100vw - 24px));
+    padding: 20px 16px;
+  }
+
+  .page-shell {
+    padding: 14px 10px 24px;
+  }
+
+  .page-content {
+    gap: 14px;
+  }
+
+  .page-header h1,
+  .hero h1 {
+    font-size: 1.58rem;
+    line-height: 1.14;
+  }
+
+  .eyebrow {
+    letter-spacing: 0.1em;
+    font-size: 0.68rem;
+  }
+
+  .hero,
+  .panel {
+    padding: 14px;
+    border-radius: 16px;
+  }
+
+  .hero-form {
+    padding: 14px;
+  }
+
+  .limit-toggle {
+    gap: 8px;
+  }
+
+  .limit-chip {
+    flex-basis: calc(50% - 4px);
+    padding: 10px 12px;
+  }
+
+  .stat-card {
+    padding: 16px;
+  }
+
+  .stat-value {
+    font-size: 1.55rem;
+  }
+
+  .chart-wrap {
+    height: 220px;
+  }
+
+  .history-game-row {
+    grid-template-columns: 52px minmax(0, 1fr);
+    grid-template-areas:
+      "speed players"
+      "result result"
+      "review review"
+      "moves date";
+    gap: 12px 10px;
+    padding: 14px 12px;
+  }
+
+  .history-speed {
+    min-width: 48px;
+    font-size: 0.82rem;
+  }
+
+  .history-result-stack {
+    justify-content: flex-start;
+  }
+
+  .history-review-cell {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 8px;
+  }
+
+  .history-review-button {
+    width: 100%;
+  }
+
+  .opening-card-header,
+  .practice-card-header {
+    flex-direction: column;
+    gap: 10px;
+  }
+
+  .opening-pill {
+    width: 100%;
+  }
+
+  .opening-stats {
+    grid-template-columns: 1fr;
+  }
+
+  .opening-preview {
+    padding: 14px;
+  }
+
+  .practice-time {
+    width: fit-content;
+  }
+
+  .review-stage-panel {
+    padding: 10px;
+    border-radius: 16px;
+  }
+
+  .review-controls-panel {
+    padding: 12px;
+  }
+
+  .review-board-player-name {
+    font-size: 0.88rem;
+  }
+
+  .review-board-color-label {
+    display: none;
+  }
+
+  .review-callout-score {
+    width: 100%;
+    min-width: 0;
+  }
+
+  .review-mode-actions {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .review-action-chip {
+    padding: 10px 8px;
+    gap: 5px;
+    font-size: 0.82rem;
+  }
+
+  .review-step-next span {
+    white-space: normal;
+  }
+
+  .review-rail {
+    grid-template-columns: 36px minmax(0, 1fr) 36px;
+  }
+
+  .review-nav-button {
+    width: 36px;
+    height: 36px;
+    border-radius: 10px;
   }
 }
