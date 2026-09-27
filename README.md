@@ -61,6 +61,15 @@ Only standard games are imported: `rules == "chess"`, no `SetUp`/`FEN` start pos
 
 The pages read only from the store; the browser keeps no snapshot of games (just the id of a running sync job). `storage/chess.db` is gitignored and can be deleted and re-synced at any time; the app never deletes the caches under `storage/cache`.
 
+## Opening tree and book
+
+Opening names come from the [lichess-org/chess-openings](https://github.com/lichess-org/chess-openings) TSVs (CC0), vendored in `data/chess-openings/` at a pinned commit (see `SOURCE.md` there; re-vendor by hand with `node scripts/update-opening-book.mjs [--commit <sha>]`). The server indexes them by EPD once at startup (about 1 s). The dataset is a list of names, not a theory book: it names unsound lines too, so a "named line" is never a quality mark.
+
+The opening tree is built in memory per colour from `game_plies` (the first 20 plies), keyed by EPD, so move orders that transpose land on one node. Each game counts a position once. Every move row carries raw n and W/D/L, the score against the Elo expectation (the owner's pre-game rating, taken from his previous game in the same time class) as a delta in points, a Wilson 95% interval, recency-weighted versions of those with the effective n, a leak z-score, the 90-day trend, the owner's average think time and the book name. Nothing is persisted; trees are memoised per filter set until the stored games change.
+
+- `GET /api/tree?color=white|black&epd=<EPD>&window=6m|3m&tc=blitz|rapid&hl=<days>|off`: one node (the start position by default) with its move rows, newest game ids first. The default half-life is 90 days on the 6-month window and off on the 3-month window. 404 when the games never reached the position.
+- `npx tsx scripts/verify/verify-tree.ts --asof 2026-09-26` checks the golden lines, names, effective n, book exit and the counts along every path (read-only).
+
 ## Production build
 
 ```bash
