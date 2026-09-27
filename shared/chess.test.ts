@@ -74,7 +74,7 @@ describe("resolvePlayerColor", () => {
   });
 
   it("returns null, not a default colour, when the owner played neither side", () => {
-    expect(resolvePlayerColor(OWNER_USERNAME, "hikaru", "magnuscarlsen")).toBeNull();
+    expect(resolvePlayerColor(OWNER_USERNAME, "opponent-a", "opponent-b")).toBeNull();
     expect(resolvePlayerColor(OWNER_USERNAME, "kubista", "kubista99")).toBeNull();
     expect(resolvePlayerColor("  ", "  ", "someone")).toBeNull();
   });
