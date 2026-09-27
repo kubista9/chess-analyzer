@@ -102,7 +102,7 @@ npm run check       # typecheck, then test, then build:web
 
 `npm run build` also runs the typecheck first, because `vite build` does not type-check `src/`.
 
-Verify scripts live in `scripts/verify/` and are read-only. They take `--asof YYYY-MM-DD`, meaning the end of that UTC day, inclusive (see `scripts/verify/_lib.ts`). `verify-import.ts` recounts the stored months, `verify-tree.ts` checks the opening tree's golden numbers and path counts, and `verify-fixlist.ts` checks the fix list and its null simulation. `engine-smoke.ts` (below) is the opt-in real-engine check.
+Verify scripts live in `scripts/verify/` and are read-only. They take `--asof YYYY-MM-DD`, meaning the end of that UTC day, inclusive (see `scripts/verify/_lib.ts`). `verify-import.ts` recounts the stored months, `verify-tree.ts` checks the opening tree's golden numbers and path counts, and `verify-fixlist.ts` checks the fix list and its null simulation. `engine-smoke.ts` and `verify-evals.ts` (below) are the opt-in real-engine checks.
 
 ## Jobs
 
@@ -133,13 +133,33 @@ STOCKFISH_PATH=/absolute/path/to/stockfish
 - **Pool** (`pool.ts`): `ENGINE_WORKERS` (default 3) single-thread workers. Work comes in games; a worker keeps a game on one engine. Interactive work (the review) runs before backfill work and is checked between positions. A crashed engine is respawned and the position retried once; a second failure fails the job with the engine's error. The server closes the engines on SIGINT/SIGTERM, so `tsx watch` restarts leave none behind.
 - **Store** (`server/db/engineConfigs.ts`, `positions.ts`, `gameAnalysis.ts`): `engine_configs` has one row per (engine version, protocol); `positions` holds the evals per (EPD, config, tier); `game_analysis` marks a game as fully analysed under a config. The analysis work queue is every window game without a `game_analysis` row for the current config, newest first, so a game is never analysed twice under one config, and a new engine or protocol re-queues the window automatically (old rows are kept).
 
+### Engine check (backfill)
+
+`npm run backfill` analyses the openings (the first 20 plies) of every window game that has no `game_analysis` row under the current engine config, newest first. It runs outside `tsx watch`, so code edits do not restart it.
+
+- **Positions.** Each (tier, EPD) of the queued games is searched once, with every move ever played from it in a window game scored at the same root, so later games reaching it are already answered. The position cache is read before each search and every result is stored as it arrives. The owner-to-move positions (MultiPV 3, depth 15) come first, then the opponent-to-move ones (MultiPV 1, depth 14). A game's row, with its summary (first owner error, worst move, accuracy, category counts, evals after plies 12/16/20 from the owner's side), is written once all its positions are answered.
+- **Resumable.** Ctrl-C pauses (the games in progress finish; a second Ctrl-C stops at once). An interrupted game has no row and is simply redone from the cache on the next run.
+- **Flags.** `--limit N` (the N newest queued games), `--dry-run` (queue size, positions to search, estimated time; nothing is searched), `--allow-battery` (it otherwise asks before running on battery, from `pmset -g batt`).
+- **One at a time.** `storage/backfill.lock` holds the running process's pid and progress (a lock whose pid is gone or whose heartbeat is older than 2 min is taken over). The server refuses to start while the CLI runs, and shows the CLI's progress on Home.
+- **Speed.** Every run is recorded in `backfill_runs`; the next estimate uses the last completed run's measured nodes per second and the stored mean nodes per position.
+
+Home has an **Engine check** card: coverage per colour, "Start engine check (~N min)" / "Analyse N new games", and while it runs "Engine check: X / Y of your positions · then opponent positions · ~N min left [Pause]", with a chip in the sidebar. `AUTO_BACKFILL=1` also starts it after every server sync (on mains power only).
+
+- `GET /api/analysis/status`: engine and config, state (`idle`, `running`, `pausing`, `paused`, `failed`), who runs it (server or CLI), progress with nps and ETA, games analysed per colour, window positions cached per tier, the estimate for the queue, the power state.
+- `POST /api/analysis/backfill` (`{"allowBattery": true}` optional): starts or resumes it; 409 with `code: "on-battery"` on battery, or `code: "locked"` while another process runs it.
+- `POST /api/analysis/pause`: the games in progress finish, the rest stays queued. The paused state lives in memory; after a restart the card offers Start again.
+
+The review reads every position from the cache first and only sends the rest to the engine pool (interactive priority, ahead of the backfill), storing what it computes; a backfilled game's review opens at once. A review that completes a game also writes its `game_analysis` row.
+
+`npx tsx scripts/verify/verify-evals.ts [--games N]` reports coverage and the measured throughput, checks every analysed game against the store, and on a temporary copy of the database checks cache hits (a sample redone with an engine that may not search), the incremental rule (a second run analyses 0 games), a cached review and the re-queueing under a new engine config.
+
 `npx tsx scripts/verify/engine-smoke.ts [--store]` runs the real engine on a few opening positions, prints timings, checks the evals, runs them through the pool and kills an engine mid-search. With `--store` it also creates the current engine config in `storage/chess.db` and prints the work-queue size. It never runs the backfill.
 
 ## Notes on move labels
 
 Centipawn evals are clamped to +/-1000 and mates are kept separately, so a mate counts as a clamped eval of the mating side and a mate-to-mate move costs 0. The loss of a move is the drop in the mover's lichess win% between the best line and the played move, both scored in the position before the move (`shared/eval.ts`). The class depends on that loss only: `best` < 1, `good` < 5, `inaccuracy` < 10, `mistake` < 15, `blunder` >= 15. Whether the move was the engine's rank-1 move does not matter, since near-equal moves swap ranks between runs. The win% curve was fitted on much stronger players, so read it as the engine's win chance.
 
-Reviews are cached on disk in `storage/cache/reviews-v3/` with a `schemaVersion`; a file with another version is ignored and recomputed. Older `storage/cache/reviews*/` and `storage/cache/scans/` directories are no longer read or written, and the app never deletes them.
+Reviews are built from the position cache (`positions` in `storage/chess.db`) under the current engine config, so a new engine or protocol never serves old numbers. The older `storage/cache/reviews*/` and `storage/cache/scans/` directories are no longer read or written, and the app never deletes them.
 
 ## Tunable environment variables
 
@@ -147,7 +167,8 @@ Reviews are cached on disk in `storage/cache/reviews-v3/` with a `schemaVersion`
 PORT=3001
 HOST=0.0.0.0 # opt-in LAN exposure; default 127.0.0.1
 STOCKFISH_PATH=/absolute/path/to/stockfish
-ENGINE_WORKERS=3 # single-thread Stockfish workers, 1-8
+ENGINE_WORKERS=3 # single-thread Stockfish workers, 1-8 (per process: the server and npm run backfill each)
+AUTO_BACKFILL=1 # analyse new games after each server sync (mains power only); off by default
 CHESS_ANALYZER_SKIP_ENGINE_DOWNLOAD=1
 ```
 
