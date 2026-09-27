@@ -85,6 +85,51 @@ export const MIGRATIONS: Migration[] = [
         summary_json TEXT
       );
     `
+  },
+  {
+    version: 2,
+    name: "engine configs, position evals, game analysis",
+    sql: `
+      -- One row per (engine version, search protocol). A new engine binary or protocol gives a
+      -- new row, so results are never mixed across configs and old rows are kept.
+      CREATE TABLE engine_configs (
+        id             INTEGER PRIMARY KEY,
+        engine_name    TEXT    NOT NULL,          -- from UCI "id name", e.g. 'Stockfish'
+        engine_version TEXT    NOT NULL,          -- e.g. '18'
+        protocol_json  TEXT    NOT NULL,          -- canonical JSON (sorted keys)
+        opening_plies  INTEGER NOT NULL,          -- the opening window when the config was created
+        created_at     INTEGER NOT NULL,
+        UNIQUE (engine_version, protocol_json)
+      );
+
+      -- Engine results per position (EPD) and tier. lines_json holds
+      -- {"lines": EngineLine[], "scored": EngineLine[], "terminal": ...}.
+      CREATE TABLE positions (
+        epd         TEXT    NOT NULL,
+        config_id   INTEGER NOT NULL REFERENCES engine_configs (id),
+        tier        TEXT    NOT NULL,             -- 'owner' | 'opponent'
+        cp          INTEGER,                      -- side to move, rank-1 line (NULL with mate)
+        mate        INTEGER,
+        best_uci    TEXT,                         -- NULL for a terminal position
+        lines_json  TEXT    NOT NULL,
+        depth       INTEGER NOT NULL,
+        nodes       INTEGER NOT NULL,
+        analyzed_at INTEGER NOT NULL,
+        PRIMARY KEY (epd, config_id, tier)
+      ) WITHOUT ROWID;
+
+      -- "This game is fully analysed (to plies) under this config." No foreign key to games:
+      -- a month re-derive deletes and re-inserts its games, and must not drop these rows.
+      CREATE TABLE game_analysis (
+        game_id      TEXT    NOT NULL,
+        config_id    INTEGER NOT NULL REFERENCES engine_configs (id),
+        plies        INTEGER NOT NULL,            -- opening plies covered
+        analyzed_at  INTEGER NOT NULL,
+        summary_json TEXT    NOT NULL,
+        PRIMARY KEY (game_id, config_id)
+      ) WITHOUT ROWID;
+      CREATE INDEX game_analysis_config ON game_analysis (config_id);
+    `
   }
 ];
 
