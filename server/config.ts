@@ -50,10 +50,8 @@ export const config = {
   userAgent:
     process.env.CHESS_COM_USER_AGENT ??
     "chess-analyst-local/0.1 (contact: local-user@localhost)",
-  batchMoveTimeMs: Number(process.env.BATCH_MOVE_TIME_MS ?? 110),
-  batchReplyTimeMs: Number(process.env.BATCH_REPLY_TIME_MS ?? 65),
+  // Interim review: one movetime search per position (P4 replaces this protocol).
   reviewMoveTimeMs: Number(process.env.REVIEW_MOVE_TIME_MS ?? 360),
-  reviewReplyTimeMs: Number(process.env.REVIEW_REPLY_TIME_MS ?? 180),
   stockfishThreads: Math.max(1, Math.min(4, Number(process.env.STOCKFISH_THREADS ?? os.cpus().length - 1))),
   stockfishHashMb: Math.max(32, Number(process.env.STOCKFISH_HASH_MB ?? 192))
 };

@@ -13,15 +13,28 @@ interface WorkspaceContextValue {
   setSnapshot: (snapshot: OpeningsSnapshot | null) => void;
   bulkJob: JobState<OpeningsSnapshot> | null;
   setBulkJob: (job: JobState<OpeningsSnapshot> | null) => void;
+  // Reviews live in memory for this session only; the server caches them on disk.
   reviewCache: Record<string, ReviewSummary>;
   setReview: (gameId: string, review: ReviewSummary) => void;
   reviewJobs: Record<string, JobState<ReviewSummary> | null>;
   setReviewJob: (gameId: string, job: JobState<ReviewSummary> | null) => void;
 }
 
-const STORAGE_KEY = "chess-analyst-workspace-v1";
-const REVIEW_STORAGE_KEY = "chess-analyst-reviews-v1";
+// v2: results-only snapshot (colour split, W/D/L). A v1 snapshot has the old shape.
+const STORAGE_KEY = "chess-analyst-workspace-v2";
+// Keys of the v1 workspace, including the review cache that ran into the ~5 MB quota.
+const LEGACY_STORAGE_KEYS = ["chess-analyst-workspace-v1", "chess-analyst-reviews-v1"];
 const WorkspaceContext = createContext<WorkspaceContextValue | null>(null);
+
+function removeLegacyKeys(): void {
+  try {
+    for (const key of LEGACY_STORAGE_KEYS) {
+      window.localStorage.removeItem(key);
+    }
+  } catch {
+    // Storage may be unavailable; nothing to clean up then.
+  }
+}
 
 function loadStoredSnapshot(): OpeningsSnapshot | null {
   try {
@@ -38,48 +51,30 @@ function loadStoredSnapshot(): OpeningsSnapshot | null {
   }
 }
 
-function loadStoredReviews(): Record<string, ReviewSummary> {
-  try {
-    const raw = window.localStorage.getItem(REVIEW_STORAGE_KEY);
-    if (!raw) {
-      return {};
-    }
-
-    return JSON.parse(raw) as Record<string, ReviewSummary>;
-  } catch {
-    return {};
-  }
-}
-
-function storeReviews(reviews: Record<string, ReviewSummary>): void {
-  try {
-    window.localStorage.setItem(REVIEW_STORAGE_KEY, JSON.stringify(reviews));
-  } catch {
-    // Keep the in-memory cache even if local storage is full or unavailable.
-  }
-}
-
 export function WorkspaceProvider({ children }: { children: ReactNode }) {
-  const [snapshot, setSnapshotState] = useState<OpeningsSnapshot | null>(() =>
-    typeof window === "undefined" ? null : loadStoredSnapshot()
-  );
+  const [snapshot, setSnapshotState] = useState<OpeningsSnapshot | null>(() => {
+    if (typeof window === "undefined") {
+      return null;
+    }
+    removeLegacyKeys();
+    return loadStoredSnapshot();
+  });
   const [bulkJob, setBulkJob] = useState<JobState<OpeningsSnapshot> | null>(null);
-  const [reviewCache, setReviewCache] = useState<Record<string, ReviewSummary>>(() =>
-    typeof window === "undefined" ? {} : loadStoredReviews()
-  );
+  const [reviewCache, setReviewCache] = useState<Record<string, ReviewSummary>>({});
   const [reviewJobs, setReviewJobs] = useState<Record<string, JobState<ReviewSummary> | null>>({});
 
   const setSnapshot = (nextSnapshot: OpeningsSnapshot | null) => {
     setSnapshotState(nextSnapshot);
 
-    if (!nextSnapshot) {
-      window.localStorage.removeItem(STORAGE_KEY);
-      window.localStorage.removeItem(REVIEW_STORAGE_KEY);
-      setReviewCache({});
-      return;
+    try {
+      if (nextSnapshot) {
+        window.localStorage.setItem(STORAGE_KEY, JSON.stringify(nextSnapshot));
+      } else {
+        window.localStorage.removeItem(STORAGE_KEY);
+      }
+    } catch {
+      // Keep the in-memory snapshot even if local storage is full or unavailable.
     }
-
-    window.localStorage.setItem(STORAGE_KEY, JSON.stringify(nextSnapshot));
   };
 
   const value = useMemo<WorkspaceContextValue>(
@@ -90,11 +85,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
       setBulkJob,
       reviewCache,
       setReview: (gameId, review) => {
-        setReviewCache((current) => {
-          const next = { ...current, [gameId]: review };
-          storeReviews(next);
-          return next;
-        });
+        setReviewCache((current) => ({ ...current, [gameId]: review }));
       },
       reviewJobs,
       setReviewJob: (gameId, job) => {

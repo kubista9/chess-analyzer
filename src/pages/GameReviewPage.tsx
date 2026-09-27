@@ -11,6 +11,8 @@ import {
   Sparkles,
   Target
 } from "lucide-react";
+import { OPENING_PLY_LIMIT } from "../../shared/constants";
+import { formatEval, whiteWinPercent, type WhiteEval } from "../../shared/eval";
 import type { AnnotatedMove, JobState, MoveCategory, PlayerColor, ReviewSummary } from "../../shared/types";
 import { startGameReview } from "../api/client";
 import { useJobPolling } from "../hooks/useJobPolling";
@@ -26,35 +28,25 @@ const reviewCopy: Record<
     tone: string;
   }
 > = {
-  brilliant: {
-    badge: "Brilliant",
-    sentence: "is brilliant",
-    tone: "#14d1b1"
-  },
-  great: {
-    badge: "Great",
-    sentence: "is a great move",
-    tone: "#63a2ff"
-  },
   best: {
     badge: "Best",
     sentence: "is best",
     tone: "#9dd94e"
   },
   good: {
-    badge: "Excellent",
-    sentence: "is excellent",
+    badge: "Good",
+    sentence: "is good",
     tone: "#81b64c"
   },
-  mistake: {
+  inaccuracy: {
     badge: "Inaccuracy",
     sentence: "is an inaccuracy",
-    tone: "#ffbb67"
+    tone: "#f7c948"
   },
-  miss: {
-    badge: "Miss",
-    sentence: "misses a stronger continuation",
-    tone: "#ff8b67"
+  mistake: {
+    badge: "Mistake",
+    sentence: "is a mistake",
+    tone: "#ffa459"
   },
   blunder: {
     badge: "Blunder",
@@ -78,31 +70,19 @@ function parseUciMove(uci: string): { from: string; to: string; promotion?: "q" 
   };
 }
 
-function applyMoveToFen(fen: string, uci: string): { fen: string; san: string } | null {
+function applyMoveToFen(fen: string, uci: string): string | null {
   const parsed = parseUciMove(uci);
   if (!parsed) {
     return null;
   }
 
-  const chess = new Chess(fen);
-  const move = chess.move(parsed);
-  if (!move) {
+  try {
+    const chess = new Chess(fen);
+    chess.move(parsed);
+    return chess.fen();
+  } catch {
     return null;
   }
-
-  return {
-    fen: chess.fen(),
-    san: move.san
-  };
-}
-
-function formatEval(scoreCp: number): string {
-  const value = scoreCp / 100;
-  return `${value >= 0 ? "+" : ""}${value.toFixed(2)}`;
-}
-
-function evalBarPercent(scoreCp: number): number {
-  return Math.max(0, Math.min(100, 50 + 45 * Math.tanh(scoreCp / 250)));
 }
 
 function buildSquareStyles(
@@ -129,55 +109,46 @@ function buildSquareStyles(
   return styles;
 }
 
-function getReviewLabel(move: AnnotatedMove): { badge: string; sentence: string; tone: string } {
-  if (move.phase === "opening" && move.category === "best" && move.ply <= 8) {
-    return {
-      badge: "Book",
-      sentence: "is a book move",
-      tone: "#d9aa73"
-    };
-  }
-
-  return reviewCopy[move.category];
-}
-
 function buildModeState(move: AnnotatedMove, mode: ReviewMode) {
-  const label = getReviewLabel(move);
+  const label = reviewCopy[move.category];
   const actualMove = parseUciMove(move.uci);
-  const bestMove = parseUciMove(move.bestLine.move);
+  const bestMove = parseUciMove(move.bestLine.uci);
   const actualTone = label.tone;
-  const bestTone = "#9dd94e";
+  const bestTone = reviewCopy.best.tone;
+  const evalBefore: WhiteEval = { cp: move.whiteCpBefore, mate: move.mateBefore };
+  const evalAfter: WhiteEval = { cp: move.whiteCpAfter, mate: move.mateAfter };
+  const bestLineText = move.bestLine.pvSan.slice(0, 7).join(" ");
 
   if (mode === "retry") {
     return {
       position: move.fenBefore,
       arrows: [] as Arrow[],
       squareStyles: {} as CustomSquareStyles,
-      scoreCp: move.scoreBeforeCp,
+      evaluation: evalBefore,
       headline: `Retry this position`,
       badge: "Retry",
       tone: "#9ca7b8",
       summary: `Find a stronger move for ${move.color}. Then use Show or Best to compare your idea.`,
-      line: `Engine evaluation before the move: ${formatEval(move.scoreBeforeCp)}`
+      line: `Engine evaluation before the move: ${formatEval(evalBefore)}`
     };
   }
 
   if (mode === "best") {
-    const bestPosition = applyMoveToFen(move.fenBefore, move.bestLine.move);
-
     return {
-      position: bestPosition?.fen ?? move.fenBefore,
+      position: applyMoveToFen(move.fenBefore, move.bestLine.uci) ?? move.fenBefore,
       arrows: bestMove ? ([[bestMove.from, bestMove.to, bestTone]] as Arrow[]) : ([] as Arrow[]),
       squareStyles: buildSquareStyles(bestMove?.from ?? null, bestMove?.to ?? null, bestTone, "best"),
-      scoreCp: move.bestLine.scoreCp,
-      headline: `${bestPosition?.san ?? move.bestLine.move} is best`,
+      evaluation: { cp: move.bestLine.whiteCp, mate: move.bestLine.mate },
+      headline: `${move.bestLine.san} is best`,
       badge: "Best",
       tone: bestTone,
       summary:
-        move.category === "best" || move.category === "brilliant" || move.category === "great"
-          ? "Your move was already among the strongest options here."
-          : `This engine move keeps the cleaner evaluation path and improves on the game move.`,
-      line: `Best line: ${move.bestLine.pv.slice(0, 7).join(" ")}`
+        move.category === "best"
+          ? move.isPlayerMove
+            ? "Your move was already among the strongest options here."
+            : "The game move was already among the strongest options here."
+          : `This engine move keeps the cleaner evaluation path and improves on ${move.san}.`,
+      line: `Best line: ${bestLineText}`
     };
   }
 
@@ -185,20 +156,32 @@ function buildModeState(move: AnnotatedMove, mode: ReviewMode) {
     position: move.fenAfter,
     arrows: actualMove ? ([[actualMove.from, actualMove.to, actualTone]] as Arrow[]) : ([] as Arrow[]),
     squareStyles: buildSquareStyles(actualMove?.from ?? null, actualMove?.to ?? null, actualTone, "show"),
-    scoreCp: move.scoreAfterCp,
+    evaluation: evalAfter,
     headline: `${move.san} ${label.sentence}`,
     badge: label.badge,
     tone: actualTone,
     summary: move.note,
     line:
-      move.category === "best" || move.category === "great" || move.category === "brilliant"
-        ? `Engine line: ${move.bestLine.pv.slice(0, 7).join(" ")}`
+      move.category === "best"
+        ? `Engine line: ${bestLineText}`
         : `Use Best to compare this move against the stronger engine continuation.`
   };
 }
 
+function reviewSubtitle(review: ReviewSummary): string {
+  const { header } = review;
+  const opponent = header[oppositeColor(review.color)];
+  const result = header.result === "win" ? "Won" : header.result === "loss" ? "Lost" : "Drew";
+  const date = new Date(header.endTime * 1000).toLocaleDateString("en-US", {
+    month: "short",
+    day: "numeric",
+    year: "numeric"
+  });
+  return `${result} as ${colorLabel(review.color)} vs ${opponent.username} (${opponent.rating}) · ${header.openingName} · ${date}. First ${OPENING_PLY_LIMIT / 2} moves; evals are from White's side.`;
+}
+
 function railLabel(move: AnnotatedMove): string {
-  return `${move.moveNumber}. ${move.san}`;
+  return `${move.moveNumber}${move.color === "black" ? "..." : "."} ${move.san}`;
 }
 
 function oppositeColor(color: PlayerColor): PlayerColor {
@@ -254,8 +237,9 @@ function calculateReviewBoardSize(columnWidth = 0): number {
 export function GameReviewPage() {
   const { gameId } = useParams();
   const [searchParams] = useSearchParams();
-  const { snapshot, reviewCache, setReview, reviewJobs, setReviewJob } = useWorkspace();
-  const game = snapshot?.games.find((entry) => entry.id === gameId) ?? null;
+  // The review does not need the Games snapshot: the server finds the game in the raw games
+  // cache and the review carries its own header.
+  const { reviewCache, setReview, reviewJobs, setReviewJob } = useWorkspace();
   const review = gameId ? reviewCache[gameId] : null;
   const reviewJob = gameId ? reviewJobs[gameId] ?? null : null;
   const [selectedPly, setSelectedPly] = useState<number | null>(null);
@@ -265,6 +249,9 @@ export function GameReviewPage() {
   const reviewStageRef = useRef<HTMLElement | null>(null);
   const reviewBoardColumnRef = useRef<HTMLDivElement | null>(null);
   const focusedReviewKeyRef = useRef<string | null>(null);
+  // Starts each game's review once, even when StrictMode runs the effect twice in dev
+  // (two starts would run two Stockfish reviews of the same game side by side).
+  const startedReviewsRef = useRef(new Set<string>());
   const requestedPly = useMemo(() => {
     const value = Number(searchParams.get("ply"));
     return Number.isFinite(value) && value > 0 ? value : null;
@@ -314,32 +301,30 @@ export function GameReviewPage() {
   useJobPolling(reviewJob, handleReviewUpdate);
 
   const handleStartReview = useCallback(async () => {
-    if (!snapshot || !game) {
+    if (!gameId) {
       return;
     }
 
     setError(null);
     try {
-      const job = await startGameReview({
-        gameId: game.id,
-        gameSummary: game
-      });
-      setReviewJob(game.id, job);
+      const job = await startGameReview(gameId);
+      setReviewJob(gameId, job);
       if (job.status === "completed" && job.result) {
-        setReview(game.id, job.result);
+        setReview(gameId, job.result);
       }
     } catch (submissionError) {
       setError(submissionError instanceof Error ? submissionError.message : "Could not start review.");
     }
-  }, [game, setReview, setReviewJob, snapshot]);
+  }, [gameId, setReview, setReviewJob]);
 
   useEffect(() => {
-    if (review || reviewJob || !snapshot || !game) {
+    if (review || reviewJob || !gameId || startedReviewsRef.current.has(gameId)) {
       return;
     }
 
+    startedReviewsRef.current.add(gameId);
     void handleStartReview();
-  }, [game, handleStartReview, review, reviewJob, snapshot]);
+  }, [gameId, handleStartReview, review, reviewJob]);
 
   useEffect(() => {
     if (!review?.moves.length) {
@@ -406,21 +391,22 @@ export function GameReviewPage() {
   }, [selectedMove, mode]);
 
   const boardPlayers = useMemo(() => {
-    if (!snapshot || !game) {
+    if (!review) {
       return null;
     }
 
+    const opponentColor = oppositeColor(review.color);
     return {
       top: {
-        color: oppositeColor(game.color),
-        name: game.opponent
+        color: opponentColor,
+        name: review.header[opponentColor].username
       },
       bottom: {
-        color: game.color,
-        name: snapshot.username
+        color: review.color,
+        name: review.header[review.color].username
       }
     };
-  }, [game, snapshot]);
+  }, [review]);
 
   const railMoves = useMemo(() => {
     if (!review?.moves.length || selectedIndex < 0) {
@@ -462,21 +448,20 @@ export function GameReviewPage() {
     <div className="page-content">
       <section className="page-header">
         <div>
-          <span className="eyebrow">Deep review</span>
+          <span className="eyebrow">Opening review</span>
           <h1>Game Review</h1>
-          <p>Move through this game with the board, engine notes, and controls in one review workspace.</p>
+          <p>
+            {review
+              ? reviewSubtitle(review)
+              : `Stockfish reviews the opening: the first ${OPENING_PLY_LIMIT / 2} moves of the game.`}
+          </p>
         </div>
       </section>
 
-      {!snapshot || !gameId ? (
+      {!gameId ? (
         <section className="panel empty-panel">
           <h2>No game selected</h2>
-          <p>Open the Game History page and click Analyze on a game you want to review.</p>
-        </section>
-      ) : !game ? (
-        <section className="panel empty-panel">
-          <h2>Game not found in the current workspace</h2>
-          <p>Run a fresh bulk analysis or pick a game from the current history table.</p>
+          <p>Open the Game History page and click Review on a game you want to review.</p>
         </section>
       ) : (
         <>
@@ -498,7 +483,7 @@ export function GameReviewPage() {
                         id="review-board"
                         position={modeState.position}
                         boardWidth={boardSize}
-                        boardOrientation={game.color}
+                        boardOrientation={review.color}
                         arePiecesDraggable={false}
                         areArrowsAllowed={false}
                         showBoardNotation={false}
@@ -525,11 +510,13 @@ export function GameReviewPage() {
 
                 <aside className="review-controls-panel">
                   <div className="review-eval-wrap">
-                    <div className="review-eval-score">{formatEval(modeState.scoreCp)}</div>
-                    <div className="review-eval-bar">
+                    <div className="review-eval-score" title="Engine eval from White's side">
+                      {formatEval(modeState.evaluation)}
+                    </div>
+                    <div className="review-eval-bar" aria-hidden="true">
                       <div
                         className="review-eval-fill"
-                        style={{ width: `${evalBarPercent(modeState.scoreCp)}%` }}
+                        style={{ width: `${whiteWinPercent(modeState.evaluation)}%` }}
                       />
                     </div>
                   </div>
@@ -542,7 +529,7 @@ export function GameReviewPage() {
                       <h2>{modeState.headline}</h2>
                       <p>{modeState.summary}</p>
                     </div>
-                    <div className="review-callout-score">{formatEval(modeState.scoreCp)}</div>
+                    <div className="review-callout-score">{formatEval(modeState.evaluation)}</div>
                   </div>
 
                   <div className="review-line-note">
@@ -597,7 +584,7 @@ export function GameReviewPage() {
 
                     <div className="review-rail-track">
                       {railMoves.map((move) => {
-                        const label = getReviewLabel(move);
+                        const label = reviewCopy[move.category];
                         const isActive = move.ply === selectedMove.ply;
 
                         return (
@@ -631,11 +618,19 @@ export function GameReviewPage() {
             </section>
           ) : (
             <section className="panel empty-panel">
-              <h2>{reviewJob ? "Preparing deep review" : "Deep review starting"}</h2>
+              <h2>
+                {reviewJob?.status === "failed"
+                  ? "Opening review failed"
+                  : reviewJob
+                    ? "Preparing opening review"
+                    : "Opening review starting"}
+              </h2>
               <p>
-                {reviewJob
-                  ? "Stockfish is building the move-by-move review for this game."
-                  : "This review will start automatically for the selected game."}
+                {reviewJob?.status === "failed"
+                  ? reviewJob.error ?? reviewJob.message
+                  : reviewJob
+                    ? `Stockfish is reviewing the first ${OPENING_PLY_LIMIT / 2} moves of this game.`
+                    : "This review will start automatically for the selected game."}
               </p>
             </section>
           )}

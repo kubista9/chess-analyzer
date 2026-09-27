@@ -1,4 +1,6 @@
 import fs from "node:fs";
+import { familyFromOpening } from "../shared/chess.js";
+import type { ArchiveGame } from "../shared/types.js";
 
 // Raw game objects as returned by https://api.chess.com/pub/player/<user>/games/YYYY/MM.
 export interface RawChessComPlayer {
@@ -46,4 +48,27 @@ export function loadArchiveSample(): RawArchiveMonth {
 
 export function gameId(game: RawChessComGame): string {
   return game.url.split("/").at(-1) ?? "";
+}
+
+/**
+ * A raw fixture game as the server's ArchiveGame, with the opening name taken from the
+ * Chess.com ECO URL slug the same way chessCom.ts does it.
+ */
+export function asArchiveGame(raw: RawChessComGame, timeClass: ArchiveGame["timeClass"] = "blitz"): ArchiveGame {
+  const slug = raw.eco?.split("/").filter(Boolean).at(-1);
+  const openingName = slug ? decodeURIComponent(slug).replace(/-/g, " ") : "Unknown opening";
+  return {
+    id: gameId(raw),
+    url: raw.url,
+    pgn: raw.pgn,
+    endTime: raw.end_time,
+    timeClass,
+    timeControl: raw.time_control,
+    rated: raw.rated,
+    openingName,
+    openingUrl: raw.eco ?? null,
+    openingFamily: familyFromOpening(openingName),
+    white: { username: raw.white.username, rating: raw.white.rating, result: raw.white.result },
+    black: { username: raw.black.username, rating: raw.black.rating, result: raw.black.result }
+  };
 }

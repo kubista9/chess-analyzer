@@ -24,13 +24,10 @@ export async function startBulkAnalysis(limit: BulkAnalysisLimit): Promise<JobSt
   });
 }
 
-export async function startGameReview(params: {
-  gameId: string;
-  gameSummary?: OpeningsSnapshot["games"][number];
-}): Promise<JobState<ReviewSummary>> {
+export async function startGameReview(gameId: string): Promise<JobState<ReviewSummary>> {
   return request<JobState<ReviewSummary>>("/api/game-review", {
     method: "POST",
-    body: JSON.stringify(params)
+    body: JSON.stringify({ gameId })
   });
 }
 

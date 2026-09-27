@@ -1,7 +1,6 @@
-import type { CHESS_PHASES, MOVE_CATEGORIES, SUPPORTED_TIME_CLASSES } from "./constants.js";
+import type { MOVE_CATEGORIES, SUPPORTED_TIME_CLASSES } from "./constants.js";
 
 export type MoveCategory = (typeof MOVE_CATEGORIES)[number];
-export type ChessPhase = (typeof CHESS_PHASES)[number];
 export type TimeClass = (typeof SUPPORTED_TIME_CLASSES)[number];
 export type PlayerColor = "white" | "black";
 export type GameResult = "win" | "loss" | "draw";
@@ -27,6 +26,7 @@ export interface ArchiveGame {
   black: PlayerSnapshot;
 }
 
+/** A results-only game summary, built from the raw games cache (no engine). */
 export interface HistoryGameSummary {
   id: string;
   url: string;
@@ -38,23 +38,22 @@ export interface HistoryGameSummary {
   openingName: string;
   openingFamily: string;
   endTime: number;
-  moves: number;
+  /** Half-moves in the game. The UI shows full moves (ceil(plies / 2)). */
+  plies: number;
   timeClass: TimeClass;
   timeControl?: string;
-  accuracy: number | null;
-  avgCentipawnLoss: number | null;
-  categories: Record<MoveCategory, number>;
-  firstMajorErrorPly: number | null;
 }
 
+/** Results for one opening family, played with one colour. */
 export interface OpeningReportItem {
+  color: PlayerColor;
   openingFamily: string;
   games: number;
-  winRate: number;
-  avgAccuracy: number | null;
-  avgBlunders: number;
-  avgFirstErrorPly: number | null;
-  recommendation: string;
+  wins: number;
+  draws: number;
+  losses: number;
+  /** (wins + 0.5 * draws) / games, as a percentage. */
+  scorePct: number;
 }
 
 export interface OpeningsSnapshot {
@@ -75,11 +74,22 @@ export interface JobState<T> {
   error?: string;
 }
 
+/** A raw engine line, as Stockfish reports it: UCI moves, score from the side to move. */
 export interface EngineLine {
   move: string;
   scoreCp: number;
   mate: number | null;
   pv: string[];
+}
+
+/** An engine line prepared for display: SAN moves, White-view eval. */
+export interface ReviewLine {
+  uci: string;
+  san: string;
+  /** The principal variation in SAN, starting with `san`. */
+  pvSan: string[];
+  whiteCp: number;
+  mate: number | null;
 }
 
 export interface AnnotatedMove {
@@ -88,19 +98,37 @@ export interface AnnotatedMove {
   san: string;
   uci: string;
   color: PlayerColor;
-  phase: ChessPhase;
   category: MoveCategory;
-  scoreBeforeCp: number;
-  scoreAfterCp: number;
-  lossCp: number;
-  bestLine: EngineLine;
+  /** Evals from White's point of view (cp clamped to +/-1000; mate kept separately, + = White mates). */
+  whiteCpBefore: number;
+  whiteCpAfter: number;
+  mateBefore: number | null;
+  mateAfter: number | null;
+  /** Win% the mover gave away (lichess formula), never negative. */
+  lossWinPct: number;
+  bestLine: ReviewLine;
   fenBefore: string;
   fenAfter: string;
   note: string;
   isPlayerMove: boolean;
 }
 
+/** A small header for the review page, derived from the archive game (no engine fields). */
+export interface ReviewGameHeader {
+  url: string;
+  endTime: number;
+  timeClass: TimeClass;
+  openingName: string;
+  result: GameResult;
+  white: { username: string; rating: number };
+  black: { username: string; rating: number };
+}
+
 export interface ReviewSummary {
-  game: HistoryGameSummary;
+  gameId: string;
+  /** The owner's colour. */
+  color: PlayerColor;
+  header: ReviewGameHeader;
+  /** At most OPENING_PLY_LIMIT moves. */
   moves: AnnotatedMove[];
 }

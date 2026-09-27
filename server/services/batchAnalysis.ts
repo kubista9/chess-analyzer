@@ -1,32 +1,17 @@
-import path from "node:path";
-import {
-  average,
-  calculateAccuracy,
-  categorizeMove,
-  emptyCategoryCounts,
-  normalizeResult,
-  pieceValue
-} from "../../shared/chess.js";
-import type { ArchiveGame, EngineLine, HistoryGameSummary, OpeningsSnapshot, PlayerColor } from "../../shared/types.js";
+import type { HistoryGameSummary, OpeningsSnapshot } from "../../shared/types.js";
 import { config } from "../config.js";
-import { parseGame, playerColorForGame } from "./gameParser.js";
-import { StockfishSession } from "./stockfish.js";
+import { playerColorForGame } from "./gameParser.js";
+import { summarizeGame } from "./gameSummary.js";
 import { buildOpeningReport } from "./openingReport.js";
 import { fetchRecentGamesWithCacheStatus } from "./chessCom.js";
-import { readJsonFile, safeKey, writeJsonFile } from "../store/fileStore.js";
+
+// The bulk run is results-only: it refreshes the raw games cache from Chess.com and builds
+// W/D/L summaries from it. It runs no engine and reads or writes no scan cache.
 
 interface BatchProgress {
   completedGames: number;
   totalGames: number;
   message: string;
-}
-
-interface CachedScan {
-  summary: HistoryGameSummary;
-}
-
-function scanCachePath(username: string, gameId: string): string {
-  return path.join(config.cacheDir, "scans", safeKey(username), `${safeKey(gameId)}.json`);
 }
 
 function formatCacheTimestamp(timestamp: string): string {
@@ -38,114 +23,7 @@ function formatCacheTimestamp(timestamp: string): string {
   });
 }
 
-function scoreFromPerspective(scoreCp: number, sideToMove: PlayerColor, perspective: PlayerColor): number {
-  return sideToMove === perspective ? scoreCp : -scoreCp;
-}
-
-function lineGap(lines: EngineLine[]): number | null {
-  if (lines.length < 2) {
-    return null;
-  }
-
-  return Math.abs(lines[0].scoreCp - lines[1].scoreCp);
-}
-
-async function buildGameSummary(
-  session: StockfishSession,
-  game: ArchiveGame,
-  playerColor: PlayerColor
-): Promise<HistoryGameSummary> {
-  const parsed = parseGame(game);
-  const playerMoves = parsed.moves.filter((move) => move.color === playerColor);
-  const categories = emptyCategoryCounts();
-  const losses: number[] = [];
-
-  let firstMajorErrorPly: number | null = null;
-
-  for (const move of playerMoves) {
-    const bestLines = await session.analyzePosition({
-      fen: move.fenBefore,
-      multiPv: 3,
-      moveTimeMs: config.batchMoveTimeMs
-    });
-    const replyLines = await session.analyzePosition({
-      fen: move.fenAfter,
-      multiPv: 1,
-      moveTimeMs: config.batchReplyTimeMs
-    });
-
-    const bestLine = bestLines[0];
-    const replyLine = replyLines[0];
-    if (!bestLine || !replyLine) {
-      continue;
-    }
-
-    const beforeScore = scoreFromPerspective(bestLine.scoreCp, move.color, playerColor);
-    const afterScore = scoreFromPerspective(replyLine.scoreCp, move.color === "white" ? "black" : "white", playerColor);
-    const lossCp = Math.max(0, beforeScore - afterScore);
-    const bestGapCp = lineGap(bestLines);
-    const onlyMove = (bestGapCp ?? 0) >= 140;
-    const isSacrificeLike =
-      pieceValue(move.piece) - pieceValue(move.captured) >= 2 && !move.san.includes("=");
-    const category = categorizeMove({
-      lossCp,
-      bestGapCp,
-      isOnlyMove: onlyMove,
-      isSacrificeLike,
-      resultingScoreCp: afterScore,
-      preScoreCp: beforeScore
-    });
-
-    categories[category] += 1;
-    losses.push(lossCp);
-
-    if (firstMajorErrorPly === null && ["mistake", "miss", "blunder"].includes(category)) {
-      firstMajorErrorPly = move.ply;
-    }
-  }
-
-  const avgCentipawnLoss = average(losses);
-
-  const player = playerColor === "white" ? game.white : game.black;
-  const opponent = playerColor === "white" ? game.black : game.white;
-
-  return {
-    id: game.id,
-    url: game.url,
-    opponent: opponent.username,
-    opponentRating: opponent.rating,
-    playerRating: player.rating,
-    color: playerColor,
-    result: normalizeResult(playerColor, game.white.result, game.black.result),
-    openingName: game.openingName,
-    openingFamily: game.openingFamily,
-    endTime: game.endTime,
-    moves: parsed.moves.length,
-    timeClass: game.timeClass,
-    timeControl: game.timeControl,
-    accuracy: calculateAccuracy(avgCentipawnLoss),
-    avgCentipawnLoss,
-    categories,
-    firstMajorErrorPly
-  };
-}
-
-async function loadCachedGameSummary(username: string, gameId: string): Promise<HistoryGameSummary | null> {
-  const cachePath = scanCachePath(username, gameId);
-  const cached = await readJsonFile<CachedScan>(cachePath);
-  return cached?.summary ?? null;
-}
-
-async function writeCachedGameSummary(
-  username: string,
-  gameId: string,
-  summary: HistoryGameSummary
-): Promise<void> {
-  const cachePath = scanCachePath(username, gameId);
-  await writeJsonFile(cachePath, { summary });
-}
-
-function buildOpeningsSnapshot(
+export function buildOpeningsSnapshot(
   username: string,
   limit: number,
   summaries: HistoryGameSummary[]
@@ -168,20 +46,19 @@ export async function runBulkAnalysis(
   const username = config.owner;
   const recentGames = await fetchRecentGamesWithCacheStatus(username, limit, { refresh: true });
 
-  // Resolve the owner's colour up front. A game the owner did not play is skipped and
-  // reported, never analysed from a guessed side.
-  const games: Array<{ game: ArchiveGame; color: PlayerColor }> = [];
+  // A game the owner did not play is skipped and reported, never summarised from a guessed side.
+  const summaries: HistoryGameSummary[] = [];
   for (const game of recentGames.games) {
     const color = playerColorForGame(game, username);
     if (color) {
-      games.push({ game, color });
+      summaries.push(summarizeGame(game, color));
     } else {
       console.warn(`Skipping game ${game.id}: ${username} is neither White nor Black.`);
     }
   }
-  const skippedGames = recentGames.games.length - games.length;
+  const skippedGames = recentGames.games.length - summaries.length;
 
-  if (!games.length) {
+  if (!summaries.length) {
     throw new Error(
       skippedGames > 0
         ? `None of the ${skippedGames} fetched game(s) were played by ${username}.`
@@ -194,68 +71,12 @@ export async function runBulkAnalysis(
     : null;
   const skippedNote = skippedGames > 0 ? ` Skipped ${skippedGames} game(s) ${username} did not play.` : "";
   onProgress?.({
-    completedGames: 0,
-    totalGames: games.length,
+    completedGames: summaries.length,
+    totalGames: summaries.length,
     message: (previousFetch
       ? `Last Chess.com fetch was ${previousFetch}; found ${recentGames.cache.newGames} new stored game(s).`
       : `Fetched Chess.com games for ${username}.`) + skippedNote
   });
 
-  const cachedSummaries = new Map<string, HistoryGameSummary>();
-  const missingGameIds = new Set<string>();
-  for (const { game } of games) {
-    const cachedSummary = await loadCachedGameSummary(username, game.id);
-    if (cachedSummary) {
-      cachedSummaries.set(game.id, {
-        ...cachedSummary,
-        timeControl: cachedSummary.timeControl ?? game.timeControl
-      });
-    } else {
-      missingGameIds.add(game.id);
-    }
-  }
-
-  let session: StockfishSession | null = null;
-  let analyzedNewGames = 0;
-
-  try {
-    const summaries: HistoryGameSummary[] = [];
-    for (const [index, { game, color }] of games.entries()) {
-      const cachedSummary = cachedSummaries.get(game.id);
-      if (cachedSummary) {
-        summaries.push(cachedSummary);
-
-        onProgress?.({
-          completedGames: index + 1,
-          totalGames: games.length,
-          message:
-            missingGameIds.size > 0
-              ? `Using cached scan ${index + 1}/${games.length}: ${cachedSummary.opponent}`
-              : `All ${games.length} selected game(s) were already analyzed locally.`
-        });
-
-        continue;
-      }
-
-      if (!session) {
-        session = new StockfishSession();
-        await session.initialize();
-      }
-
-      const summary = await buildGameSummary(session, game, color);
-      await writeCachedGameSummary(username, game.id, summary);
-      analyzedNewGames += 1;
-      summaries.push(summary);
-
-      onProgress?.({
-        completedGames: index + 1,
-        totalGames: games.length,
-        message: `Analyzing new game ${analyzedNewGames}/${missingGameIds.size}: ${summary.opponent} (${summary.openingFamily})`
-      });
-    }
-
-    return buildOpeningsSnapshot(username, limit, summaries);
-  } finally {
-    session?.close();
-  }
+  return buildOpeningsSnapshot(username, limit, summaries);
 }

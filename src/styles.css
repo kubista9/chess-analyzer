@@ -178,8 +178,7 @@ h3 {
 }
 
 .page-header p,
-.hero p,
-.opening-recommendation {
+.hero p {
   color: var(--muted);
   line-height: 1.65;
 }
@@ -552,12 +551,6 @@ select {
   transform: translateY(-1px);
 }
 
-.history-review-cell span {
-  color: var(--muted);
-  font-size: 0.78rem;
-  font-weight: 800;
-}
-
 .history-moves,
 .history-date {
   color: var(--text);
@@ -593,6 +586,17 @@ select {
   color: #f2c94c;
 }
 
+.opening-section:hover,
+.opening-section:focus-within {
+  position: relative;
+  z-index: 5;
+}
+
+.opening-section-empty {
+  margin: 0;
+  color: var(--muted);
+}
+
 .opening-card {
   position: relative;
   min-width: 0;
@@ -603,7 +607,6 @@ select {
 }
 
 .opening-card:hover,
-.opening-card:focus,
 .opening-card:focus-within {
   z-index: 4;
   border-color: rgba(129, 182, 76, 0.42);
@@ -679,7 +682,6 @@ select {
 }
 
 .opening-card:hover .opening-preview,
-.opening-card:focus .opening-preview,
 .opening-card:focus-within .opening-preview {
   opacity: 1;
   transform: translateY(0) scale(1);
@@ -851,18 +853,19 @@ select {
   font-weight: 700;
 }
 
+/* The light fill is White's share (White's win%); the dark track is Black's. */
 .review-eval-bar {
   position: relative;
   height: 16px;
   border-radius: 999px;
   overflow: hidden;
-  background: rgba(238, 238, 210, 0.1);
+  background: #4b4843;
 }
 
 .review-eval-fill {
   height: 100%;
-  border-radius: inherit;
-  background: linear-gradient(90deg, #eeeed2 0%, #eeeed2 50%, #4b4843 50%, #4b4843 100%);
+  background: #eeeed2;
+  transition: width 160ms ease;
 }
 
 .review-callout {

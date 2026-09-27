@@ -129,7 +129,7 @@ export function GameHistoryPage() {
       {!snapshot ? (
         <section className="panel empty-panel">
           <h2>No game history yet</h2>
-          <p>Run an analysis from Home first so this table has something to work with.</p>
+          <p>Load your recent games from Home first so this table has something to work with.</p>
         </section>
       ) : (
         <section className="panel">
@@ -212,13 +212,12 @@ export function GameHistoryPage() {
                   </div>
 
                   <div className="history-review-cell">
-                    <Link className="history-review-button" to={`/review/${game.id}?autostart=1`}>
+                    <Link className="history-review-button" to={`/review/${game.id}`}>
                       Review
                     </Link>
-                    <span>{game.accuracy === null ? "No accuracy" : `${game.accuracy.toFixed(1)}% accuracy`}</span>
                   </div>
 
-                  <div className="history-moves">{game.moves}</div>
+                  <div className="history-moves">{Math.ceil(game.plies / 2)}</div>
                   <div className="history-date">{formatHistoryDate(game.endTime)}</div>
                 </article>
               );

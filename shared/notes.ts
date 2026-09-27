@@ -1,22 +1,20 @@
 import type { MoveCategory } from "./types.js";
 
-export function noteForCategory(category: MoveCategory, lossCp: number): string {
+/** The review note for a move. Second-person copy is used only for the owner's own moves. */
+export function noteForCategory(category: MoveCategory, lossWinPct: number, isOwnerMove: boolean): string {
+  const loss = `${lossWinPct.toFixed(1)}% engine win chance`;
   switch (category) {
-    case "brilliant":
-      return "You found a concrete resource that keeps the engine's top evaluation and carries tactical bite.";
-    case "great":
-      return "This was one of the few moves that kept the position under control when things could have slipped.";
     case "best":
-      return "Engine agrees with your move. This kept the position on the cleanest path.";
+      return isOwnerMove
+        ? "Engine agrees with your move. This kept the position on the cleanest path."
+        : "Engine agrees with this move.";
     case "good":
-      return `Playable and practical, but the engine still sees a stronger continuation worth studying (${Math.round(
-        lossCp
-      )} cp).`;
+      return `Playable, but the engine prefers another move (-${loss}).`;
+    case "inaccuracy":
+      return `An inaccuracy: a better move was available (-${loss}).`;
     case "mistake":
-      return `This dropped the evaluation enough to give your opponent a real chance (${Math.round(lossCp)} cp).`;
-    case "miss":
-      return "A stronger tactical or strategic shot was available here, and missing it changed the momentum.";
+      return `A mistake that gives the other side real chances (-${loss}).`;
     case "blunder":
-      return "This was the turning point. The move allowed a major evaluation swing or lost a winning position.";
+      return `A blunder: this swings the game (-${loss}).`;
   }
 }

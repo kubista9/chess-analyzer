@@ -1,54 +1,45 @@
-import { average } from "../../shared/chess.js";
-import type { HistoryGameSummary, OpeningReportItem } from "../../shared/types.js";
+import type { GameResult, HistoryGameSummary, OpeningReportItem, PlayerColor } from "../../shared/types.js";
 
-function averageForCategory(games: HistoryGameSummary[], category: keyof HistoryGameSummary["categories"]): number {
-  return games.reduce((sum, game) => sum + game.categories[category], 0) / Math.max(games.length, 1);
+/** Score as a percentage: a win is 1, a draw 0.5, a loss 0. */
+export function scorePercent(wins: number, draws: number, games: number): number {
+  return games > 0 ? ((wins + 0.5 * draws) / games) * 100 : 0;
 }
 
-function winRate(games: HistoryGameSummary[]): number {
-  if (!games.length) {
-    return 0;
-  }
-
-  const wins = games.filter((game) => game.result === "win").length;
-  return (wins / games.length) * 100;
-}
-
+/**
+ * Results per opening family, split by the owner's colour: the same family as White and as
+ * Black are separate items. Sorted by colour (White first), then games (desc), then name.
+ */
 export function buildOpeningReport(games: HistoryGameSummary[]): OpeningReportItem[] {
-  const grouped = new Map<string, HistoryGameSummary[]>();
+  const grouped = new Map<string, { color: PlayerColor; openingFamily: string; counts: Record<GameResult, number> }>();
 
   for (const game of games) {
-    const bucket = grouped.get(game.openingFamily) ?? [];
-    bucket.push(game);
-    grouped.set(game.openingFamily, bucket);
+    const key = `${game.color}|${game.openingFamily}`;
+    const bucket = grouped.get(key) ?? {
+      color: game.color,
+      openingFamily: game.openingFamily,
+      counts: { win: 0, draw: 0, loss: 0 }
+    };
+    bucket.counts[game.result] += 1;
+    grouped.set(key, bucket);
   }
 
-  return [...grouped.entries()]
-    .map(([openingFamily, openingGames]) => {
-      const openingWinRate = winRate(openingGames);
-      const avgAccuracy = average(openingGames.map((game) => game.accuracy));
-      const avgBlunders = averageForCategory(openingGames, "blunder");
-      const avgFirstError = average(openingGames.map((game) => game.firstMajorErrorPly));
-
-      let recommendation = "Stable enough to keep in your active rotation.";
-      if (avgBlunders > 0.9) {
-        recommendation = "Study the first 8-12 moves and review tactical traps before queueing more games.";
-      } else if ((avgAccuracy ?? 0) < 78) {
-        recommendation = "Rebuild the key plans and typical pawn structures from this opening family.";
-      } else if (openingWinRate >= 55) {
-        recommendation = "This looks like a strength. Use it as a confidence opening and refine your middlegame plans.";
-      }
-
+  return [...grouped.values()]
+    .map(({ color, openingFamily, counts }) => {
+      const total = counts.win + counts.draw + counts.loss;
       return {
+        color,
         openingFamily,
-        games: openingGames.length,
-        winRate: openingWinRate,
-        avgAccuracy,
-        avgBlunders,
-        avgFirstErrorPly: avgFirstError,
-        recommendation
+        games: total,
+        wins: counts.win,
+        draws: counts.draw,
+        losses: counts.loss,
+        scorePct: scorePercent(counts.win, counts.draw, total)
       };
     })
-    .sort((left, right) => right.games - left.games)
-    .slice(0, 10);
+    .sort(
+      (left, right) =>
+        (left.color === right.color ? 0 : left.color === "white" ? -1 : 1) ||
+        right.games - left.games ||
+        left.openingFamily.localeCompare(right.openingFamily, "en")
+    );
 }

@@ -2,6 +2,7 @@ import { useCallback, useState, type FormEvent } from "react";
 import {
   BULK_ANALYSIS_LIMITS,
   DEFAULT_BULK_ANALYSIS_LIMIT,
+  OPENING_PLY_LIMIT,
   OWNER_USERNAME,
   type BulkAnalysisLimit
 } from "../../shared/constants";
@@ -43,21 +44,24 @@ export function AnalysisLauncher() {
       const job = await startBulkAnalysis(limit);
       setBulkJob(job);
     } catch (submissionError) {
-      setError(submissionError instanceof Error ? submissionError.message : "Could not start analysis.");
+      setError(submissionError instanceof Error ? submissionError.message : "Could not load games.");
     }
   };
 
   return (
     <section className="hero">
       <div className="hero-copy">
-        <h1>Run a local review pipeline for 1, 5, 10, or 25 recent games.</h1>
-        <p>Chess.com player: {OWNER_USERNAME}</p>
+        <h1>Load your 1, 5, 10, or 25 most recent games.</h1>
+        <p>
+          Chess.com player: {OWNER_USERNAME}. Results only, no engine: the Opening Report shows W/D/L and
+          score per colour. Stockfish reviews the first {OPENING_PLY_LIMIT / 2} moves of a game you open.
+        </p>
       </div>
 
       <form className="hero-form" onSubmit={handleSubmit}>
 
         <label className="field">
-          <span>Games to analyze</span>
+          <span>Games to load</span>
           <div className="limit-toggle">
             {BULK_ANALYSIS_LIMITS.map((option) => (
               <button
@@ -73,7 +77,7 @@ export function AnalysisLauncher() {
         </label>
 
         <button className="primary-button" type="submit" disabled={isLoading}>
-          {isLoading ? "Running bulk analysis..." : "Start Deep Analysis"}
+          {isLoading ? "Loading games..." : "Load games"}
         </button>
 
         {bulkJob ? (

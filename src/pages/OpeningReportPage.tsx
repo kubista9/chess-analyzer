@@ -1,5 +1,6 @@
 import { Chess } from "chess.js";
 import { Chessboard } from "react-chessboard";
+import type { OpeningReportItem, PlayerColor } from "../../shared/types";
 import { useWorkspace } from "../hooks/useWorkspace";
 
 interface OpeningPreview {
@@ -78,7 +79,7 @@ const previewLines: Array<{
     idea: "Black lets White take space, then challenges the center with piece pressure and pawn breaks."
   },
   {
-    match: ["reti", "reti"],
+    match: ["reti"],
     title: "Reti Opening",
     moves: ["Nf3", "d5", "c4", "e6", "g3", "Nf6", "Bg2"],
     idea: "White delays the central pawn commitment and attacks the center from the flank."
@@ -97,8 +98,15 @@ const previewLines: Array<{
   }
 ];
 
+// Strips accents first, so "Réti" and "Reti" both normalise to "reti".
 function normalizeOpeningName(value: string): string {
-  return value.toLowerCase().replace(/['’]/g, "").replace(/[^a-z0-9]+/g, " ").trim();
+  return value
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .replace(/['’]/g, "")
+    .replace(/[^a-z0-9]+/g, " ")
+    .trim();
 }
 
 function buildFen(moves: string[]): string {
@@ -128,7 +136,7 @@ function openingPreviewFor(openingFamily: string): OpeningPreview {
   ) ?? {
     title: openingFamily,
     moves: ["e4", "e5", "Nf3", "Nc6"],
-    idea: "A representative open-game structure. Use the report metrics to decide whether this family needs repair."
+    idea: "A representative open-game structure; no dedicated preview line exists for this family yet."
   };
 
   return {
@@ -139,6 +147,72 @@ function openingPreviewFor(openingFamily: string): OpeningPreview {
   };
 }
 
+const colorSections: Array<{ color: PlayerColor; title: string }> = [
+  { color: "white", title: "As White" },
+  { color: "black", title: "As Black" }
+];
+
+function OpeningCard({ opening }: { opening: OpeningReportItem }) {
+  const preview = openingPreviewFor(opening.openingFamily);
+  const cardKey = `${opening.color}-${normalizeOpeningName(opening.openingFamily).replace(/\s+/g, "-")}`;
+
+  return (
+    <article className="opening-card">
+      <div className="opening-card-header">
+        <div>
+          <h2>{opening.openingFamily}</h2>
+          <p>
+            {opening.games} game{opening.games === 1 ? "" : "s"} in sample
+          </p>
+        </div>
+        <div className="opening-pill">{opening.scorePct.toFixed(0)}% score</div>
+      </div>
+
+      <div className="opening-stats">
+        <div>
+          <span>Wins</span>
+          <strong>{opening.wins}</strong>
+        </div>
+        <div>
+          <span>Draws</span>
+          <strong>{opening.draws}</strong>
+        </div>
+        <div>
+          <span>Losses</span>
+          <strong>{opening.losses}</strong>
+        </div>
+      </div>
+
+      <aside className="opening-preview" aria-label={`${preview.title} preview`}>
+        <div className="opening-preview-copy">
+          <span className="eyebrow">Position preview</span>
+          <h3>{preview.title}</h3>
+          <p>{preview.idea}</p>
+          <div className="opening-preview-line">{preview.moves.join(" ")}</div>
+        </div>
+        <div className="opening-preview-board">
+          <Chessboard
+            id={`opening-preview-${cardKey}`}
+            position={preview.fen}
+            boardWidth={OPENING_PREVIEW_BOARD_WIDTH}
+            boardOrientation={opening.color}
+            arePiecesDraggable={false}
+            areArrowsAllowed={false}
+            showBoardNotation={false}
+            customDarkSquareStyle={{ backgroundColor: "#779954" }}
+            customLightSquareStyle={{ backgroundColor: "#eeeed2" }}
+            customBoardStyle={{
+              borderRadius: "14px",
+              overflow: "hidden",
+              boxShadow: "0 18px 34px rgba(0, 0, 0, 0.34)"
+            }}
+          />
+        </div>
+      </aside>
+    </article>
+  );
+}
+
 export function OpeningReportPage() {
   const { snapshot } = useWorkspace();
 
@@ -147,81 +221,34 @@ export function OpeningReportPage() {
       <section className="page-header">
         <div>
           <h1>Opening Report</h1>
+          <p>Results by opening family, split by your colour. Score counts a win as 1 and a draw as 0.5.</p>
         </div>
       </section>
 
       {!snapshot ? (
         <section className="panel empty-panel">
           <h2>No opening report yet</h2>
-          <p>Run a bulk analysis and this page will group your openings by frequency, quality, and repair priority.</p>
+          <p>Load your recent games from Home and this page will group them by colour and opening family.</p>
         </section>
       ) : (
-        <section className="panel">
-          <div className="list-panel">
-            {snapshot.topOpenings.map((opening) => {
-              const preview = openingPreviewFor(opening.openingFamily);
+        colorSections.map(({ color, title }) => {
+          const openings = snapshot.topOpenings.filter((opening) => opening.color === color);
 
-              return (
-                <article
-                  className="opening-card"
-                  key={opening.openingFamily}
-                  tabIndex={0}
-                >
-                  <div className="opening-card-header">
-                    <div>
-                      <h2>{opening.openingFamily}</h2>
-                      <p>{opening.games} games in sample</p>
-                    </div>
-                    <div className="opening-pill">{opening.winRate.toFixed(0)}% win rate</div>
-                  </div>
-
-                  <div className="opening-stats">
-                    <div>
-                      <span>Avg accuracy</span>
-                      <strong>{opening.avgAccuracy?.toFixed(1) ?? "—"}%</strong>
-                    </div>
-                    <div>
-                      <span>Avg blunders</span>
-                      <strong>{opening.avgBlunders.toFixed(2)}</strong>
-                    </div>
-                    <div>
-                      <span>First major error</span>
-                      <strong>{opening.avgFirstErrorPly?.toFixed(0) ?? "—"} ply</strong>
-                    </div>
-                  </div>
-
-                  <p className="opening-recommendation">{opening.recommendation}</p>
-
-                  <aside className="opening-preview" aria-label={`${preview.title} preview`}>
-                    <div className="opening-preview-copy">
-                      <span className="eyebrow">Position preview</span>
-                      <h3>{preview.title}</h3>
-                      <p>{preview.idea}</p>
-                      <div className="opening-preview-line">{preview.moves.join(" ")}</div>
-                    </div>
-                    <div className="opening-preview-board">
-                      <Chessboard
-                        id={`opening-preview-${normalizeOpeningName(opening.openingFamily).replace(/\s+/g, "-")}`}
-                        position={preview.fen}
-                        boardWidth={OPENING_PREVIEW_BOARD_WIDTH}
-                        arePiecesDraggable={false}
-                        areArrowsAllowed={false}
-                        showBoardNotation={false}
-                        customDarkSquareStyle={{ backgroundColor: "#779954" }}
-                        customLightSquareStyle={{ backgroundColor: "#eeeed2" }}
-                        customBoardStyle={{
-                          borderRadius: "14px",
-                          overflow: "hidden",
-                          boxShadow: "0 18px 34px rgba(0, 0, 0, 0.34)"
-                        }}
-                      />
-                    </div>
-                  </aside>
-                </article>
-              );
-            })}
-          </div>
-        </section>
+          return (
+            <section className="panel opening-section" key={color} aria-label={title}>
+              <h2 className="opening-section-title">{title}</h2>
+              {openings.length ? (
+                <div className="list-panel">
+                  {openings.map((opening) => (
+                    <OpeningCard key={`${opening.color}-${opening.openingFamily}`} opening={opening} />
+                  ))}
+                </div>
+              ) : (
+                <p className="opening-section-empty">No games as {color} in this sample.</p>
+              )}
+            </section>
+          );
+        })
       )}
     </div>
   );

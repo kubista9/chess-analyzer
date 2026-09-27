@@ -12,8 +12,7 @@ const bulkSchema = z.object({
 });
 
 const reviewSchema = z.object({
-  gameId: z.string().min(1),
-  gameSummary: z.any().optional()
+  gameId: z.string().min(1)
 });
 
 export const apiRouter = express.Router();
@@ -25,7 +24,7 @@ apiRouter.get("/health", (_request, response) => {
 apiRouter.post("/bulk-analysis", async (request, response, next) => {
   try {
     const payload = bulkSchema.parse(request.body);
-    const job = jobStore.create<OpeningsSnapshot>("bulk-analysis", `Queued analysis for ${config.owner}`);
+    const job = jobStore.create<OpeningsSnapshot>("bulk-analysis", `Queued game sync for ${config.owner}`);
 
     void (async () => {
       try {
@@ -49,14 +48,14 @@ apiRouter.post("/bulk-analysis", async (request, response, next) => {
         jobStore.update(job.id, {
           status: "completed",
           progress: 100,
-          message: `Analysis ready for ${config.owner}`,
+          message: `Games ready for ${config.owner}`,
           result
         });
       } catch (error) {
         jobStore.update(job.id, {
           status: "failed",
           progress: 100,
-          message: "Analysis failed",
+          message: "Loading games failed",
           error: error instanceof Error ? error.message : "Unknown analysis error"
         });
       }
@@ -71,14 +70,14 @@ apiRouter.post("/bulk-analysis", async (request, response, next) => {
 apiRouter.post("/game-review", async (request, response, next) => {
   try {
     const payload = reviewSchema.parse(request.body);
-    const job = jobStore.create<ReviewSummary>("game-review", `Queued deep review for ${payload.gameId}`);
+    const job = jobStore.create<ReviewSummary>("game-review", `Queued opening review for ${payload.gameId}`);
     const cachedReview = await readCachedGameReview(payload.gameId);
 
     if (cachedReview) {
       const completedJob = jobStore.update<ReviewSummary>(job.id, {
         status: "completed",
         progress: 100,
-        message: "Deep review ready",
+        message: "Opening review ready",
         result: cachedReview
       });
       response.json(completedJob);
@@ -90,25 +89,22 @@ apiRouter.post("/game-review", async (request, response, next) => {
         jobStore.update(job.id, {
           status: "running",
           progress: 10,
-          message: "Running deep Stockfish review"
+          message: "Running the Stockfish opening review"
         });
 
-        const result = await runGameReview(
-          payload.gameId,
-          (payload.gameSummary as OpeningsSnapshot["games"][number] | undefined) ?? null
-        );
+        const result = await runGameReview(payload.gameId);
 
         jobStore.update(job.id, {
           status: "completed",
           progress: 100,
-          message: "Deep review ready",
+          message: "Opening review ready",
           result
         });
       } catch (error) {
         jobStore.update(job.id, {
           status: "failed",
           progress: 100,
-          message: "Deep review failed",
+          message: "Opening review failed",
           error: error instanceof Error ? error.message : "Unknown review error"
         });
       }
