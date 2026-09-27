@@ -41,6 +41,11 @@ export function parseEngineWorkers(value: string | undefined): number {
   return Number.isInteger(parsed) ? Math.max(1, Math.min(8, parsed)) : 3;
 }
 
+/** "1", "true", "yes", "on" (any case) are true; anything else is false. */
+export function parseFlag(value: string | undefined): boolean {
+  return ["1", "true", "yes", "on"].includes(value?.trim().toLowerCase() ?? "");
+}
+
 export const config = {
   rootDir,
   // The one Chess.com account this app analyses. CHESS_OWNER is for tests only.
@@ -61,5 +66,9 @@ export const config = {
     "chess-analyst-local/0.1 (contact: local-user@localhost)",
   // Single-thread Stockfish workers in the engine pool (the M1 has 4 performance cores).
   // Threads, Hash and the search depth are part of the engine protocol (server/engine/protocol.ts).
-  engineWorkers: parseEngineWorkers(process.env.ENGINE_WORKERS)
+  engineWorkers: parseEngineWorkers(process.env.ENGINE_WORKERS),
+  // One engine backfill at a time across the server and `npm run backfill`.
+  backfillLockPath: path.join(rootDir, "storage", "backfill.lock"),
+  // AUTO_BACKFILL=1: after each sync in the server, analyse the new games (on mains power only).
+  autoBackfill: parseFlag(process.env.AUTO_BACKFILL)
 };
