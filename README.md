@@ -11,7 +11,7 @@ Local-first opening analysis for one Chess.com account, `kubista9` (hard-coded a
 - React + TypeScript + Vite
 - Express + TypeScript API server
 - Stockfish 18 downloaded into the repo during `npm install`
-- File-based cache under `storage/cache`
+- SQLite game store in `storage/chess.db` (better-sqlite3, WAL), plus the file-based cache under `storage/cache`
 
 ## Run locally
 
@@ -39,6 +39,24 @@ To expose the API port itself (not recommended), opt in explicitly:
 ```bash
 HOST=0.0.0.0 npm run dev:server   # prints: API exposed on LAN; no auth
 ```
+
+## Game store (SQLite)
+
+```bash
+npm run sync              # fetch kubista9's Chess.com archive months into storage/chess.db
+npm run sync -- --full    # also revalidate closed months (in case Chess.com amended them)
+npm run sync -- --offline # no network: seed empty months from storage/cache/raw-games
+```
+
+The sync lists the archives, then requests the months that overlap the last 183 days, one at a time with a 300 ms gap and the configured User-Agent. Each month's raw response is kept in `archive_months` with its ETag, so re-deriving never needs the network. A closed month (older than the previous month, validated more than 48 h after it ended) is fetched once; the current and previous months are revalidated with `If-None-Match` (a 304 costs nothing). On a 429 the sync waits for `Retry-After` (or 60 s), at most 3 tries; on a 5xx or a network error it keeps the stored month and reports a warning.
+
+Only standard games are imported: `rules == "chess"`, no `SetUp`/`FEN` start position, and time class blitz or rapid. Each skipped game is counted under one reason (variant, custom-start, time-class, not-owner, duplicate, malformed), so kept + skipped always equals the month's archive length. Kept games go to `games`, and their first 30 plies (SAN, UCI, EPD before/after, clock, time spent) go to `game_plies`. The 6-month window is applied when querying, not when fetching or deriving. Ratings are Chess.com's post-game ratings.
+
+- `GET /api/status`: window counts by time class and colour, the date range, the last sync, a stale flag (no successful sync in 24 h) and per-month rows with skip reasons and the last HTTP status.
+- `POST /api/sync` (`{"full": true}` optional): runs the sync and returns its summary; a second request while one runs joins it.
+- `npx tsx scripts/verify/verify-import.ts --asof 2026-09-26` recounts the stored raw months independently and checks the invariants and the golden window numbers (read-only).
+
+The pages still use the legacy "Load games" run until the next phase moves them onto the store. `storage/chess.db` is gitignored and can be deleted and re-synced at any time; the app never deletes the caches under `storage/cache`.
 
 ## Production build
 
