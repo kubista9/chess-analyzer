@@ -14,7 +14,7 @@ import { noteForCategory } from "../../shared/notes.js";
 import { config } from "../config.js";
 import { parseGame, pieceValue, playerColorForGame } from "./gameParser.js";
 import { StockfishSession } from "./stockfish.js";
-import { buildHighlights, buildMetricCards, buildOpeningReport, buildTrainingPlan } from "./trainingPlan.js";
+import { buildHighlights, buildMetricCards, buildOpeningReport, buildTrainingPlan } from "./openingReport.js";
 import { fetchRecentGamesWithCacheStatus } from "./chessCom.js";
 import { readJsonFile, safeKey, writeJsonFile } from "../store/fileStore.js";
 
