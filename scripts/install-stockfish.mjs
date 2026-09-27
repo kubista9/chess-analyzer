@@ -94,32 +94,37 @@ async function main() {
   const archivePath = path.join(tmpDir, assetName);
   const extractDir = path.join(tmpDir, "extract");
 
-  await fs.mkdir(tmpDir, { recursive: true });
-  await fs.mkdir(extractDir, { recursive: true });
+  try {
+    await fs.mkdir(tmpDir, { recursive: true });
+    await fs.mkdir(extractDir, { recursive: true });
 
-  console.log(`Downloading Stockfish from ${downloadUrl}`);
-  const response = await fetch(downloadUrl);
-  if (!response.ok) {
-    throw new Error(`Failed to download Stockfish (${response.status})`);
+    console.log(`Downloading Stockfish from ${downloadUrl}`);
+    const response = await fetch(downloadUrl);
+    if (!response.ok) {
+      throw new Error(`Failed to download Stockfish (${response.status})`);
+    }
+
+    const buffer = Buffer.from(await response.arrayBuffer());
+    await fs.writeFile(archivePath, buffer);
+
+    if (assetName.endsWith(".tar")) {
+      await execFileAsync("tar", ["-xf", archivePath, "-C", extractDir]);
+    } else if (assetName.endsWith(".zip")) {
+      await execFileAsync("unzip", ["-q", archivePath, "-d", extractDir]);
+    }
+
+    const binarySource = await findBinary(extractDir);
+    if (!binarySource) {
+      throw new Error("Downloaded archive did not contain a Stockfish binary.");
+    }
+
+    await fs.mkdir(targetDir, { recursive: true });
+    await fs.copyFile(binarySource, targetBinary);
+    await fs.chmod(targetBinary, 0o755);
+  } finally {
+    // The archive plus extracted files are ~220 MB; never leave them behind.
+    await fs.rm(tmpDir, { recursive: true, force: true });
   }
-
-  const buffer = Buffer.from(await response.arrayBuffer());
-  await fs.writeFile(archivePath, buffer);
-
-  if (assetName.endsWith(".tar")) {
-    await execFileAsync("tar", ["-xf", archivePath, "-C", extractDir]);
-  } else if (assetName.endsWith(".zip")) {
-    await execFileAsync("unzip", ["-q", archivePath, "-d", extractDir]);
-  }
-
-  const binarySource = await findBinary(extractDir);
-  if (!binarySource) {
-    throw new Error("Downloaded archive did not contain a Stockfish binary.");
-  }
-
-  await fs.mkdir(targetDir, { recursive: true });
-  await fs.copyFile(binarySource, targetBinary);
-  await fs.chmod(targetBinary, 0o755);
 
   await fs.writeFile(
     path.join(targetDir, "metadata.json"),
