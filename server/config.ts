@@ -48,6 +48,8 @@ export const config = {
   cacheDir: path.join(rootDir, "storage", "cache"),
   // The SQLite game store (archive months, games, opening plies). Safe to delete and re-sync.
   dbPath: path.join(rootDir, "storage", "chess.db"),
+  // The vendored lichess chess-openings TSVs (read-only, CC0).
+  openingBookDir: path.join(rootDir, "data", "chess-openings"),
   publicDistDir: path.join(rootDir, "dist", "web"),
   userAgent:
     process.env.CHESS_COM_USER_AGENT ??
