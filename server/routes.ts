@@ -7,8 +7,11 @@ import type {
   OpeningReportResponse,
   QueryWindow,
   ReviewSummary,
-  SyncJobResult
+  SyncJobResult,
+  TreeResponse
 } from "../shared/types.js";
+import { START_EPD } from "../shared/epd.js";
+import type { OpeningBook } from "../shared/openingBook.js";
 import { GAME_WINDOWS, parseGameWindow, windowBounds } from "../shared/window.js";
 import { config } from "./config.js";
 import { getDb, type Db } from "./db/connection.js";
@@ -16,8 +19,10 @@ import { getGame, listGames } from "./db/games.js";
 import { jobStore as defaultJobStore, type JobStore } from "./store/jobStore.js";
 import { syncArchives } from "./services/archiveImport.js";
 import { buildImportStatus } from "./services/importStatus.js";
+import { getOpeningBook } from "./services/openingBook.js";
 import { buildOpeningReport } from "./services/openingReport.js";
 import { readCachedGameReview, runGameReview } from "./services/reviewAnalysis.js";
+import { DEFAULT_HALF_LIFE_BY_WINDOW, createTreeService } from "./services/treeService.js";
 
 const reviewSchema = z.object({
   gameId: z.string().min(1)
@@ -31,6 +36,20 @@ const gamesQuerySchema = z.object({
   window: z.string().optional(),
   tc: z.enum(IMPORTED_TIME_CLASSES).optional(),
   color: z.enum(["white", "black"]).optional()
+});
+
+// A position key as the tree stores it: the first four FEN fields.
+const EPD_PATTERN = /^[1-8pnbrqkPNBRQK]+(?:\/[1-8pnbrqkPNBRQK]+){7} [wb] (?:-|[KQkq]{1,4}) (?:-|[a-h][36])$/;
+
+const treeQuerySchema = z.object({
+  color: z.enum(["white", "black"]),
+  epd: z.string().regex(EPD_PATTERN, "an EPD: the first four FEN fields").optional(),
+  window: z.string().optional(),
+  tc: z.enum(IMPORTED_TIME_CLASSES).optional(),
+  // Half-life in days, or "off" / 0 for unweighted; omitted = the window's default.
+  hl: z
+    .union([z.literal("off"), z.coerce.number().min(0).max(3650)])
+    .optional()
 });
 
 export class HttpError extends Error {
@@ -59,10 +78,13 @@ export interface ApiDeps {
   now: () => number;
   /** The archive sync (injectable for tests). */
   sync: typeof syncArchives;
+  /** The opening book (built once on first use). */
+  book: () => OpeningBook;
 }
 
 export function createApiRouter(deps: ApiDeps): express.Router {
   const router = express.Router();
+  const trees = createTreeService({ db: deps.db, owner: deps.owner, book: deps.book });
 
   router.get("/health", (_request, response) => {
     response.json({ ok: true });
@@ -115,6 +137,33 @@ export function createApiRouter(deps: ApiDeps): express.Router {
     response.json({ window, totals, items: buildOpeningReport(games) } satisfies OpeningReportResponse);
   });
 
+  // One node of the per-colour opening tree (the start position by default) with its move
+  // rows, over the stored games in the window. Trees are memoised per filter set.
+  router.get("/tree", (request, response) => {
+    const query = treeQuerySchema.parse(request.query);
+    const window = parseGameWindow(query.window);
+    if (!window) {
+      throw new HttpError(400, `Unknown window "${String(query.window)}"; use 6m or 3m.`);
+    }
+    const halfLifeDays =
+      query.hl === undefined ? DEFAULT_HALF_LIFE_BY_WINDOW[window] : query.hl === "off" || query.hl === 0 ? null : query.hl;
+    const built = trees.getTree({ color: query.color, window, timeClass: query.tc ?? null, halfLifeDays }, deps.now());
+    const epd = query.epd ?? START_EPD;
+    const node = built.tree.nodes.get(epd);
+    if (!node) {
+      throw new HttpError(404, `The ${query.color} games in this window never reached ${epd}.`);
+    }
+    response.json({
+      window: built.window,
+      color: query.color,
+      timeClass: built.filters.timeClass,
+      halfLifeDays: built.filters.halfLifeDays,
+      maxPly: built.tree.maxPly,
+      games: built.tree.games,
+      node
+    } satisfies TreeResponse);
+  });
+
   // Starts (or joins) the opening review of one stored game, keyed "review:<gameId>".
   router.post("/game-review", async (request, response) => {
     const { gameId } = reviewSchema.parse(request.body);
@@ -160,5 +209,6 @@ export const apiRouter = createApiRouter({
   jobs: defaultJobStore,
   owner: config.owner,
   now: Date.now,
-  sync: syncArchives
+  sync: syncArchives,
+  book: getOpeningBook
 });

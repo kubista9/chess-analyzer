@@ -206,3 +206,84 @@ export function getGamePlies(db: Db, id: string): OpeningPly[] {
     spentMs: row.spent_ms
   }));
 }
+
+/**
+ * The opening plies (ply <= maxPly) of the owner's games in the window, by game id, in ply
+ * order. One query, so the tree needs no per-game round trips and no replay.
+ */
+export function listOpeningPlies(
+  db: Db,
+  username: string,
+  bounds: WindowBounds,
+  filter: GameFilter,
+  maxPly: number
+): Map<string, OpeningPly[]> {
+  const rows = db
+    .prepare(
+      `SELECT p.game_id, p.ply, p.san, p.uci, p.epd_before, p.epd_after, p.clock_ms, p.spent_ms
+       FROM game_plies p JOIN games g ON g.id = p.game_id
+       WHERE g.username = @username AND g.end_time BETWEEN @start AND @end
+         AND (@timeClass IS NULL OR g.time_class = @timeClass) AND (@color IS NULL OR g.color = @color)
+         AND p.ply <= @maxPly
+       ORDER BY p.game_id, p.ply`
+    )
+    .all({
+      username,
+      start: bounds.start,
+      end: bounds.end,
+      timeClass: filter.timeClass ?? null,
+      color: filter.color ?? null,
+      maxPly
+    }) as {
+    game_id: string;
+    ply: number;
+    san: string;
+    uci: string;
+    epd_before: string;
+    epd_after: string;
+    clock_ms: number | null;
+    spent_ms: number | null;
+  }[];
+
+  const byGame = new Map<string, OpeningPly[]>();
+  for (const row of rows) {
+    let plies = byGame.get(row.game_id);
+    if (!plies) {
+      plies = [];
+      byGame.set(row.game_id, plies);
+    }
+    plies.push({
+      ply: row.ply,
+      san: row.san,
+      uci: row.uci,
+      epdBefore: row.epd_before,
+      epdAfter: row.epd_after,
+      clockMs: row.clock_ms,
+      spentMs: row.spent_ms
+    });
+  }
+  return byGame;
+}
+
+/** Every stored game's (id, time class, end time, post-game rating), for pre-game ratings. */
+export function listRatingHistory(db: Db, username: string): { id: string; timeClass: string; endTime: number; myRating: number }[] {
+  return db
+    .prepare("SELECT id, time_class AS timeClass, end_time AS endTime, my_rating AS myRating FROM games WHERE username = ?")
+    .all(username) as { id: string; timeClass: string; endTime: number; myRating: number }[];
+}
+
+/**
+ * Changes whenever the owner's stored games may have changed: every sync (server or CLI, which
+ * is also when months are re-derived) finishes a sync_runs row, and inserts take new rowids.
+ * Cheap enough to check on every request.
+ */
+export function gamesStamp(db: Db, username: string): string {
+  const row = db
+    .prepare(
+      `SELECT COUNT(*) AS n, COALESCE(MAX(rowid), 0) AS lastRow, COALESCE(MAX(end_time), 0) AS lastEnd,
+         (SELECT COUNT(finished_at) FROM sync_runs) AS lastSync
+       FROM games WHERE username = ?`
+    )
+    .get(username) as { n: number; lastRow: number; lastEnd: number; lastSync: number };
+  return `${row.n}|${row.lastRow}|${row.lastEnd}|${row.lastSync}`;
+}

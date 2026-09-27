@@ -1,4 +1,5 @@
 import type { IMPORTED_TIME_CLASSES, MOVE_CATEGORIES, SKIP_REASONS } from "./constants.js";
+import type { TreeNode } from "./openingTree.js";
 import type { GameWindow } from "./window.js";
 
 export type MoveCategory = (typeof MOVE_CATEGORIES)[number];
@@ -257,4 +258,19 @@ export interface OpeningReportResponse {
   /** Games per colour in the window; each colour's items add up to its total. */
   totals: Record<PlayerColor, number>;
   items: OpeningReportItem[];
+}
+
+/** GET /api/tree: one node of the owner's per-colour opening tree, with its move rows. */
+export interface TreeResponse {
+  window: QueryWindow;
+  color: PlayerColor;
+  /** null = blitz and rapid together. */
+  timeClass: TimeClass | null;
+  /** Recency half-life in days; null = unweighted. */
+  halfLifeDays: number | null;
+  /** Plies per game in the tree (OPENING_PLY_LIMIT). */
+  maxPly: number;
+  /** Games of this colour in the tree. */
+  games: number;
+  node: TreeNode;
 }

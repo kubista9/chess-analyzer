@@ -193,6 +193,9 @@ export function buildTree(games: readonly TreeGame[], options: BuildTreeOptions)
     return node;
   };
 
+  // The root exists even with no games, so an empty filter still has a start node.
+  nodeAt(START_EPD, 0);
+
   // Newest first, so every edge's game ids come out newest first.
   const ordered = games.filter((game) => game.color === color).sort((a, b) => b.endTime - a.endTime || (a.id < b.id ? 1 : -1));
 

@@ -1,13 +1,15 @@
 import type { AddressInfo } from "node:net";
 import type { Server } from "node:http";
 import { afterEach, describe, expect, it } from "vitest";
-import type { GamesResponse, JobState, OpeningReportResponse, SyncSummary } from "../shared/types.js";
+import { START_EPD } from "../shared/epd.js";
+import type { GamesResponse, JobState, OpeningReportResponse, SyncSummary, TreeResponse } from "../shared/types.js";
 import { loadOwnerGames } from "../test/loadFixtures.js";
 import { createApp } from "./app.js";
 import { openDatabase, type Db } from "./db/connection.js";
 import { replaceMonthGames } from "./db/games.js";
 import { createApiRouter } from "./routes.js";
 import { deriveMonth, utcMonth } from "./services/gameDerive.js";
+import { getOpeningBook } from "./services/openingBook.js";
 import { JobStore } from "./store/jobStore.js";
 
 const OWNER = "kubista9";
@@ -37,7 +39,7 @@ afterEach(() => {
 async function startApi(sync: () => Promise<SyncSummary> = () => new Promise(() => {})) {
   const db = storeWithOwnerGames();
   const jobs = new JobStore();
-  const router = createApiRouter({ db: () => db, jobs, owner: OWNER, now: () => NOW, sync });
+  const router = createApiRouter({ db: () => db, jobs, owner: OWNER, now: () => NOW, sync, book: getOpeningBook });
   const server = createApp(router).listen(0, "127.0.0.1");
   servers.push(server);
   await new Promise((resolve) => server.once("listening", resolve));
@@ -128,5 +130,61 @@ describe("games and report API", () => {
       const sum = body.items.filter((item) => item.color === color).reduce((total, item) => total + item.games, 0);
       expect(sum).toBe(body.totals[color]);
     }
+  });
+});
+
+describe("tree API", () => {
+  const tree = (query: string) => startApi().then(({ call }) => call<TreeResponse & { error?: string }>(`/tree?${query}`));
+  const epdQuery = (epd: string) => `epd=${encodeURIComponent(epd)}`;
+
+  it("returns the start node of one colour with its move rows", async () => {
+    const { status, body } = await tree("color=white");
+    expect(status).toBe(200);
+    expect(body).toMatchObject({ color: "white", timeClass: null, halfLifeDays: 90, maxPly: 20, games: 4 });
+    expect(body.window).toMatchObject({ key: "6m", days: 183 });
+    expect(body.node).toMatchObject({ epd: START_EPD, n: 4, ownerToMove: true, inBook: true });
+    expect(body.node.edges.reduce((sum, edge) => sum + edge.n, 0)).toBe(4);
+    const first = body.node.edges[0];
+    expect(first).toMatchObject({ owner: true, name: expect.any(String), inBook: true });
+    expect(first.gameIds).toHaveLength(first.n);
+    expect(first.weighted.wN).toBeLessThan(first.n);
+  });
+
+  it("descends by EPD and merges the fixture's transposition pair", async () => {
+    const { call } = await startApi();
+    let body = (await call<TreeResponse>("/tree?color=white&hl=off")).body;
+    // Follow the most-played move for 8 plies: both transposition games (1.c4) meet at ply 8.
+    const seen: number[] = [];
+    for (let ply = 0; ply < 8; ply += 1) {
+      const next = body.node.edges.find((edge) => edge.gameIds.includes("174004846670"))!;
+      body = (await call<TreeResponse>(`/tree?color=white&hl=off&${epdQuery(next.toEpd)}`)).body;
+      seen.push(body.node.n);
+    }
+    expect(body.node.ply).toBe(8);
+    expect(seen.at(-1)).toBe(2);
+    expect(seen.at(-2)).toBe(1);
+    expect(body.halfLifeDays).toBeNull();
+  });
+
+  it("applies the window, time class and half-life filters", async () => {
+    const { call } = await startApi();
+    expect((await call<TreeResponse>("/tree?color=black&window=3m")).body).toMatchObject({ halfLifeDays: null, games: 2 });
+    expect((await call<TreeResponse>("/tree?color=black&hl=60")).body).toMatchObject({ halfLifeDays: 60, games: 4 });
+    const rapid = await call<TreeResponse>("/tree?color=black&tc=rapid");
+    expect(rapid.status).toBe(200);
+    expect(rapid.body).toMatchObject({ timeClass: "rapid", games: 0 });
+    expect(rapid.body.node).toMatchObject({ n: 0, edges: [] });
+  });
+
+  it("rejects bad parameters and 404s a position the games never reached", async () => {
+    const { call } = await startApi();
+    expect((await call("/tree")).status).toBe(400);
+    expect((await call("/tree?color=red")).status).toBe(400);
+    expect((await call("/tree?color=white&epd=not-an-epd")).status).toBe(400);
+    expect((await call("/tree?color=white&hl=-1")).status).toBe(400);
+    expect((await call("/tree?color=white&window=12m")).status).toBe(400);
+    const unreached = await call<{ error: string }>(`/tree?color=white&${epdQuery("8/8/8/8/8/8/8/K6k w - -")}`);
+    expect(unreached.status).toBe(404);
+    expect(unreached.body.error).toMatch(/never reached/);
   });
 });
