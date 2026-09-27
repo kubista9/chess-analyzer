@@ -49,13 +49,12 @@
   min-width: 0;
   padding: 18px 20px;
   border-radius: 20px;
-  border: 1px solid var(--panel-line);
-  border-left: 4px solid rgba(217, 95, 95, 0.75);
+  border: 1px solid rgba(217, 95, 95, 0.32);
   background: rgba(31, 30, 28, 0.72);
 }
 
 .fix-card-watch {
-  border-left-color: rgba(240, 180, 93, 0.55);
+  border-color: rgba(240, 180, 93, 0.26);
 }
 
 .fix-card-head {
