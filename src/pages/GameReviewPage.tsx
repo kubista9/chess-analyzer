@@ -16,6 +16,7 @@ import { formatEval, whiteWinPercent, type WhiteEval } from "../../shared/eval";
 import { isJobActive } from "../../shared/jobPolling";
 import type { AnnotatedMove, GameRecord, JobState, MoveCategory, PlayerColor, ReviewSummary } from "../../shared/types";
 import { fetchGame, startGameReview } from "../api/client";
+import { boardTheme } from "../components/boardTheme";
 import { useJobPolling } from "../hooks/useJobPolling";
 import { useStoreQuery } from "../hooks/useStoreQuery";
 import { useWorkspace } from "../hooks/useWorkspace";
@@ -482,7 +483,7 @@ export function GameReviewPage() {
       {!gameId ? (
         <section className="panel empty-panel">
           <h2>No game selected</h2>
-          <p>Open the Game History page and click Review on a game you want to review.</p>
+          <p>Open the Explorer, pick a move and choose a game from its games list.</p>
         </section>
       ) : (
         <>
@@ -510,13 +511,7 @@ export function GameReviewPage() {
                         showBoardNotation={false}
                         customArrows={modeState.arrows}
                         customSquareStyles={modeState.squareStyles}
-                        customDarkSquareStyle={{ backgroundColor: "#779954" }}
-                        customLightSquareStyle={{ backgroundColor: "#eeeed2" }}
-                        customBoardStyle={{
-                          borderRadius: "10px",
-                          overflow: "hidden",
-                          boxShadow: "0 24px 40px rgba(0, 0, 0, 0.32)"
-                        }}
+                        {...boardTheme}
                       />
                     </div>
                     {boardPlayers ? (

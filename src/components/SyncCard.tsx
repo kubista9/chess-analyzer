@@ -1,3 +1,4 @@
+import { Link } from "react-router-dom";
 import { OPENING_PLY_LIMIT, OWNER_USERNAME } from "../../shared/constants";
 import { isJobActive } from "../../shared/jobPolling";
 import { useNow } from "../hooks/useNow";
@@ -28,9 +29,12 @@ export function SyncCard() {
         <h1>{counts ? `${formatCount(counts.total)} games` : "Your games"}</h1>
         {summary ? <p className="sync-summary">{summary}</p> : null}
         <p>
-          Standard blitz and rapid games from the last 6 months, stored locally. The Opening Report and Game
-          History cover every one of them; Stockfish reviews the first {OPENING_PLY_LIMIT / 2} moves of a game you
-          open.
+          Standard blitz and rapid games from the last 6 months, stored locally. The{" "}
+          <Link className="text-link" to="/explorer">
+            Explorer
+          </Link>{" "}
+          walks through every one of them move by move; Stockfish reviews the first {OPENING_PLY_LIMIT / 2} moves of a
+          game you open from there.
         </p>
         {status?.stale && !isSyncing ? (
           <p className="sync-note">The last successful sync is more than a day old. Sync to pick up new games.</p>

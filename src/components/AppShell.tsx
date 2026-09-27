@@ -1,14 +1,14 @@
 import { useEffect, useState } from "react";
 import { Link, NavLink, Outlet, useLocation } from "react-router-dom";
-import { BookOpen, History, Menu, X } from "lucide-react";
+import { Compass, House, Menu, X } from "lucide-react";
 import { OWNER_USERNAME } from "../../shared/constants";
 import { useNow } from "../hooks/useNow";
 import { useWorkspace } from "../hooks/useWorkspace";
 import { formatAgo, formatCount } from "../utils/formatters";
 
 const navItems = [
-  { to: "/history", label: "Game History", icon: History },
-  { to: "/openings", label: "Opening Report", icon: BookOpen }
+  { to: "/", label: "Home", icon: House, end: true },
+  { to: "/explorer", label: "Explorer", icon: Compass, end: false }
 ];
 
 export function AppShell() {
@@ -121,6 +121,7 @@ export function AppShell() {
               <NavLink
                 key={item.to}
                 to={item.to}
+                end={item.end}
                 className={({ isActive }) =>
                   `nav-link${isActive ? " nav-link-active" : ""}`
                 }

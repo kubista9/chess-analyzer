@@ -1,10 +1,12 @@
 import { BrowserRouter, Navigate, Route, Routes } from "react-router-dom";
 import { AppShell } from "./components/AppShell";
 import { WorkspaceProvider } from "./hooks/useWorkspace";
-import { GameHistoryPage } from "./pages/GameHistoryPage";
+import { ExplorerPage } from "./pages/ExplorerPage";
 import { GameReviewPage } from "./pages/GameReviewPage";
 import { HomePage } from "./pages/HomePage";
-import { OpeningReportPage } from "./pages/OpeningReportPage";
+
+// Routes of removed pages (the Opening Report, Game History and older ones) lead to the Explorer.
+const LEGACY_ROUTES = ["/openings", "/history", "/dashboard", "/training", "/review"];
 
 export default function App() {
   return (
@@ -13,12 +15,11 @@ export default function App() {
         <Routes>
           <Route element={<AppShell />}>
             <Route path="/" element={<HomePage />} />
-            <Route path="/dashboard" element={<Navigate to="/openings" replace />} />
-            <Route path="/history" element={<GameHistoryPage />} />
-            <Route path="/review" element={<Navigate to="/history" replace />} />
+            <Route path="/explorer" element={<ExplorerPage />} />
             <Route path="/review/:gameId" element={<GameReviewPage />} />
-            <Route path="/openings" element={<OpeningReportPage />} />
-            <Route path="/training" element={<Navigate to="/openings" replace />} />
+            {LEGACY_ROUTES.map((path) => (
+              <Route key={path} path={path} element={<Navigate to="/explorer" replace />} />
+            ))}
             <Route path="*" element={<Navigate to="/" replace />} />
           </Route>
         </Routes>

@@ -1,13 +1,13 @@
 import type {
   GameResponse,
-  GamesResponse,
   ImportStatus,
   JobState,
-  OpeningReportResponse,
   PlayerColor,
   ReviewSummary,
   SyncJobResult,
-  TimeClass
+  TimeClass,
+  TreeGamesResponse,
+  TreeResponse
 } from "../../shared/types";
 import type { GameWindow } from "../../shared/window";
 
@@ -53,25 +53,46 @@ export function startSync(full = false): Promise<JobState<SyncJobResult>> {
   });
 }
 
-export interface GameQuery {
-  window: GameWindow;
-  timeClass?: TimeClass;
-  color?: PlayerColor;
-}
-
-export function fetchGames(filter: GameQuery, signal?: AbortSignal): Promise<GamesResponse> {
-  return request<GamesResponse>(
-    `/api/games${query({ window: filter.window, tc: filter.timeClass, color: filter.color })}`,
-    { signal }
-  );
-}
-
 export function fetchGame(gameId: string, signal?: AbortSignal): Promise<GameResponse> {
   return request<GameResponse>(`/api/games/${encodeURIComponent(gameId)}`, { signal });
 }
 
-export function fetchOpeningReport(window: GameWindow, signal?: AbortSignal): Promise<OpeningReportResponse> {
-  return request<OpeningReportResponse>(`/api/openings/report${query({ window })}`, { signal });
+/** Which tree: colour, window, time class (undefined = both) and weighting (false = hl=off). */
+export interface TreeQuery {
+  color: PlayerColor;
+  window: GameWindow;
+  timeClass?: TimeClass;
+  /** false = unweighted; true = the window's default half-life. */
+  weighted: boolean;
+}
+
+function treeParams(tree: TreeQuery, moves: readonly string[]): Record<string, string | undefined> {
+  return {
+    color: tree.color,
+    moves: moves.join(",") || undefined,
+    window: tree.window,
+    tc: tree.timeClass,
+    hl: tree.weighted ? undefined : "off"
+  };
+}
+
+/** One node of the opening tree, reached by UCI moves from the start. */
+export function fetchTreeNode(tree: TreeQuery, moves: readonly string[], signal?: AbortSignal): Promise<TreeResponse> {
+  return request<TreeResponse>(`/api/tree${query(treeParams(tree, moves))}`, { signal });
+}
+
+/** One page of the games that played `uci` after `moves`. */
+export function fetchTreeGames(
+  tree: TreeQuery,
+  moves: readonly string[],
+  uci: string,
+  page: number,
+  signal?: AbortSignal
+): Promise<TreeGamesResponse> {
+  return request<TreeGamesResponse>(
+    `/api/tree/games${query({ ...treeParams(tree, moves), uci, page: String(page) })}`,
+    { signal }
+  );
 }
 
 export function startGameReview(gameId: string): Promise<JobState<ReviewSummary>> {

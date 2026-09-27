@@ -10,7 +10,6 @@ import {
 } from "react";
 import { JOB_LOST_MESSAGE, isJobActive } from "../../shared/jobPolling";
 import type { ImportStatus, JobState, ReviewSummary, SyncJobResult } from "../../shared/types";
-import { DEFAULT_GAME_WINDOW, type GameWindow } from "../../shared/window";
 import { ApiError, fetchActiveJobs, fetchJob, fetchStatus, startSync as postSync } from "../api/client";
 import { useJobPolling } from "./useJobPolling";
 
@@ -26,9 +25,6 @@ interface WorkspaceContextValue {
   startSync: (full?: boolean) => Promise<void>;
   /** Bumped when a sync completes, so pages refetch their store queries. */
   dataVersion: number;
-  /** The 6-month (default) or 3-month window shared by the Opening Report and Game History. */
-  gameWindow: GameWindow;
-  setGameWindow: (window: GameWindow) => void;
   // Reviews live in memory for this session only; the server caches them on disk.
   reviewCache: Record<string, ReviewSummary>;
   setReview: (gameId: string, review: ReviewSummary) => void;
@@ -94,7 +90,6 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
   const [statusError, setStatusError] = useState<string | null>(null);
   const [syncJob, setSyncJob] = useState<JobState<SyncJobResult> | null>(null);
   const [dataVersion, setDataVersion] = useState(0);
-  const [gameWindow, setGameWindow] = useState<GameWindow>(DEFAULT_GAME_WINDOW);
   const [reviewCache, setReviewCache] = useState<Record<string, ReviewSummary>>({});
   const [reviewJobs, setReviewJobs] = useState<Record<string, JobState<ReviewSummary> | null>>({});
   const startingSync = useRef(false);
@@ -195,14 +190,12 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
       syncJob,
       startSync,
       dataVersion,
-      gameWindow,
-      setGameWindow,
       reviewCache,
       setReview,
       reviewJobs,
       setReviewJob
     }),
-    [status, statusError, refreshStatus, syncJob, startSync, dataVersion, gameWindow, reviewCache, setReview, reviewJobs, setReviewJob]
+    [status, statusError, refreshStatus, syncJob, startSync, dataVersion, reviewCache, setReview, reviewJobs, setReviewJob]
   );
 
   return <WorkspaceContext.Provider value={value}>{children}</WorkspaceContext.Provider>;
