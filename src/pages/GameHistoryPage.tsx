@@ -1,17 +1,17 @@
 import { useMemo, useState } from "react";
 import { Link } from "react-router-dom";
-import { Equal, Minus, Plus, Rocket, Sun, Timer, Zap } from "lucide-react";
+import { Equal, Minus, Plus, Timer, Zap } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
+import { familyFromOpening } from "../../shared/chess";
+import { OWNER_USERNAME } from "../../shared/constants";
 import type { GameResult, PlayerColor, TimeClass } from "../../shared/types";
+import { fetchGames } from "../api/client";
+import { WindowToggle } from "../components/WindowToggle";
+import { useStoreQuery } from "../hooks/useStoreQuery";
 import { useWorkspace } from "../hooks/useWorkspace";
-import { resultLabel } from "../utils/formatters";
+import { formatCount, resultLabel } from "../utils/formatters";
 
 const timeClassMeta: Record<TimeClass, { label: string; fallback: string; Icon: LucideIcon }> = {
-  bullet: {
-    label: "Bullet",
-    fallback: "1 min",
-    Icon: Rocket
-  },
   blitz: {
     label: "Blitz",
     fallback: "3 min",
@@ -21,22 +21,12 @@ const timeClassMeta: Record<TimeClass, { label: string; fallback: string; Icon: 
     label: "Rapid",
     fallback: "10 min",
     Icon: Timer
-  },
-  daily: {
-    label: "Daily",
-    fallback: "1 day",
-    Icon: Sun
   }
 };
 
 function formatDuration(seconds: number): string | null {
   if (!Number.isFinite(seconds) || seconds <= 0) {
     return null;
-  }
-
-  if (seconds >= 86400) {
-    const days = Math.round(seconds / 86400);
-    return `${days} day${days === 1 ? "" : "s"}`;
   }
 
   if (seconds >= 3600) {
@@ -55,12 +45,6 @@ function formatTimeControl(timeControl: string | undefined, timeClass: TimeClass
   const fallback = timeClassMeta[timeClass].fallback;
   if (!timeControl) {
     return fallback;
-  }
-
-  const dailyParts = timeControl.split("/");
-  if (dailyParts.length > 1) {
-    const seconds = Number(dailyParts.at(-1));
-    return formatDuration(seconds) ?? fallback;
   }
 
   const baseSeconds = Number(timeControl.split("+")[0]);
@@ -88,17 +72,24 @@ function scorePair(result: GameResult): { player: string; opponent: string } {
 }
 
 export function GameHistoryPage() {
-  const { snapshot } = useWorkspace();
+  const { gameWindow, dataVersion } = useWorkspace();
+  const { data, error, loading } = useStoreQuery((signal) => fetchGames({ window: gameWindow }, signal), [
+    gameWindow,
+    dataVersion
+  ]);
   const [resultFilter, setResultFilter] = useState<"all" | GameResult>("all");
   const [colorFilter, setColorFilter] = useState<"all" | PlayerColor>("all");
+  const [timeClassFilter, setTimeClassFilter] = useState<"all" | TimeClass>("all");
   const [openingQuery, setOpeningQuery] = useState("");
 
-  const filteredGames = useMemo(() => {
-    if (!snapshot) {
-      return [];
-    }
+  const games = useMemo(
+    () => (data?.games ?? []).map((game) => ({ ...game, openingFamily: familyFromOpening(game.openingName) })),
+    [data]
+  );
 
-    return snapshot.games.filter((game) => {
+  const filteredGames = useMemo(() => {
+    const needle = openingQuery.trim().toLowerCase();
+    return games.filter((game) => {
       if (resultFilter !== "all" && game.result !== resultFilter) {
         return false;
       }
@@ -107,55 +98,82 @@ export function GameHistoryPage() {
         return false;
       }
 
-      if (
-        openingQuery.trim() &&
-        !`${game.openingName} ${game.openingFamily}`.toLowerCase().includes(openingQuery.trim().toLowerCase())
-      ) {
+      if (timeClassFilter !== "all" && game.timeClass !== timeClassFilter) {
+        return false;
+      }
+
+      if (needle && !`${game.openingName} ${game.openingFamily} ${game.eco ?? ""}`.toLowerCase().includes(needle)) {
         return false;
       }
 
       return true;
     });
-  }, [snapshot, resultFilter, colorFilter, openingQuery]);
+  }, [games, resultFilter, colorFilter, timeClassFilter, openingQuery]);
 
   return (
     <div className="page-content">
       <section className="page-header">
         <div>
           <h1>Game History</h1>
+          <p>Every stored blitz and rapid game in the window, newest first. Review opens the first 10 moves.</p>
         </div>
+        <WindowToggle />
       </section>
 
-      {!snapshot ? (
+      {error ? <div className="error-text">Could not load your games: {error}</div> : null}
+
+      {!data || !games.length ? (
         <section className="panel empty-panel">
-          <h2>No game history yet</h2>
-          <p>Load your recent games from Home first so this table has something to work with.</p>
+          <h2>{loading ? "Loading your games" : "No games in this window"}</h2>
+          <p>{loading ? "Reading your games from the local store." : "Sync your games from Home first."}</p>
         </section>
       ) : (
         <section className="panel">
           <div className="filters-row">
-            <select value={resultFilter} onChange={(event) => setResultFilter(event.target.value as typeof resultFilter)}>
+            <select
+              aria-label="Result"
+              value={resultFilter}
+              onChange={(event) => setResultFilter(event.target.value as typeof resultFilter)}
+            >
               <option value="all">All results</option>
               <option value="win">Wins</option>
               <option value="loss">Losses</option>
               <option value="draw">Draws</option>
             </select>
 
-            <select value={colorFilter} onChange={(event) => setColorFilter(event.target.value as typeof colorFilter)}>
+            <select
+              aria-label="Colour"
+              value={colorFilter}
+              onChange={(event) => setColorFilter(event.target.value as typeof colorFilter)}
+            >
               <option value="all">Both colors</option>
               <option value="white">White</option>
               <option value="black">Black</option>
             </select>
 
+            <select
+              aria-label="Time class"
+              value={timeClassFilter}
+              onChange={(event) => setTimeClassFilter(event.target.value as typeof timeClassFilter)}
+            >
+              <option value="all">Blitz and rapid</option>
+              <option value="blitz">Blitz</option>
+              <option value="rapid">Rapid</option>
+            </select>
+
             <input
+              aria-label="Opening"
               value={openingQuery}
               onChange={(event) => setOpeningQuery(event.target.value)}
-              placeholder="Filter opening..."
+              placeholder="Filter opening or ECO..."
             />
           </div>
 
           <div className="history-list">
-            <div className="history-list-title">Game History ({filteredGames.length})</div>
+            <div className="history-list-title">
+              Game History ({formatCount(filteredGames.length)}
+              {filteredGames.length === games.length ? "" : ` of ${formatCount(games.length)}`})
+            </div>
             <div className="history-list-header" aria-hidden="true">
               <span />
               <span>Players</span>
@@ -168,12 +186,10 @@ export function GameHistoryPage() {
             {filteredGames.map((game) => {
               const { Icon, label } = timeClassMeta[game.timeClass];
               const scores = scorePair(game.result);
-              const white = game.color === "white"
-                ? { name: snapshot.username, rating: game.playerRating, isPlayer: true }
-                : { name: game.opponent, rating: game.opponentRating, isPlayer: false };
-              const black = game.color === "black"
-                ? { name: snapshot.username, rating: game.playerRating, isPlayer: true }
-                : { name: game.opponent, rating: game.opponentRating, isPlayer: false };
+              const me = { name: OWNER_USERNAME, rating: game.myRating };
+              const opponent = { name: game.oppName, rating: game.oppRating };
+              const white = game.color === "white" ? me : opponent;
+              const black = game.color === "black" ? me : opponent;
               const whiteScore = game.color === "white" ? scores.player : scores.opponent;
               const blackScore = game.color === "black" ? scores.player : scores.opponent;
               const ResultIcon = game.result === "win" ? Plus : game.result === "loss" ? Minus : Equal;
@@ -201,7 +217,7 @@ export function GameHistoryPage() {
                     </div>
                   </div>
 
-                  <div className="history-result-stack" aria-label={`${resultLabel(game.result)} for ${snapshot.username}`}>
+                  <div className="history-result-stack" aria-label={`${resultLabel(game.result)} for ${OWNER_USERNAME}`}>
                     <div className="history-score-pair">
                       <span>{whiteScore}</span>
                       <span>{blackScore}</span>
@@ -217,7 +233,7 @@ export function GameHistoryPage() {
                     </Link>
                   </div>
 
-                  <div className="history-moves">{Math.ceil(game.plies / 2)}</div>
+                  <div className="history-moves">{Math.ceil(game.plyCount / 2)}</div>
                   <div className="history-date">{formatHistoryDate(game.endTime)}</div>
                 </article>
               );

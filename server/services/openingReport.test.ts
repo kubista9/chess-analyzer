@@ -1,33 +1,16 @@
 import { describe, expect, it } from "vitest";
-import type { HistoryGameSummary } from "../../shared/types.js";
-import { asArchiveGame, loadOwnerGames } from "../../test/loadFixtures.js";
 import { OWNER_USERNAME } from "../../shared/constants.js";
-import { playerColorForGame } from "./gameParser.js";
-import { summarizeGame } from "./gameSummary.js";
-import { buildOpeningReport, scorePercent } from "./openingReport.js";
+import type { PlayerColor, GameResult } from "../../shared/types.js";
+import { loadOwnerGames } from "../../test/loadFixtures.js";
+import { deriveMonth } from "./gameDerive.js";
+import { buildOpeningReport, scorePercent, type ReportGame } from "./openingReport.js";
 
-function summary(overrides: Partial<HistoryGameSummary>): HistoryGameSummary {
-  return {
-    id: "1",
-    url: "",
-    opponent: "opponent",
-    opponentRating: 1200,
-    playerRating: 1200,
-    color: "white",
-    result: "win",
-    openingName: "",
-    openingFamily: "English",
-    endTime: 0,
-    plies: 40,
-    timeClass: "blitz",
-    ...overrides
-  };
+function game(color: PlayerColor, result: GameResult, openingName = "English Opening"): ReportGame {
+  return { color, result, openingName };
 }
 
-const ownerSummaries = loadOwnerGames().map((raw) => {
-  const game = asArchiveGame(raw);
-  return summarizeGame(game, playerColorForGame(game, OWNER_USERNAME)!);
-});
+// The owner's 8 real games as the importer stores them.
+const ownerGames = deriveMonth(OWNER_USERNAME, "2026-09", loadOwnerGames()).games.map(({ record }) => record);
 
 describe("scorePercent", () => {
   it("counts a draw as half a point", () => {
@@ -37,17 +20,13 @@ describe("scorePercent", () => {
   });
 });
 
-describe("summarizeGame", () => {
-  it("summarises the owner's real games from results only", () => {
-    const byId = Object.fromEntries(ownerSummaries.map((entry) => [entry.id, entry]));
-    expect(byId["184405952510"]).toMatchObject({
-      color: "black",
-      result: "loss",
-      opponent: "fernando787",
-      openingFamily: "Scandinavian",
-      plies: 127
-    });
-    expect(byId["170183655724"]).toMatchObject({ color: "white", result: "loss", openingFamily: "English", plies: 28 });
+describe("stored GameRecords", () => {
+  it("carry what the report needs from results only", () => {
+    const byId = Object.fromEntries(ownerGames.map((entry) => [entry.id, entry]));
+    expect(ownerGames).toHaveLength(8);
+    expect(byId["184405952510"]).toMatchObject({ color: "black", result: "loss", oppName: "fernando787", plyCount: 127 });
+    expect(byId["184405952510"].openingName).toMatch(/^Scandinavian/);
+    expect(byId["170183655724"]).toMatchObject({ color: "white", result: "loss", plyCount: 28 });
     expect(byId["167672140552"]).toMatchObject({ color: "black", result: "win" });
     expect(byId["170180310304"]).toMatchObject({ color: "black", result: "draw" });
   });
@@ -55,7 +34,7 @@ describe("summarizeGame", () => {
 
 describe("buildOpeningReport", () => {
   it("splits the owner's openings by colour", () => {
-    const report = buildOpeningReport(ownerSummaries);
+    const report = buildOpeningReport(ownerGames);
     const families = (color: string) => report.filter((item) => item.color === color).map((item) => item.openingFamily);
 
     expect(families("white")).toContain("English");
@@ -69,21 +48,18 @@ describe("buildOpeningReport", () => {
   });
 
   it("keeps W+D+L equal to games, and the totals per colour", () => {
-    const report = buildOpeningReport(ownerSummaries);
+    const report = buildOpeningReport(ownerGames);
     for (const item of report) {
       expect(item.wins + item.draws + item.losses).toBe(item.games);
     }
     for (const color of ["white", "black"] as const) {
       const reported = report.filter((item) => item.color === color).reduce((sum, item) => sum + item.games, 0);
-      expect(reported).toBe(ownerSummaries.filter((entry) => entry.color === color).length);
+      expect(reported).toBe(ownerGames.filter((entry) => entry.color === color).length);
     }
   });
 
   it("keeps one family played with both colours as two items", () => {
-    const report = buildOpeningReport([
-      summary({ id: "a", color: "white", result: "win" }),
-      summary({ id: "b", color: "black", result: "draw" })
-    ]);
+    const report = buildOpeningReport([game("white", "win"), game("black", "draw")]);
     expect(report).toEqual([
       { color: "white", openingFamily: "English", games: 1, wins: 1, draws: 0, losses: 0, scorePct: 100 },
       { color: "black", openingFamily: "English", games: 1, wins: 0, draws: 1, losses: 0, scorePct: 50 }
@@ -92,12 +68,12 @@ describe("buildOpeningReport", () => {
 
   it("sorts White first, then by games, then by name, with no cap", () => {
     const games = [
-      summary({ color: "black", openingFamily: "Sicilian" }),
-      summary({ color: "white", openingFamily: "Zukertort" }),
-      summary({ color: "white", openingFamily: "Bird" }),
-      summary({ color: "white", openingFamily: "London" }),
-      summary({ color: "white", openingFamily: "London" }),
-      ...Array.from({ length: 12 }, (_, index) => summary({ color: "black", openingFamily: `Family ${index}` }))
+      game("black", "win", "Sicilian Defense"),
+      game("white", "win", "Zukertort Opening"),
+      game("white", "win", "Bird Opening"),
+      game("white", "win", "London System"),
+      game("white", "loss", "London System Accelerated"),
+      ...Array.from({ length: 12 }, (_, index) => game("black", "win", `Family ${index}`))
     ];
     const report = buildOpeningReport(games);
     expect(report.slice(0, 4).map((item) => `${item.color} ${item.openingFamily}`)).toEqual([

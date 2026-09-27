@@ -100,7 +100,8 @@ describe("deriveMonth on the owner's real games", () => {
 });
 
 describe("a large month", () => {
-  it("keeps all 400 distinct games (no count cap)", () => {
+  // CPU-bound (~1.5 s alone: 400 games x 30 replayed plies); allow for parallel test files.
+  it("keeps all 400 distinct games (no count cap)", { timeout: 30_000 }, () => {
     const template = loadArchiveSample().games[0];
     const month: RawChessComGame[] = Array.from({ length: 400 }, (_, index) => ({
       ...template,

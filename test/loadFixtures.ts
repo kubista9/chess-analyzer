@@ -1,6 +1,6 @@
 import fs from "node:fs";
 import { familyFromOpening } from "../shared/chess.js";
-import type { ArchiveGame } from "../shared/types.js";
+import type { LegacyRawGame } from "../server/services/rawGamesSeed.js";
 
 // Raw game objects as returned by https://api.chess.com/pub/player/<user>/games/YYYY/MM.
 export interface RawChessComPlayer {
@@ -51,10 +51,10 @@ export function gameId(game: RawChessComGame): string {
 }
 
 /**
- * A raw fixture game as the server's ArchiveGame, with the opening name taken from the
- * Chess.com ECO URL slug the same way chessCom.ts does it.
+ * A raw fixture game as the legacy fetcher stored it in raw-games/<owner>.json (the offline
+ * seed input), with the opening name taken from the Chess.com ECO URL slug.
  */
-export function asArchiveGame(raw: RawChessComGame, timeClass: ArchiveGame["timeClass"] = "blitz"): ArchiveGame {
+export function asLegacyRawGame(raw: RawChessComGame, timeClass: string = "blitz"): LegacyRawGame {
   const slug = raw.eco?.split("/").filter(Boolean).at(-1);
   const openingName = slug ? decodeURIComponent(slug).replace(/-/g, " ") : "Unknown opening";
   return {

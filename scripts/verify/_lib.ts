@@ -1,11 +1,8 @@
 // Shared helpers for the read-only verify scripts (npx tsx scripts/verify/<name>.ts).
 // Nothing here writes to storage/.
 import fs from "node:fs";
-import path from "node:path";
 import { config } from "../../server/config.js";
 import { openDatabase, type Db } from "../../server/db/connection.js";
-import { safeKey } from "../../server/store/fileStore.js";
-import type { ArchiveGame } from "../../shared/types.js";
 import { WINDOW_DAYS, endOfUtcDay, windowBounds, type WindowBounds } from "../../shared/window.js";
 
 export { isInWindow } from "../../shared/window.js";
@@ -54,17 +51,6 @@ export function readAsofWindow(argv: string[] = process.argv.slice(2)): AsofWind
   }
 
   return { asof, days, ...windowBounds(endOfUtcDay(asof), days) };
-}
-
-/** The server's converted raw-games cache (storage/cache/raw-games/<user>.json), read-only. */
-export function loadRawGames(username: string = OWNER): ArchiveGame[] {
-  const filePath = path.join(config.cacheDir, "raw-games", `${safeKey(username)}.json`);
-  if (!fs.existsSync(filePath)) {
-    throw new Error(`No raw-games cache at ${filePath}. Sync the owner's games in the app first.`);
-  }
-
-  const payload = JSON.parse(fs.readFileSync(filePath, "utf8")) as { games?: ArchiveGame[] };
-  return payload.games ?? [];
 }
 
 /** storage/chess.db, opened read-only (no migrations, no writes). */

@@ -13,7 +13,7 @@
 import { IMPORTED_TIME_CLASSES } from "../../shared/constants.js";
 import { countGames } from "../../server/db/games.js";
 import { lastSyncRun } from "../../server/db/syncRuns.js";
-import type { SyncSummary } from "../../server/services/archiveImport.js";
+import type { SyncSummary } from "../../shared/types.js";
 import { OWNER, isInWindow, loadArchiveMonths, openStoreReadonly, printTable, readAsofWindow, type TableRow } from "./_lib.js";
 
 const STANDARD_START = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq -";

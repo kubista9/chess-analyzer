@@ -3,8 +3,9 @@ import type { ReviewSummary } from "../../shared/types.js";
 import { config } from "../config.js";
 import { REVIEW_SCHEMA_VERSION, reviewCachePath } from "../store/cachePaths.js";
 import { readVersionedJson, writeVersionedJson } from "../store/fileStore.js";
-import { findGameForUser } from "./chessCom.js";
-import { parseGame, playerColorForGame } from "./gameParser.js";
+import type { Db } from "../db/connection.js";
+import { getGame, getGamePgn } from "../db/games.js";
+import { parseGame } from "./gameParser.js";
 import { analysisFromLines, annotateMoves, reviewHeader, terminalAnalysis, type PositionAnalysis } from "./reviewMoves.js";
 import { StockfishSession } from "./stockfish.js";
 
@@ -20,24 +21,26 @@ export async function readCachedGameReview(gameId: string): Promise<ReviewSummar
   );
 }
 
-export async function runGameReview(gameId: string): Promise<ReviewSummary> {
+/** Reviews a stored game's opening. The game and its full PGN come from the game store. */
+export async function runGameReview(
+  db: Db,
+  gameId: string,
+  onProgress?: (done: number, total: number) => void
+): Promise<ReviewSummary> {
   const username = config.owner;
   const cached = await readCachedGameReview(gameId);
   if (cached) {
     return cached;
   }
 
-  const game = await findGameForUser(username, gameId);
-  if (!game) {
-    throw new Error(`Could not find game ${gameId} for ${username}. Load recent games from Home first.`);
+  const game = getGame(db, gameId);
+  const pgn = getGamePgn(db, gameId);
+  if (!game || !pgn) {
+    throw new Error(`Game ${gameId} is not in the game store. Sync from Home first.`);
   }
 
-  const playerColor = playerColorForGame(game, username);
-  if (!playerColor) {
-    throw new Error(`Game ${gameId} was not played by ${username}, so it cannot be reviewed from their side.`);
-  }
-
-  const moves = parseGame(game).moves.slice(0, OPENING_PLY_LIMIT);
+  const playerColor = game.color;
+  const moves = parseGame(pgn).moves.slice(0, OPENING_PLY_LIMIT);
   if (!moves.length) {
     throw new Error(`Game ${gameId} has no moves to review.`);
   }
@@ -51,6 +54,7 @@ export async function runGameReview(gameId: string): Promise<ReviewSummary> {
     await session.initialize();
     const analyses: PositionAnalysis[] = [];
     for (const fen of positions) {
+      onProgress?.(analyses.length, positions.length);
       const terminal = terminalAnalysis(fen);
       if (terminal) {
         analyses.push(terminal);
@@ -68,7 +72,7 @@ export async function runGameReview(gameId: string): Promise<ReviewSummary> {
     const review: ReviewSummary = {
       gameId: game.id,
       color: playerColor,
-      header: reviewHeader(game, playerColor),
+      header: reviewHeader(game, username),
       moves: annotateMoves(moves, analyses, playerColor)
     };
 

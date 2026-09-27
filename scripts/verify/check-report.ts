@@ -1,14 +1,14 @@
-// Prints the results-only Opening Report per colour over the raw games cache and checks its
-// invariants. Read-only; no engine.
+// Prints the results-only Opening Report per colour over the SQLite game store and checks
+// its invariants. Read-only; no engine.
 //
-//   npx tsx scripts/verify/check-report.ts [--time-class blitz,rapid] [--asof YYYY-MM-DD [--days N]]
+//   npx tsx scripts/verify/check-report.ts [--time-class blitz|rapid] [--asof YYYY-MM-DD [--days N]]
 //
-// Without --asof every cached game counts; with it, only games inside the window.
-import { OWNER, argValue, isInWindow, loadRawGames, printTable, readAsofWindow } from "./_lib.js";
-import { playerColorForGame } from "../../server/services/gameParser.js";
-import { summarizeGame } from "../../server/services/gameSummary.js";
+// The window defaults to the last WINDOW_DAYS (183) days ending today (UTC); --asof pins it.
+import { IMPORTED_TIME_CLASSES } from "../../shared/constants.js";
+import { countGames, listGames } from "../../server/db/games.js";
 import { buildOpeningReport, scorePercent } from "../../server/services/openingReport.js";
-import type { HistoryGameSummary, PlayerColor } from "../../shared/types.js";
+import type { PlayerColor, TimeClass } from "../../shared/types.js";
+import { OWNER, argValue, openStoreReadonly, printTable, readAsofWindow } from "./_lib.js";
 
 const failures: string[] = [];
 function check(condition: boolean, message: string): void {
@@ -17,37 +17,26 @@ function check(condition: boolean, message: string): void {
   }
 }
 
-const timeClasses = argValue("time-class")?.split(",").map((value) => value.trim());
-const window = argValue("asof") ? readAsofWindow() : null;
-
-const rawGames = loadRawGames();
-const games = rawGames
-  .filter((game) => !timeClasses || timeClasses.includes(game.timeClass))
-  .filter((game) => !window || isInWindow(game.endTime, window));
-
-const summaries: HistoryGameSummary[] = [];
-let unresolved = 0;
-for (const game of games) {
-  const color = playerColorForGame(game, OWNER);
-  if (color) {
-    summaries.push(summarizeGame(game, color));
-  } else {
-    unresolved += 1;
-  }
+const timeClass = argValue("time-class") as TimeClass | undefined;
+if (timeClass && !(IMPORTED_TIME_CLASSES as readonly string[]).includes(timeClass)) {
+  throw new Error(`--time-class must be one of ${IMPORTED_TIME_CLASSES.join(", ")}`);
 }
-
-const report = buildOpeningReport(summaries);
+const window = readAsofWindow();
+const db = openStoreReadonly();
+const games = listGames(db, OWNER, window, { timeClass });
+const counts = countGames(db, OWNER, window);
+const report = buildOpeningReport(games);
 
 console.log(
-  `Owner ${OWNER}: ${rawGames.length} cached games, ${games.length} selected` +
-    (timeClasses ? ` (time class ${timeClasses.join("/")})` : "") +
-    (window ? ` (window ${window.days} days to ${window.asof})` : "") +
-    `, ${unresolved} not played by the owner.`
+  `Owner ${OWNER}: ${games.length} stored games in the window (${window.days} days to ${window.asof})` +
+    (timeClass ? `, time class ${timeClass}` : `, ${counts.byTimeClass.blitz} blitz / ${counts.byTimeClass.rapid} rapid`) +
+    "."
 );
+check(timeClass !== undefined || games.length === counts.total, `listGames returned ${games.length}, countGames ${counts.total}`);
 
 for (const color of ["white", "black"] as PlayerColor[]) {
   const items = report.filter((item) => item.color === color);
-  const colorGames = summaries.filter((entry) => entry.color === color);
+  const colorGames = games.filter((entry) => entry.color === color);
   const wins = colorGames.filter((entry) => entry.result === "win").length;
   const draws = colorGames.filter((entry) => entry.result === "draw").length;
 
@@ -69,6 +58,10 @@ for (const color of ["white", "black"] as PlayerColor[]) {
   check(
     items.reduce((sum, item) => sum + item.games, 0) === colorGames.length,
     `${color}: report games do not add up to the ${colorGames.length} games played with that colour`
+  );
+  check(
+    timeClass !== undefined || colorGames.length === counts.byColor[color],
+    `${color}: ${colorGames.length} games, but the store counts ${counts.byColor[color]}`
   );
 }
 

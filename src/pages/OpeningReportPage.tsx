@@ -1,7 +1,12 @@
+import { useState } from "react";
 import { Chess } from "chess.js";
 import { Chessboard } from "react-chessboard";
 import type { OpeningReportItem, PlayerColor } from "../../shared/types";
+import { fetchOpeningReport } from "../api/client";
+import { WindowToggle } from "../components/WindowToggle";
+import { useStoreQuery } from "../hooks/useStoreQuery";
 import { useWorkspace } from "../hooks/useWorkspace";
+import { formatCount } from "../utils/formatters";
 
 interface OpeningPreview {
   title: string;
@@ -155,14 +160,17 @@ const colorSections: Array<{ color: PlayerColor; title: string }> = [
 function OpeningCard({ opening }: { opening: OpeningReportItem }) {
   const preview = openingPreviewFor(opening.openingFamily);
   const cardKey = `${opening.color}-${normalizeOpeningName(opening.openingFamily).replace(/\s+/g, "-")}`;
+  // The report has ~80 cards; each preview board mounts on the first hover or focus only.
+  const [hasPreview, setHasPreview] = useState(false);
+  const showPreview = () => setHasPreview(true);
 
   return (
-    <article className="opening-card">
+    <article className="opening-card" onMouseEnter={showPreview} onFocus={showPreview}>
       <div className="opening-card-header">
         <div>
           <h2>{opening.openingFamily}</h2>
           <p>
-            {opening.games} game{opening.games === 1 ? "" : "s"} in sample
+            {formatCount(opening.games)} game{opening.games === 1 ? "" : "s"}
           </p>
         </div>
         <div className="opening-pill">{opening.scorePct.toFixed(0)}% score</div>
@@ -190,23 +198,25 @@ function OpeningCard({ opening }: { opening: OpeningReportItem }) {
           <p>{preview.idea}</p>
           <div className="opening-preview-line">{preview.moves.join(" ")}</div>
         </div>
-        <div className="opening-preview-board">
-          <Chessboard
-            id={`opening-preview-${cardKey}`}
-            position={preview.fen}
-            boardWidth={OPENING_PREVIEW_BOARD_WIDTH}
-            boardOrientation={opening.color}
-            arePiecesDraggable={false}
-            areArrowsAllowed={false}
-            showBoardNotation={false}
-            customDarkSquareStyle={{ backgroundColor: "#779954" }}
-            customLightSquareStyle={{ backgroundColor: "#eeeed2" }}
-            customBoardStyle={{
-              borderRadius: "14px",
-              overflow: "hidden",
-              boxShadow: "0 18px 34px rgba(0, 0, 0, 0.34)"
-            }}
-          />
+        <div className="opening-preview-board" style={{ minHeight: OPENING_PREVIEW_BOARD_WIDTH }}>
+          {hasPreview ? (
+            <Chessboard
+              id={`opening-preview-${cardKey}`}
+              position={preview.fen}
+              boardWidth={OPENING_PREVIEW_BOARD_WIDTH}
+              boardOrientation={opening.color}
+              arePiecesDraggable={false}
+              areArrowsAllowed={false}
+              showBoardNotation={false}
+              customDarkSquareStyle={{ backgroundColor: "#779954" }}
+              customLightSquareStyle={{ backgroundColor: "#eeeed2" }}
+              customBoardStyle={{
+                borderRadius: "14px",
+                overflow: "hidden",
+                boxShadow: "0 18px 34px rgba(0, 0, 0, 0.34)"
+              }}
+            />
+          ) : null}
         </div>
       </aside>
     </article>
@@ -214,29 +224,48 @@ function OpeningCard({ opening }: { opening: OpeningReportItem }) {
 }
 
 export function OpeningReportPage() {
-  const { snapshot } = useWorkspace();
+  const { gameWindow, dataVersion } = useWorkspace();
+  const { data, error, loading } = useStoreQuery(
+    (signal) => fetchOpeningReport(gameWindow, signal),
+    [gameWindow, dataVersion]
+  );
+  const total = data ? data.totals.white + data.totals.black : 0;
+  const windowLabel = gameWindow === "3m" ? "3 months" : "6 months";
 
   return (
     <div className="page-content">
       <section className="page-header">
         <div>
           <h1>Opening Report</h1>
-          <p>Results by opening family, split by your colour. Score counts a win as 1 and a draw as 0.5.</p>
+          <p>
+            Results by opening family over {data ? `all ${formatCount(total)}` : "all your"} blitz and rapid games
+            of the last {windowLabel}, split by your colour. Score counts a win as 1 and a draw as 0.5.
+          </p>
         </div>
+        <WindowToggle />
       </section>
 
-      {!snapshot ? (
+      {error ? <div className="error-text">Could not load the report: {error}</div> : null}
+
+      {!data ? (
         <section className="panel empty-panel">
-          <h2>No opening report yet</h2>
-          <p>Load your recent games from Home and this page will group them by colour and opening family.</p>
+          <h2>{loading ? "Loading the report" : "No opening report"}</h2>
+          <p>{loading ? "Reading your games from the local store." : "Sync your games from Home, then come back."}</p>
+        </section>
+      ) : total === 0 ? (
+        <section className="panel empty-panel">
+          <h2>No games in the last {windowLabel}</h2>
+          <p>Sync your games from Home and this page will group them by colour and opening family.</p>
         </section>
       ) : (
         colorSections.map(({ color, title }) => {
-          const openings = snapshot.topOpenings.filter((opening) => opening.color === color);
+          const openings = data.items.filter((opening) => opening.color === color);
 
           return (
             <section className="panel opening-section" key={color} aria-label={title}>
-              <h2 className="opening-section-title">{title}</h2>
+              <h2 className="opening-section-title">
+                {title} <span className="opening-section-count">· {formatCount(data.totals[color])} games</span>
+              </h2>
               {openings.length ? (
                 <div className="list-panel">
                   {openings.map((opening) => (
@@ -244,7 +273,7 @@ export function OpeningReportPage() {
                   ))}
                 </div>
               ) : (
-                <p className="opening-section-empty">No games as {color} in this sample.</p>
+                <p className="opening-section-empty">No games as {color} in this window.</p>
               )}
             </section>
           );

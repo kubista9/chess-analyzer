@@ -1,5 +1,5 @@
 import type { DerivedGame } from "../services/gameDerive.js";
-import type { GameRecord, GameResult, ImportedTimeClass, OpeningPly, PlayerColor } from "../../shared/types.js";
+import type { GameCounts, GameRecord, GameResult, OpeningPly, PlayerColor, TimeClass } from "../../shared/types.js";
 import type { WindowBounds } from "../../shared/window.js";
 import type { Db } from "./connection.js";
 
@@ -38,7 +38,7 @@ function toRecord(row: GameRow): GameRecord {
     url: row.url,
     month: row.month,
     endTime: row.end_time,
-    timeClass: row.time_class as ImportedTimeClass,
+    timeClass: row.time_class as TimeClass,
     timeControl: row.time_control,
     tc: row.tc_base === null ? null : { base: row.tc_base, inc: row.tc_inc ?? 0 },
     rated: row.rated === 1,
@@ -107,16 +107,6 @@ export function monthsWithGames(db: Db, username: string): Set<string> {
   );
 }
 
-export interface GameCounts {
-  total: number;
-  byTimeClass: Record<ImportedTimeClass, number>;
-  byColor: Record<PlayerColor, number>;
-  /** e.g. { "blitz|white": 612 } */
-  byTimeClassColor: Record<string, number>;
-  firstEndTime: number | null;
-  lastEndTime: number | null;
-}
-
 /** Counts of the owner's stored games with start <= end_time <= end. */
 export function countGames(db: Db, username: string, bounds: WindowBounds): GameCounts {
   const rows = db
@@ -125,7 +115,7 @@ export function countGames(db: Db, username: string, bounds: WindowBounds): Game
        FROM games WHERE username = ? AND end_time BETWEEN ? AND ?
        GROUP BY time_class, color`
     )
-    .all(username, bounds.start, bounds.end) as { time_class: ImportedTimeClass; color: PlayerColor; n: number; first: number; last: number }[];
+    .all(username, bounds.start, bounds.end) as { time_class: TimeClass; color: PlayerColor; n: number; first: number; last: number }[];
 
   const counts: GameCounts = {
     total: 0,
@@ -163,13 +153,33 @@ export function getGame(db: Db, id: string): GameRecord | undefined {
   return row && toRecord(row);
 }
 
-/** The owner's games in the window, newest first. */
-export function listGames(db: Db, username: string, bounds: WindowBounds): GameRecord[] {
+export interface GameFilter {
+  timeClass?: TimeClass;
+  color?: PlayerColor;
+}
+
+/** The owner's games in the window (optionally one time class and/or colour), newest first. */
+export function listGames(db: Db, username: string, bounds: WindowBounds, filter: GameFilter = {}): GameRecord[] {
   return (
     db
-      .prepare("SELECT * FROM games WHERE username = ? AND end_time BETWEEN ? AND ? ORDER BY end_time DESC, id DESC")
-      .all(username, bounds.start, bounds.end) as GameRow[]
+      .prepare(
+        `SELECT * FROM games WHERE username = @username AND end_time BETWEEN @start AND @end
+           AND (@timeClass IS NULL OR time_class = @timeClass) AND (@color IS NULL OR color = @color)
+         ORDER BY end_time DESC, id DESC`
+      )
+      .all({
+        username,
+        start: bounds.start,
+        end: bounds.end,
+        timeClass: filter.timeClass ?? null,
+        color: filter.color ?? null
+      }) as GameRow[]
   ).map(toRecord);
+}
+
+/** The full PGN of a stored game (the review replays it). */
+export function getGamePgn(db: Db, id: string): string | undefined {
+  return (db.prepare("SELECT pgn FROM games WHERE id = ?").get(id) as { pgn: string } | undefined)?.pgn;
 }
 
 /** The stored opening plies of one game (at most DERIVE_PLY_LIMIT), in order. */

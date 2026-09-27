@@ -2,7 +2,9 @@ import { useEffect, useState } from "react";
 import { Link, NavLink, Outlet, useLocation } from "react-router-dom";
 import { BookOpen, History, Menu, X } from "lucide-react";
 import { OWNER_USERNAME } from "../../shared/constants";
+import { useNow } from "../hooks/useNow";
 import { useWorkspace } from "../hooks/useWorkspace";
+import { formatAgo, formatCount } from "../utils/formatters";
 
 const navItems = [
   { to: "/history", label: "Game History", icon: History },
@@ -10,7 +12,15 @@ const navItems = [
 ];
 
 export function AppShell() {
-  const { snapshot } = useWorkspace();
+  const { status } = useWorkspace();
+  const now = useNow();
+  const footer = status
+    ? [
+        OWNER_USERNAME,
+        `${formatCount(status.counts.total)} games`,
+        status.lastSync ? `synced ${formatAgo(status.lastSync.at, now)}` : "not synced"
+      ].join(" · ")
+    : OWNER_USERNAME;
   const location = useLocation();
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const [isCompact, setIsCompact] = useState(false);
@@ -126,9 +136,7 @@ export function AppShell() {
 
         <div className="sidebar-footer">
           <div className="footer-label">Current workspace</div>
-          <div className="footer-value">
-            {snapshot ? `${OWNER_USERNAME} · ${snapshot.limit} games` : OWNER_USERNAME}
-          </div>
+          <div className="footer-value">{footer}</div>
         </div>
       </aside>
 

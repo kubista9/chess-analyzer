@@ -1,8 +1,9 @@
 import { describe, expect, it } from "vitest";
 import { OPENING_PLY_LIMIT, OWNER_USERNAME } from "../../shared/constants.js";
 import { formatEval } from "../../shared/eval.js";
-import type { ArchiveGame, EngineLine } from "../../shared/types.js";
-import { asArchiveGame, loadOwnerGames } from "../../test/loadFixtures.js";
+import type { EngineLine } from "../../shared/types.js";
+import { loadOwnerGames } from "../../test/loadFixtures.js";
+import { deriveGame, rawGameSchema, utcMonth } from "./gameDerive.js";
 import { parseGame, type ParsedMove } from "./gameParser.js";
 import {
   analysisFromLines,
@@ -14,7 +15,8 @@ import {
   type PositionAnalysis
 } from "./reviewMoves.js";
 
-const scandinavian = asArchiveGame(loadOwnerGames().find((raw) => raw.url.endsWith("/184405952510"))!);
+const scandinavianRaw = rawGameSchema.parse(loadOwnerGames().find((raw) => raw.url.endsWith("/184405952510"))!);
+const scandinavian = deriveGame(OWNER_USERNAME, utcMonth(scandinavianRaw.end_time), scandinavianRaw);
 
 /**
  * A fake engine: for each position, the top line is `topMove` (default: the move the game
@@ -36,7 +38,7 @@ function fakeAnalyses(moves: ParsedMove[], whiteCp: (index: number) => number): 
 }
 
 describe("annotateMoves", () => {
-  const moves = parseGame(scandinavian).moves.slice(0, OPENING_PLY_LIMIT);
+  const moves = parseGame(scandinavian.pgn).moves.slice(0, OPENING_PLY_LIMIT);
 
   it("reviews at most OPENING_PLY_LIMIT plies", () => {
     expect(OPENING_PLY_LIMIT).toBe(20);
@@ -83,8 +85,7 @@ describe("annotateMoves", () => {
 
 describe("mates", () => {
   // Fool's mate: 1. f3 e5 2. g4 Qh4#
-  const foolsMate: ArchiveGame = { ...scandinavian, pgn: "1. f3 e5 2. g4 Qh4# 0-1" };
-  const moves = parseGame(foolsMate).moves;
+  const moves = parseGame("1. f3 e5 2. g4 Qh4# 0-1").moves;
 
   it("evaluates the checkmated position without the engine", () => {
     expect(terminalAnalysis(moves[3].fenAfter)).toEqual({ eval: { cp: -1000, mate: 0 }, lines: [] });
@@ -122,16 +123,18 @@ describe("mates", () => {
 });
 
 describe("reviewHeader", () => {
-  it("derives the header from the archive game only", () => {
-    expect(reviewHeader(scandinavian, "black")).toEqual({
-      url: scandinavian.url,
-      endTime: scandinavian.endTime,
+  it("derives the header from the stored GameRecord only", () => {
+    const record = scandinavian.record;
+    expect(reviewHeader(record, OWNER_USERNAME)).toEqual({
+      url: record.url,
+      endTime: record.endTime,
       timeClass: "blitz",
-      openingName: scandinavian.openingName,
+      openingName: record.openingName,
       result: "loss",
-      white: { username: "fernando787", rating: scandinavian.white.rating },
-      black: { username: scandinavian.black.username, rating: scandinavian.black.rating }
+      white: { username: "fernando787", rating: record.oppRating },
+      black: { username: OWNER_USERNAME, rating: record.myRating }
     });
+    expect(record.color).toBe("black");
     expect(OWNER_USERNAME).toBe("kubista9");
   });
 });

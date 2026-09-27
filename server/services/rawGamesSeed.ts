@@ -1,6 +1,5 @@
 import fs from "node:fs";
 import path from "node:path";
-import type { ArchiveGame } from "../../shared/types.js";
 import { config } from "../config.js";
 import { listMonthMeta } from "../db/archiveMonths.js";
 import type { Db } from "../db/connection.js";
@@ -8,7 +7,7 @@ import { monthsWithGames, replaceMonthGames } from "../db/games.js";
 import { safeKey } from "../store/fileStore.js";
 import { deriveMonth, utcMonth } from "./gameDerive.js";
 
-// Offline fallback: the legacy storage/cache/raw-games/<owner>.json (converted ArchiveGame
+// Offline fallback: the legacy storage/cache/raw-games/<owner>.json (converted game
 // objects, read-only, never deleted) can fill months that have no archive data yet. Seeded
 // rows are marked source = 'raw-games-seed' and are replaced by the real month on the next
 // online sync.
@@ -17,8 +16,24 @@ export function rawGamesCachePath(owner: string, cacheDir = config.cacheDir): st
   return path.join(cacheDir, "raw-games", `${safeKey(owner)}.json`);
 }
 
-/** An ArchiveGame in the raw archive shape that deriveMonth expects. */
-function toRawShape(game: ArchiveGame): Record<string, unknown> {
+/** A game as the legacy fetcher stored it in raw-games/<owner>.json (read-only here). */
+export interface LegacyRawGame {
+  id: string;
+  url: string;
+  pgn: string;
+  endTime: number;
+  timeClass: string;
+  timeControl: string;
+  rated: boolean;
+  openingName: string;
+  openingUrl: string | null;
+  openingFamily: string;
+  white: { username: string; rating: number; result: string };
+  black: { username: string; rating: number; result: string };
+}
+
+/** A legacy raw-games entry in the raw archive shape that deriveMonth expects. */
+function toRawShape(game: LegacyRawGame): Record<string, unknown> {
   const variant = /^\s*\[Variant\s+"([^"]*)"\]/m.exec(game.pgn)?.[1];
   return {
     url: game.url,
@@ -40,7 +55,7 @@ export function seedFromRawGamesCache(db: Db, owner: string, filePath: string = 
     return [];
   }
 
-  const payload = JSON.parse(fs.readFileSync(filePath, "utf8")) as { games?: ArchiveGame[] };
+  const payload = JSON.parse(fs.readFileSync(filePath, "utf8")) as { games?: LegacyRawGame[] };
   const archived = new Set(listMonthMeta(db, owner).map((row) => row.month));
   const filled = monthsWithGames(db, owner);
   const byMonth = new Map<string, Record<string, unknown>[]>();

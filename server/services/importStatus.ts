@@ -1,50 +1,12 @@
 import { WINDOW_DAYS, windowBounds } from "../../shared/window.js";
 import { listMonthMeta } from "../db/archiveMonths.js";
 import type { Db } from "../db/connection.js";
-import { countGames, countGamesByMonth, type GameCounts } from "../db/games.js";
+import { countGames, countGamesByMonth } from "../db/games.js";
 import { lastSyncRun } from "../db/syncRuns.js";
-import type { SkipCounts } from "./gameDerive.js";
-import type { SyncSummary } from "./archiveImport.js";
+import type { ImportStatus, SkipCounts, SyncSummary } from "../../shared/types.js";
 
 /** A sync older than this marks the store as stale. */
 export const STALE_AFTER_MS = 24 * 3600 * 1000;
-
-export interface ImportStatusMonth {
-  month: string;
-  /** Raw archive length. */
-  archiveGames: number;
-  kept: number | null;
-  skipped: SkipCounts | null;
-  /** Stored games by time class. */
-  stored: Record<string, number>;
-  lastStatus: number;
-  fetchedAt: number;
-  checkedAt: number;
-  deriveVersion: number | null;
-}
-
-export interface ImportStatus {
-  owner: string;
-  window: { days: number; start: number; end: number };
-  /** Games in the window. */
-  counts: GameCounts;
-  /** Every stored game, window or not. */
-  storedTotal: number;
-  lastSync: {
-    at: number;
-    ok: boolean;
-    offline: boolean;
-    requests: number;
-    durationMs: number;
-    warnings: string[];
-    months: SyncSummary["months"];
-  } | null;
-  lastSuccessfulSyncAt: number | null;
-  stale: boolean;
-  /** Months only present as offline seed rows (no archive data yet). */
-  seededMonths: string[];
-  months: ImportStatusMonth[];
-}
 
 export function buildImportStatus(db: Db, owner: string, nowMs: number = Date.now()): ImportStatus {
   const bounds = windowBounds(Math.floor(nowMs / 1000), WINDOW_DAYS);

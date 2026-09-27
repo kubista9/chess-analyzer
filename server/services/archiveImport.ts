@@ -14,6 +14,7 @@ import { replaceMonthGames } from "../db/games.js";
 import { finishSyncRun, startSyncRun } from "../db/syncRuns.js";
 import { DERIVE_VERSION, deriveMonth } from "./gameDerive.js";
 import { seedFromRawGamesCache } from "./rawGamesSeed.js";
+import type { MonthSyncResult, SyncSummary } from "../../shared/types.js";
 
 // Per-month Chess.com archive sync into SQLite.
 // - Requests are serial, with REQUEST_GAP_MS between them and config.userAgent.
@@ -52,35 +53,11 @@ export interface ArchiveRef {
   url: string;
 }
 
-export type MonthOutcome = "fetched" | "not-modified" | "cached-closed" | "error";
-
-export interface MonthSyncResult {
-  month: string;
-  outcome: MonthOutcome;
-  status?: number;
-  games?: number;
-  message?: string;
-}
-
-export interface SyncSummary {
-  owner: string;
-  startedAt: number;
-  finishedAt: number;
-  durationMs: number;
-  /** False when any warning was raised. */
-  ok: boolean;
-  /** The archive list could not be fetched. */
-  offline: boolean;
-  full: boolean;
-  requests: number;
-  /** Every month Chess.com lists, "YYYY-MM". */
-  listedMonths: string[];
-  /** The listed months that intersect the window at sync time. */
-  windowMonths: string[];
-  months: MonthSyncResult[];
-  derivedMonths: string[];
-  seededMonths: string[];
-  warnings: string[];
+export interface SyncProgress {
+  /** Months handled so far, of `total` selected months. */
+  done: number;
+  total: number;
+  message: string;
 }
 
 export interface SyncOptions {
@@ -90,6 +67,7 @@ export interface SyncOptions {
   deps?: Partial<ImportDeps>;
   /** The offline seed file; defaults to storage/cache/raw-games/<owner>.json. */
   rawGamesPath?: string;
+  onProgress?: (progress: SyncProgress) => void;
 }
 
 const archiveListSchema = z.object({ archives: z.array(z.string()) });
@@ -234,7 +212,8 @@ export async function syncArchives(db: Db, owner: string, options: SyncOptions =
       const selected = selectWindowMonths(refs, bounds.start);
       windowMonths = selected.map((ref) => ref.month);
 
-      for (const ref of selected) {
+      for (const [index, ref] of selected.entries()) {
+        options.onProgress?.({ done: index, total: selected.length, message: `Checking ${ref.month}` });
         const stored = getMonthMeta(db, owner, ref.month);
         if (stored && !options.full && isClosedMonth(ref.month, stored.checked_at, deps.now())) {
           months.push({ month: ref.month, outcome: "cached-closed", games: stored.game_count });
@@ -278,6 +257,7 @@ export async function syncArchives(db: Db, owner: string, options: SyncOptions =
       }
     }
 
+    options.onProgress?.({ done: windowMonths.length, total: windowMonths.length, message: "Updating the game store" });
     derivedMonths = deriveStaleMonths(db, owner);
   } catch (error) {
     warnings.push(`Sync failed: ${describeError(error)}`);
@@ -302,14 +282,4 @@ export async function syncArchives(db: Db, owner: string, options: SyncOptions =
   };
   finishSyncRun(db, runId, finishedAt, summary.ok, summary);
   return summary;
-}
-
-let inFlight: Promise<SyncSummary> | null = null;
-
-/** Joins the running sync in this process instead of starting a second one (double clicks, two tabs). */
-export function syncOnce(db: Db, owner: string, options: SyncOptions = {}): Promise<SyncSummary> {
-  inFlight ??= syncArchives(db, owner, options).finally(() => {
-    inFlight = null;
-  });
-  return inFlight;
 }

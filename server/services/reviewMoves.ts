@@ -1,11 +1,10 @@
 import { Chess } from "chess.js";
-import { normalizeResult } from "../../shared/chess.js";
 import { categorizeMove, checkmateEval, toWhiteEval, winPercentLoss, type WhiteEval } from "../../shared/eval.js";
 import { noteForCategory } from "../../shared/notes.js";
 import type {
   AnnotatedMove,
-  ArchiveGame,
   EngineLine,
+  GameRecord,
   PlayerColor,
   ReviewGameHeader,
   ReviewLine
@@ -119,14 +118,17 @@ export function annotateMoves(
   });
 }
 
-export function reviewHeader(game: ArchiveGame, ownerColor: PlayerColor): ReviewGameHeader {
+/** The review header, from the stored game only. `owner` is the owner's display name. */
+export function reviewHeader(game: GameRecord, owner: string): ReviewGameHeader {
+  const me = { username: owner, rating: game.myRating };
+  const opponent = { username: game.oppName, rating: game.oppRating };
   return {
     url: game.url,
     endTime: game.endTime,
     timeClass: game.timeClass,
     openingName: game.openingName,
-    result: normalizeResult(ownerColor, game.white.result, game.black.result),
-    white: { username: game.white.username, rating: game.white.rating },
-    black: { username: game.black.username, rating: game.black.rating }
+    result: game.result,
+    white: game.color === "white" ? me : opponent,
+    black: game.color === "white" ? opponent : me
   };
 }

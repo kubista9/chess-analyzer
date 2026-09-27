@@ -1,4 +1,4 @@
-import type { SkipCounts } from "../services/gameDerive.js";
+import type { SkipCounts } from "../../shared/types.js";
 import type { Db } from "./connection.js";
 
 /** Month metadata, without the raw body. */

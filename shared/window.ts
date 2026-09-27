@@ -40,3 +40,16 @@ export function windowBounds(end: number, days: number = WINDOW_DAYS): WindowBou
 export function isInWindow(endTime: number, bounds: WindowBounds): boolean {
   return endTime >= bounds.start && endTime <= bounds.end;
 }
+
+// The pages' window filter: the last 6 months (the default) or the last 3 months.
+export const GAME_WINDOWS = { "6m": WINDOW_DAYS, "3m": 90 } as const;
+export type GameWindow = keyof typeof GAME_WINDOWS;
+export const DEFAULT_GAME_WINDOW: GameWindow = "6m";
+
+/** A `?window=` value as a GameWindow; a missing value is the default, anything else is null. */
+export function parseGameWindow(value: unknown): GameWindow | null {
+  if (value === undefined || value === "") {
+    return DEFAULT_GAME_WINDOW;
+  }
+  return typeof value === "string" && Object.hasOwn(GAME_WINDOWS, value) ? (value as GameWindow) : null;
+}

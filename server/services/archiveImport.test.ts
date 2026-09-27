@@ -2,7 +2,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { asArchiveGame, loadArchiveSample, type RawChessComGame } from "../../test/loadFixtures.js";
+import { asLegacyRawGame, loadArchiveSample, type RawChessComGame } from "../../test/loadFixtures.js";
 import { getMonthMeta } from "../db/archiveMonths.js";
 import { openDatabase, type Db } from "../db/connection.js";
 import { countGames } from "../db/games.js";
@@ -17,7 +17,6 @@ import {
   retryAfterMs,
   selectWindowMonths,
   syncArchives,
-  syncOnce,
   type ImportDeps
 } from "./archiveImport.js";
 import { DERIVE_VERSION } from "./gameDerive.js";
@@ -233,7 +232,7 @@ describe("syncArchives", () => {
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), "raw-games-"));
     tmpDirs.push(dir);
     const rawGamesPath = path.join(dir, "kubista9.json");
-    const seedGames = monthGames("2026-09").map((game) => asArchiveGame(game, game.time_class as "blitz"));
+    const seedGames = monthGames("2026-09").map((game) => asLegacyRawGame(game, game.time_class));
     fs.writeFileSync(rawGamesPath, JSON.stringify({ createdAt: "x", games: seedGames }));
 
     const down = vi.fn(async () => {
@@ -284,18 +283,5 @@ describe("syncArchives", () => {
     expect(status.months).toHaveLength(WINDOW.length);
     expect(status.months[0]).toMatchObject({ month: "2026-03", archiveGames: 7, kept: 3, skipped: { variant: 1, "time-class": 2, duplicate: 1 } });
     expect(buildImportStatus(db, OWNER, NOW + 25 * 3600_000).stale).toBe(true);
-  });
-});
-
-describe("syncOnce", () => {
-  it("joins a running sync instead of starting a second one", async () => {
-    const db = memoryDb();
-    const server = fakeChessCom();
-    const options = { deps: deps(server.fetchMock).deps };
-    const first = syncOnce(db, OWNER, options);
-    const second = syncOnce(db, OWNER, options);
-    expect(second).toBe(first);
-    await first;
-    expect(server.calls.filter((call) => call.url === LIST_URL)).toHaveLength(1);
   });
 });

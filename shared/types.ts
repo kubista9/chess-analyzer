@@ -1,48 +1,11 @@
-import type { IMPORTED_TIME_CLASSES, MOVE_CATEGORIES, SUPPORTED_TIME_CLASSES } from "./constants.js";
+import type { IMPORTED_TIME_CLASSES, MOVE_CATEGORIES, SKIP_REASONS } from "./constants.js";
+import type { GameWindow } from "./window.js";
 
 export type MoveCategory = (typeof MOVE_CATEGORIES)[number];
-export type TimeClass = (typeof SUPPORTED_TIME_CLASSES)[number];
+/** The standard time classes the importer keeps. */
+export type TimeClass = (typeof IMPORTED_TIME_CLASSES)[number];
 export type PlayerColor = "white" | "black";
 export type GameResult = "win" | "loss" | "draw";
-
-export interface PlayerSnapshot {
-  username: string;
-  rating: number;
-  result: string;
-}
-
-export interface ArchiveGame {
-  id: string;
-  url: string;
-  pgn: string;
-  endTime: number;
-  timeClass: TimeClass;
-  timeControl: string;
-  rated: boolean;
-  openingName: string;
-  openingUrl: string | null;
-  openingFamily: string;
-  white: PlayerSnapshot;
-  black: PlayerSnapshot;
-}
-
-/** A results-only game summary, built from the raw games cache (no engine). */
-export interface HistoryGameSummary {
-  id: string;
-  url: string;
-  opponent: string;
-  opponentRating: number;
-  playerRating: number;
-  color: PlayerColor;
-  result: GameResult;
-  openingName: string;
-  openingFamily: string;
-  endTime: number;
-  /** Half-moves in the game. The UI shows full moves (ceil(plies / 2)). */
-  plies: number;
-  timeClass: TimeClass;
-  timeControl?: string;
-}
 
 /** Results for one opening family, played with one colour. */
 export interface OpeningReportItem {
@@ -56,22 +19,22 @@ export interface OpeningReportItem {
   scorePct: number;
 }
 
-export interface OpeningsSnapshot {
-  username: string;
-  analyzedAt: string;
-  limit: number;
-  games: HistoryGameSummary[];
-  topOpenings: OpeningReportItem[];
-}
+export type JobType = "sync" | "game-review";
+export type JobStatus = "queued" | "running" | "completed" | "failed";
 
 export interface JobState<T> {
   id: string;
-  type: "bulk-analysis" | "game-review";
-  status: "queued" | "running" | "completed" | "failed";
+  /** Dedupe key: "sync" or "review:<gameId>". A second start with a running key joins that job. */
+  key: string;
+  type: JobType;
+  status: JobStatus;
   progress: number;
   message: string;
   result?: T;
   error?: string;
+  /** Milliseconds since the epoch. */
+  createdAt: number;
+  updatedAt: number;
 }
 
 /** A raw engine line, as Stockfish reports it: UCI moves, score from the side to move. */
@@ -133,8 +96,6 @@ export interface ReviewSummary {
   moves: AnnotatedMove[];
 }
 
-export type ImportedTimeClass = (typeof IMPORTED_TIME_CLASSES)[number];
-
 /** One ply of a game's opening, as stored in game_plies (the first DERIVE_PLY_LIMIT plies). */
 export interface OpeningPly {
   /** 1-based half-move number. */
@@ -162,7 +123,7 @@ export interface GameRecord {
   month: string;
   /** Unix seconds, UTC. */
   endTime: number;
-  timeClass: ImportedTimeClass;
+  timeClass: TimeClass;
   timeControl: string;
   tc: { base: number; inc: number } | null;
   rated: boolean;
@@ -181,4 +142,119 @@ export interface GameRecord {
   termination: string | null;
   plyCount: number;
   deriveVersion: number;
+}
+
+export type SkipReason = (typeof SKIP_REASONS)[number];
+export type SkipCounts = Record<SkipReason, number>;
+
+export interface GameCounts {
+  total: number;
+  byTimeClass: Record<TimeClass, number>;
+  byColor: Record<PlayerColor, number>;
+  /** e.g. { "blitz|white": 612 } */
+  byTimeClassColor: Record<string, number>;
+  firstEndTime: number | null;
+  lastEndTime: number | null;
+}
+
+export type MonthOutcome = "fetched" | "not-modified" | "cached-closed" | "error";
+
+export interface MonthSyncResult {
+  month: string;
+  outcome: MonthOutcome;
+  status?: number;
+  games?: number;
+  message?: string;
+}
+
+export interface SyncSummary {
+  owner: string;
+  startedAt: number;
+  finishedAt: number;
+  durationMs: number;
+  /** False when any warning was raised. */
+  ok: boolean;
+  /** The archive list could not be fetched. */
+  offline: boolean;
+  full: boolean;
+  requests: number;
+  /** Every month Chess.com lists, "YYYY-MM". */
+  listedMonths: string[];
+  /** The listed months that intersect the window at sync time. */
+  windowMonths: string[];
+  months: MonthSyncResult[];
+  derivedMonths: string[];
+  seededMonths: string[];
+  warnings: string[];
+}
+
+export interface ImportStatusMonth {
+  month: string;
+  /** Raw archive length. */
+  archiveGames: number;
+  kept: number | null;
+  skipped: SkipCounts | null;
+  /** Stored games by time class. */
+  stored: Record<string, number>;
+  lastStatus: number;
+  fetchedAt: number;
+  checkedAt: number;
+  deriveVersion: number | null;
+}
+
+/** GET /api/status. */
+export interface ImportStatus {
+  owner: string;
+  window: { days: number; start: number; end: number };
+  /** Games in the window. */
+  counts: GameCounts;
+  /** Every stored game, window or not. */
+  storedTotal: number;
+  lastSync: {
+    at: number;
+    ok: boolean;
+    offline: boolean;
+    requests: number;
+    durationMs: number;
+    warnings: string[];
+    months: MonthSyncResult[];
+  } | null;
+  lastSuccessfulSyncAt: number | null;
+  stale: boolean;
+  /** Months only present as offline seed rows (no archive data yet). */
+  seededMonths: string[];
+  months: ImportStatusMonth[];
+}
+
+/** The result of a completed sync job. */
+export interface SyncJobResult {
+  summary: SyncSummary;
+  status: ImportStatus;
+}
+
+/** The window a store query covered: `key` days back from `end`, both bounds inclusive (Unix seconds). */
+export interface QueryWindow {
+  key: GameWindow;
+  days: number;
+  start: number;
+  end: number;
+}
+
+/** GET /api/games. Newest first, no cap. */
+export interface GamesResponse {
+  window: QueryWindow;
+  games: GameRecord[];
+}
+
+/** GET /api/games/:id. */
+export interface GameResponse {
+  game: GameRecord;
+}
+
+/** GET /api/openings/report. */
+export interface OpeningReportResponse {
+  window: QueryWindow;
+  /** Games per colour in the window; each colour's items add up to its total. */
+  totals: Record<PlayerColor, number>;
+  items: OpeningReportItem[];
 }

@@ -13,9 +13,11 @@ import {
 } from "lucide-react";
 import { OPENING_PLY_LIMIT } from "../../shared/constants";
 import { formatEval, whiteWinPercent, type WhiteEval } from "../../shared/eval";
-import type { AnnotatedMove, JobState, MoveCategory, PlayerColor, ReviewSummary } from "../../shared/types";
-import { startGameReview } from "../api/client";
+import { isJobActive } from "../../shared/jobPolling";
+import type { AnnotatedMove, GameRecord, JobState, MoveCategory, PlayerColor, ReviewSummary } from "../../shared/types";
+import { fetchGame, startGameReview } from "../api/client";
 import { useJobPolling } from "../hooks/useJobPolling";
+import { useStoreQuery } from "../hooks/useStoreQuery";
 import { useWorkspace } from "../hooks/useWorkspace";
 
 type ReviewMode = "show" | "best" | "retry";
@@ -168,16 +170,28 @@ function buildModeState(move: AnnotatedMove, mode: ReviewMode) {
   };
 }
 
-function reviewSubtitle(review: ReviewSummary): string {
-  const { header } = review;
-  const opponent = header[oppositeColor(review.color)];
-  const result = header.result === "win" ? "Won" : header.result === "loss" ? "Lost" : "Drew";
-  const date = new Date(header.endTime * 1000).toLocaleDateString("en-US", {
+/** "Lost as Black vs x (1210) · Scandinavian Defense · Sep 26, 2026", from the stored game. */
+function gameSubtitle(game: Pick<GameRecord, "result" | "color" | "oppName" | "oppRating" | "openingName" | "endTime">): string {
+  const result = game.result === "win" ? "Won" : game.result === "loss" ? "Lost" : "Drew";
+  const date = new Date(game.endTime * 1000).toLocaleDateString("en-US", {
     month: "short",
     day: "numeric",
     year: "numeric"
   });
-  return `${result} as ${colorLabel(review.color)} vs ${opponent.username} (${opponent.rating}) · ${header.openingName} · ${date}. First ${OPENING_PLY_LIMIT / 2} moves; evals are from White's side.`;
+  return `${result} as ${colorLabel(game.color)} vs ${game.oppName} (${game.oppRating}) · ${game.openingName} · ${date}.`;
+}
+
+function reviewSubtitle(review: ReviewSummary): string {
+  const { header } = review;
+  const opponent = header[oppositeColor(review.color)];
+  return `${gameSubtitle({
+    result: header.result,
+    color: review.color,
+    oppName: opponent.username,
+    oppRating: opponent.rating,
+    openingName: header.openingName,
+    endTime: header.endTime
+  })} First ${OPENING_PLY_LIMIT / 2} moves; evals are from White's side.`;
 }
 
 function railLabel(move: AnnotatedMove): string {
@@ -237,9 +251,14 @@ function calculateReviewBoardSize(columnWidth = 0): number {
 export function GameReviewPage() {
   const { gameId } = useParams();
   const [searchParams] = useSearchParams();
-  // The review does not need the Games snapshot: the server finds the game in the raw games
-  // cache and the review carries its own header.
+  // Any stored game opens here: the header comes from GET /api/games/:id, and the server
+  // reviews the game from the store (joining a review of the same game that is running).
   const { reviewCache, setReview, reviewJobs, setReviewJob } = useWorkspace();
+  const gameQuery = useStoreQuery(
+    (signal) => (gameId ? fetchGame(gameId, signal).then((response) => response.game) : Promise.resolve(null)),
+    [gameId]
+  );
+  const game = gameQuery.data;
   const review = gameId ? reviewCache[gameId] : null;
   const reviewJob = gameId ? reviewJobs[gameId] ?? null : null;
   const [selectedPly, setSelectedPly] = useState<number | null>(null);
@@ -318,13 +337,13 @@ export function GameReviewPage() {
   }, [gameId, setReview, setReviewJob]);
 
   useEffect(() => {
-    if (review || reviewJob || !gameId || startedReviewsRef.current.has(gameId)) {
+    if (!game || review || reviewJob || !gameId || startedReviewsRef.current.has(gameId)) {
       return;
     }
 
     startedReviewsRef.current.add(gameId);
     void handleStartReview();
-  }, [gameId, handleStartReview, review, reviewJob]);
+  }, [game, gameId, handleStartReview, review, reviewJob]);
 
   useEffect(() => {
     if (!review?.moves.length) {
@@ -453,7 +472,9 @@ export function GameReviewPage() {
           <p>
             {review
               ? reviewSubtitle(review)
-              : `Stockfish reviews the opening: the first ${OPENING_PLY_LIMIT / 2} moves of the game.`}
+              : game
+                ? `${gameSubtitle(game)} Stockfish reviews the first ${OPENING_PLY_LIMIT / 2} moves.`
+                : `Stockfish reviews the opening: the first ${OPENING_PLY_LIMIT / 2} moves of the game.`}
           </p>
         </div>
       </section>
@@ -618,20 +639,42 @@ export function GameReviewPage() {
             </section>
           ) : (
             <section className="panel empty-panel">
-              <h2>
-                {reviewJob?.status === "failed"
-                  ? "Opening review failed"
-                  : reviewJob
-                    ? "Preparing opening review"
-                    : "Opening review starting"}
-              </h2>
-              <p>
-                {reviewJob?.status === "failed"
-                  ? reviewJob.error ?? reviewJob.message
-                  : reviewJob
-                    ? `Stockfish is reviewing the first ${OPENING_PLY_LIMIT / 2} moves of this game.`
-                    : "This review will start automatically for the selected game."}
-              </p>
+              {gameQuery.error ? (
+                <>
+                  <h2>Game not found</h2>
+                  <p>{gameQuery.error}</p>
+                </>
+              ) : reviewJob?.status === "failed" ? (
+                <>
+                  <h2>Opening review failed</h2>
+                  <p className="error-text">{reviewJob.error ?? reviewJob.message}</p>
+                  <button className="primary-button" type="button" onClick={() => void handleStartReview()}>
+                    Retry
+                  </button>
+                </>
+              ) : (
+                <>
+                  <h2>{isJobActive(reviewJob) ? "Preparing opening review" : "Opening review starting"}</h2>
+                  <p>
+                    {isJobActive(reviewJob)
+                      ? `Stockfish is reviewing the first ${OPENING_PLY_LIMIT / 2} moves of this game.`
+                      : gameQuery.loading
+                        ? "Loading the game from the local store."
+                        : "This review will start automatically for the selected game."}
+                  </p>
+                  {reviewJob && isJobActive(reviewJob) ? (
+                    <div className="job-panel review-job-panel" role="status">
+                      <div className="job-header">
+                        <span>{reviewJob.message}</span>
+                        <span>{reviewJob.progress}%</span>
+                      </div>
+                      <div className="progress-track">
+                        <div className="progress-fill" style={{ width: `${reviewJob.progress}%` }} />
+                      </div>
+                    </div>
+                  ) : null}
+                </>
+              )}
             </section>
           )}
         </>

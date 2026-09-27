@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { WINDOW_DAYS, endOfUtcDay, isInWindow, windowBounds } from "./window.js";
+import { GAME_WINDOWS, WINDOW_DAYS, endOfUtcDay, isInWindow, parseGameWindow, windowBounds } from "./window.js";
 
 const at = (iso: string) => Date.parse(iso) / 1000;
 
@@ -36,5 +36,20 @@ describe("windowBounds / isInWindow", () => {
   it("supports a shorter window", () => {
     const short = windowBounds(bounds.end, 90);
     expect(short.end - short.start).toBe(90 * 86_400);
+  });
+});
+
+describe("parseGameWindow", () => {
+  it("defaults to 6 months and accepts 3 months", () => {
+    expect(parseGameWindow(undefined)).toBe("6m");
+    expect(parseGameWindow("")).toBe("6m");
+    expect(parseGameWindow("3m")).toBe("3m");
+    expect(GAME_WINDOWS).toEqual({ "6m": WINDOW_DAYS, "3m": 90 });
+  });
+
+  it("rejects anything else", () => {
+    expect(parseGameWindow("12m")).toBeNull();
+    expect(parseGameWindow("toString")).toBeNull();
+    expect(parseGameWindow(["6m"])).toBeNull();
   });
 });

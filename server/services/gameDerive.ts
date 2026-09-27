@@ -1,9 +1,9 @@
 import { z } from "zod";
-import { IMPORTED_TIME_CLASSES } from "../../shared/constants.js";
+import { IMPORTED_TIME_CLASSES, SKIP_REASONS } from "../../shared/constants.js";
 import { normalizeResult, resolvePlayerColor } from "../../shared/chess.js";
 import { START_EPD, toEpd } from "../../shared/epd.js";
 import { parsePgnHeaders, parsePgnMoves, parseTimeControl, replayOpening, spentSeconds } from "../../shared/pgn.js";
-import type { GameRecord, ImportedTimeClass, OpeningPly } from "../../shared/types.js";
+import type { GameRecord, OpeningPly, SkipCounts, SkipReason, TimeClass } from "../../shared/types.js";
 
 /** Bump when the derived columns or their meaning change; stale months are re-derived from raw_json. */
 export const DERIVE_VERSION = 1;
@@ -11,9 +11,6 @@ export const DERIVE_VERSION = 1;
 /** Plies stored per game in game_plies. OPENING_PLY_LIMIT (20) is read from these. */
 export const DERIVE_PLY_LIMIT = 30;
 
-export const SKIP_REASONS = ["variant", "custom-start", "time-class", "not-owner", "duplicate", "malformed"] as const;
-export type SkipReason = (typeof SKIP_REASONS)[number];
-export type SkipCounts = Record<SkipReason, number>;
 
 const playerSchema = z.looseObject({
   username: z.string(),
@@ -127,7 +124,7 @@ export function deriveGame(owner: string, month: string, game: RawGame, headers 
       url: game.url,
       month,
       endTime: game.end_time,
-      timeClass: game.time_class as ImportedTimeClass,
+      timeClass: game.time_class as TimeClass,
       timeControl: game.time_control,
       tc,
       rated: game.rated,

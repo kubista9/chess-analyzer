@@ -1,6 +1,5 @@
 import { Chess } from "chess.js";
-import { resolvePlayerColor } from "../../shared/chess.js";
-import type { ArchiveGame, PlayerColor } from "../../shared/types.js";
+import type { PlayerColor } from "../../shared/types.js";
 
 export interface ParsedMove {
   ply: number;
@@ -16,9 +15,10 @@ export interface ParsedGame {
   moves: ParsedMove[];
 }
 
-export function parseGame(game: ArchiveGame): ParsedGame {
+/** Replays a full PGN with chess.js (one game at a time: the review, not the importer). */
+export function parseGame(pgn: string): ParsedGame {
   const loader = new Chess();
-  loader.loadPgn(game.pgn);
+  loader.loadPgn(pgn);
   const history = loader.history({ verbose: true });
 
   const moves: ParsedMove[] = history.map((move, index) => ({
@@ -32,16 +32,4 @@ export function parseGame(game: ArchiveGame): ParsedGame {
   }));
 
   return { moves };
-}
-
-/** Half-moves in a game's PGN. */
-export function countPlies(pgn: string): number {
-  const loader = new Chess();
-  loader.loadPgn(pgn);
-  return loader.history().length;
-}
-
-/** The owner's colour in this game, or null when the owner played neither side. */
-export function playerColorForGame(game: ArchiveGame, owner: string): PlayerColor | null {
-  return resolvePlayerColor(owner, game.white.username, game.black.username);
 }
