@@ -2,11 +2,11 @@ import type { AddressInfo } from "node:net";
 import type { Server } from "node:http";
 import { afterEach, describe, expect, it } from "vitest";
 import { START_EPD } from "../shared/epd.js";
-import type { GamesResponse, JobState, OpeningReportResponse, SyncSummary, TreeResponse } from "../shared/types.js";
+import type { GamesResponse, JobState, OpeningReportResponse, SyncSummary, TreeGamesResponse, TreeResponse } from "../shared/types.js";
 import { loadOwnerGames } from "../test/loadFixtures.js";
 import { createApp } from "./app.js";
 import { openDatabase, type Db } from "./db/connection.js";
-import { replaceMonthGames } from "./db/games.js";
+import { getGamePlies, replaceMonthGames } from "./db/games.js";
 import { createApiRouter } from "./routes.js";
 import { deriveMonth, utcMonth } from "./services/gameDerive.js";
 import { getOpeningBook } from "./services/openingBook.js";
@@ -51,7 +51,7 @@ async function startApi(sync: () => Promise<SyncSummary> = () => new Promise(() 
     });
     return { status: response.status, body: (await response.json()) as T };
   };
-  return { call, jobs };
+  return { call, jobs, db };
 }
 
 describe("jobs API", () => {
@@ -140,30 +140,68 @@ describe("tree API", () => {
   it("returns the start node of one colour with its move rows", async () => {
     const { status, body } = await tree("color=white");
     expect(status).toBe(200);
-    expect(body).toMatchObject({ color: "white", timeClass: null, halfLifeDays: 90, maxPly: 20, games: 4 });
+    expect(body).toMatchObject({ color: "white", timeClass: null, halfLifeDays: 90, maxPly: 20, games: 4, path: [] });
     expect(body.window).toMatchObject({ key: "6m", days: 183 });
     expect(body.node).toMatchObject({ epd: START_EPD, n: 4, ownerToMove: true, inBook: true });
     expect(body.node.edges.reduce((sum, edge) => sum + edge.n, 0)).toBe(4);
     const first = body.node.edges[0];
     expect(first).toMatchObject({ owner: true, name: expect.any(String), inBook: true });
-    expect(first.gameIds).toHaveLength(first.n);
+    // Game ids stay on the server; GET /tree/games pages them.
+    expect(first).not.toHaveProperty("gameIds");
     expect(first.weighted.wN).toBeLessThan(first.n);
   });
 
-  it("descends by EPD and merges the fixture's transposition pair", async () => {
-    const { call } = await startApi();
-    let body = (await call<TreeResponse>("/tree?color=white&hl=off")).body;
-    // Follow the most-played move for 8 plies: both transposition games (1.c4) meet at ply 8.
+  it("descends by EPD and by moves, and merges the fixture's transposition pair", async () => {
+    const { call, db } = await startApi();
+    const plies = getGamePlies(db, "174004846670").slice(0, 8);
+    // Both transposition games (1.c4) meet at ply 8, but not before.
     const seen: number[] = [];
-    for (let ply = 0; ply < 8; ply += 1) {
-      const next = body.node.edges.find((edge) => edge.gameIds.includes("174004846670"))!;
-      body = (await call<TreeResponse>(`/tree?color=white&hl=off&${epdQuery(next.toEpd)}`)).body;
-      seen.push(body.node.n);
+    for (const ply of plies) {
+      const byEpd = (await call<TreeResponse>(`/tree?color=white&hl=off&${epdQuery(ply.epdAfter)}`)).body;
+      seen.push(byEpd.node.n);
     }
-    expect(body.node.ply).toBe(8);
     expect(seen.at(-1)).toBe(2);
     expect(seen.at(-2)).toBe(1);
+
+    const moves = plies.map((ply) => ply.uci).join(",");
+    const { status, body } = await call<TreeResponse>(`/tree?color=white&hl=off&moves=${moves}`);
+    expect(status).toBe(200);
     expect(body.halfLifeDays).toBeNull();
+    expect(body.node).toMatchObject({ epd: plies[7].epdAfter, ply: 8, n: 2 });
+    expect(body.path.map((step) => step.san)).toEqual(plies.map((ply) => ply.san));
+    expect(body.path.map((step) => step.ply)).toEqual([1, 2, 3, 4, 5, 6, 7, 8]);
+    expect(body.path[0]).toMatchObject({ uci: plies[0].uci, epd: plies[0].epdAfter, n: expect.any(Number) });
+    expect(body.path.at(-1)!.n).toBe(1);
+    expect(body.path[0].name).toMatch(/English/);
+
+    const start = await call<TreeResponse>("/tree?color=white&moves=");
+    expect(start.body).toMatchObject({ node: { epd: START_EPD }, path: [] });
+  });
+
+  it("pages the games behind a move, newest first, with the ply it was played at", async () => {
+    const { call, db } = await startApi();
+    const root = (await call<TreeResponse>("/tree?color=black")).body.node;
+    const edge = root.edges[0];
+    const { status, body } = await call<TreeGamesResponse>(`/tree/games?color=black&uci=${edge.uci}`);
+    expect(status).toBe(200);
+    expect(body).toMatchObject({ color: "black", epd: START_EPD, uci: edge.uci, san: edge.san, total: edge.n, page: 1, pages: 1 });
+    expect(body.games).toHaveLength(edge.n);
+    expect(body.games.map((game) => game.endTime)).toEqual([...body.games.map((game) => game.endTime)].sort((a, b) => b - a));
+    expect(body.games.every((game) => game.ply === 1 && game.url.startsWith("https://www.chess.com/"))).toBe(true);
+
+    // Deeper: the second ply of the newest game is played at ply 2.
+    const newest = getGamePlies(db, body.games[0].id);
+    const second = await call<TreeGamesResponse>(`/tree/games?color=black&moves=${newest[0].uci}&uci=${newest[1].uci}&size=1`);
+    expect(second.body).toMatchObject({ epd: newest[0].epdAfter, page: 1, pageSize: 1 });
+    expect(second.body.games[0]).toMatchObject({ id: body.games[0].id, ply: 2 });
+    expect(second.body.pages).toBe(second.body.total);
+
+    // Past the last page clamps to it; a move nobody played is a 404.
+    const last = await call<TreeGamesResponse>(`/tree/games?color=black&uci=${edge.uci}&size=1&page=99`);
+    expect(last.body.page).toBe(edge.n);
+    expect(last.body.games).toHaveLength(1);
+    expect((await call(`/tree/games?color=black&uci=a2a3`)).status).toBe(404);
+    expect((await call(`/tree/games?color=black`)).status).toBe(400);
   });
 
   it("applies the window, time class and half-life filters", async () => {
@@ -183,6 +221,11 @@ describe("tree API", () => {
     expect((await call("/tree?color=white&epd=not-an-epd")).status).toBe(400);
     expect((await call("/tree?color=white&hl=-1")).status).toBe(400);
     expect((await call("/tree?color=white&window=12m")).status).toBe(400);
+    expect((await call("/tree?color=white&moves=e4")).status).toBe(400);
+    expect((await call(`/tree?color=white&moves=e2e4&${epdQuery(START_EPD)}`)).status).toBe(400);
+    const unplayed = await call<{ error: string }>("/tree?color=white&moves=h2h4");
+    expect(unplayed.status).toBe(404);
+    expect(unplayed.body.error).toMatch(/never played h2h4 after 0 moves/);
     const unreached = await call<{ error: string }>(`/tree?color=white&${epdQuery("8/8/8/8/8/8/8/K6k w - -")}`);
     expect(unreached.status).toBe(404);
     expect(unreached.body.error).toMatch(/never reached/);

@@ -1,5 +1,5 @@
 import type { DerivedGame } from "../services/gameDerive.js";
-import type { GameCounts, GameRecord, GameResult, OpeningPly, PlayerColor, TimeClass } from "../../shared/types.js";
+import type { GameCounts, GameRecord, GameResult, OpeningPly, PlayerColor, TimeClass, TreeGameRow } from "../../shared/types.js";
 import type { WindowBounds } from "../../shared/window.js";
 import type { Db } from "./connection.js";
 
@@ -175,6 +175,55 @@ export function listGames(db: Db, username: string, bounds: WindowBounds, filter
         color: filter.color ?? null
       }) as GameRow[]
   ).map(toRecord);
+}
+
+/**
+ * Slim rows for the games `ids` (in the order given; unknown ids are skipped), each with the
+ * first ply at which the game played `uci` from `epdBefore`.
+ */
+export function listMoveGames(db: Db, ids: readonly string[], epdBefore: string, uci: string): TreeGameRow[] {
+  if (!ids.length) {
+    return [];
+  }
+  const rows = db
+    .prepare(
+      `SELECT g.id, g.url, g.end_time, g.time_class, g.time_control, g.result, g.my_rating, g.opp_name, g.opp_rating,
+         (SELECT MIN(p.ply) FROM game_plies p WHERE p.game_id = g.id AND p.epd_before = @epd AND p.uci = @uci) AS ply
+       FROM games g WHERE g.id IN (SELECT value FROM json_each(@ids))`
+    )
+    .all({ ids: JSON.stringify(ids), epd: epdBefore, uci }) as {
+    id: string;
+    url: string;
+    end_time: number;
+    time_class: string;
+    time_control: string;
+    result: string;
+    my_rating: number;
+    opp_name: string;
+    opp_rating: number;
+    ply: number | null;
+  }[];
+
+  const byId = new Map(rows.map((row) => [row.id, row]));
+  return ids.flatMap((id) => {
+    const row = byId.get(id);
+    return row
+      ? [
+          {
+            id: row.id,
+            url: row.url,
+            endTime: row.end_time,
+            timeClass: row.time_class as TimeClass,
+            timeControl: row.time_control,
+            result: row.result as GameResult,
+            myRating: row.my_rating,
+            oppName: row.opp_name,
+            oppRating: row.opp_rating,
+            ply: row.ply
+          }
+        ]
+      : [];
+  });
 }
 
 /** The full PGN of a stored game (the review replays it). */

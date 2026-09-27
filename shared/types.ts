@@ -1,5 +1,5 @@
 import type { IMPORTED_TIME_CLASSES, MOVE_CATEGORIES, SKIP_REASONS } from "./constants.js";
-import type { TreeNode } from "./openingTree.js";
+import type { TreeEdge, TreeNode } from "./openingTree.js";
 import type { GameWindow } from "./window.js";
 
 export type MoveCategory = (typeof MOVE_CATEGORIES)[number];
@@ -260,6 +260,28 @@ export interface OpeningReportResponse {
   items: OpeningReportItem[];
 }
 
+/** A move row as the API sends it: the tree edge without its game ids (GET /api/tree/games pages them). */
+export type TreeEdgeView = Omit<TreeEdge, "gameIds">;
+
+export interface TreeNodeView extends Omit<TreeNode, "edges"> {
+  edges: TreeEdgeView[];
+}
+
+/** One step of the move path from the start position (a breadcrumb). */
+export interface TreeBreadcrumb {
+  /** 1-based ply of the move. */
+  ply: number;
+  san: string;
+  uci: string;
+  /** The position after the move. */
+  epd: string;
+  /** Games that played the path up to and including this move. */
+  n: number;
+  name: string | null;
+  eco: string | null;
+  nameExact: boolean;
+}
+
 /** GET /api/tree: one node of the owner's per-colour opening tree, with its move rows. */
 export interface TreeResponse {
   window: QueryWindow;
@@ -272,5 +294,39 @@ export interface TreeResponse {
   maxPly: number;
   /** Games of this colour in the tree. */
   games: number;
-  node: TreeNode;
+  node: TreeNodeView;
+  /** The moves from the start when the node was asked for by `moves=`; empty for `epd=`. */
+  path: TreeBreadcrumb[];
+}
+
+/** A game that played one move of the tree, for the Explorer's games drawer. */
+export interface TreeGameRow {
+  id: string;
+  url: string;
+  /** Unix seconds. */
+  endTime: number;
+  timeClass: TimeClass;
+  timeControl: string;
+  result: GameResult;
+  myRating: number;
+  oppName: string;
+  oppRating: number;
+  /** The ply at which this game played the move (for /review/:id?ply=N), null if not found. */
+  ply: number | null;
+}
+
+/** GET /api/tree/games: one page of the games behind a move row, newest first. */
+export interface TreeGamesResponse {
+  color: PlayerColor;
+  /** The position the move is played from, and the move. */
+  epd: string;
+  uci: string;
+  san: string;
+  /** Games behind the move in this filter set. */
+  total: number;
+  /** 1-based. */
+  page: number;
+  pageSize: number;
+  pages: number;
+  games: TreeGameRow[];
 }

@@ -1,28 +1,31 @@
 import express from "express";
 import { z } from "zod";
-import { IMPORTED_TIME_CLASSES } from "../shared/constants.js";
+import { IMPORTED_TIME_CLASSES, OPENING_PLY_LIMIT } from "../shared/constants.js";
 import type {
   GameResponse,
   GamesResponse,
   OpeningReportResponse,
   QueryWindow,
   ReviewSummary,
+  TreeBreadcrumb,
   SyncJobResult,
+  TreeGamesResponse,
   TreeResponse
 } from "../shared/types.js";
 import { START_EPD } from "../shared/epd.js";
 import type { OpeningBook } from "../shared/openingBook.js";
+import { nodeView, walkMoves, type TreeNode } from "../shared/openingTree.js";
 import { GAME_WINDOWS, parseGameWindow, windowBounds } from "../shared/window.js";
 import { config } from "./config.js";
 import { getDb, type Db } from "./db/connection.js";
-import { getGame, listGames } from "./db/games.js";
+import { getGame, listGames, listMoveGames } from "./db/games.js";
 import { jobStore as defaultJobStore, type JobStore } from "./store/jobStore.js";
 import { syncArchives } from "./services/archiveImport.js";
 import { buildImportStatus } from "./services/importStatus.js";
 import { getOpeningBook } from "./services/openingBook.js";
 import { buildOpeningReport } from "./services/openingReport.js";
 import { readCachedGameReview, runGameReview } from "./services/reviewAnalysis.js";
-import { DEFAULT_HALF_LIFE_BY_WINDOW, createTreeService } from "./services/treeService.js";
+import { DEFAULT_HALF_LIFE_BY_WINDOW, createTreeService, type BuiltTree, type TreeService } from "./services/treeService.js";
 
 const reviewSchema = z.object({
   gameId: z.string().min(1)
@@ -41,9 +44,17 @@ const gamesQuerySchema = z.object({
 // A position key as the tree stores it: the first four FEN fields.
 const EPD_PATTERN = /^[1-8pnbrqkPNBRQK]+(?:\/[1-8pnbrqkPNBRQK]+){7} [wb] (?:-|[KQkq]{1,4}) (?:-|[a-h][36])$/;
 
+const UCI_PATTERN = /^[a-h][1-8][a-h][1-8][qrbn]?$/;
+
 const treeQuerySchema = z.object({
   color: z.enum(["white", "black"]),
   epd: z.string().regex(EPD_PATTERN, "an EPD: the first four FEN fields").optional(),
+  // The node by its move path: comma-separated UCI moves from the start ("" = the start).
+  moves: z
+    .string()
+    .transform((value) => (value ? value.split(",") : []))
+    .pipe(z.array(z.string().regex(UCI_PATTERN, "UCI moves, comma-separated")).max(OPENING_PLY_LIMIT))
+    .optional(),
   window: z.string().optional(),
   tc: z.enum(IMPORTED_TIME_CLASSES).optional(),
   // Half-life in days, or "off" / 0 for unweighted; omitted = the window's default.
@@ -51,6 +62,15 @@ const treeQuerySchema = z.object({
     .union([z.literal("off"), z.coerce.number().min(0).max(3650)])
     .optional()
 });
+
+const treeGamesQuerySchema = treeQuerySchema.extend({
+  uci: z.string().regex(UCI_PATTERN, "a UCI move"),
+  page: z.coerce.number().int().min(1).optional(),
+  size: z.coerce.number().int().min(1).max(100).optional()
+});
+
+/** Games per page in GET /api/tree/games by default. */
+export const TREE_GAMES_PAGE_SIZE = 20;
 
 export class HttpError extends Error {
   constructor(
@@ -69,6 +89,38 @@ function queryWindow(value: unknown, nowMs: number): QueryWindow {
   }
   const days = GAME_WINDOWS[key];
   return { key, days, ...windowBounds(Math.floor(nowMs / 1000), days) };
+}
+
+type TreeQuery = z.infer<typeof treeQuerySchema>;
+
+/** The memoised tree for the query's filters and the node it asks for (moves=, epd= or the start). */
+function findTreeNode(trees: TreeService, query: TreeQuery, nowMs: number): { built: BuiltTree; node: TreeNode; path: TreeBreadcrumb[] } {
+  const window = parseGameWindow(query.window);
+  if (!window) {
+    throw new HttpError(400, `Unknown window "${String(query.window)}"; use 6m or 3m.`);
+  }
+  if (query.moves && query.epd) {
+    throw new HttpError(400, "Pass either moves= or epd=, not both.");
+  }
+  const halfLifeDays =
+    query.hl === undefined ? DEFAULT_HALF_LIFE_BY_WINDOW[window] : query.hl === "off" || query.hl === 0 ? null : query.hl;
+  const built = trees.getTree({ color: query.color, window, timeClass: query.tc ?? null, halfLifeDays }, nowMs);
+
+  if (query.moves) {
+    const walk = walkMoves(built.tree, query.moves);
+    if (!walk.node) {
+      const at = walk.missingAt ?? 0;
+      throw new HttpError(404, `The ${query.color} games in this window never played ${query.moves[at]} after ${at} moves.`);
+    }
+    return { built, node: walk.node, path: walk.path };
+  }
+
+  const epd = query.epd ?? START_EPD;
+  const node = built.tree.nodes.get(epd);
+  if (!node) {
+    throw new HttpError(404, `The ${query.color} games in this window never reached ${epd}.`);
+  }
+  return { built, node, path: [] };
 }
 
 export interface ApiDeps {
@@ -137,22 +189,12 @@ export function createApiRouter(deps: ApiDeps): express.Router {
     response.json({ window, totals, items: buildOpeningReport(games) } satisfies OpeningReportResponse);
   });
 
-  // One node of the per-colour opening tree (the start position by default) with its move
-  // rows, over the stored games in the window. Trees are memoised per filter set.
+  // One node of the per-colour opening tree (by `moves=`, `epd=`, or the start position) with
+  // its move rows and breadcrumbs, over the stored games in the window. Trees are memoised
+  // per filter set.
   router.get("/tree", (request, response) => {
     const query = treeQuerySchema.parse(request.query);
-    const window = parseGameWindow(query.window);
-    if (!window) {
-      throw new HttpError(400, `Unknown window "${String(query.window)}"; use 6m or 3m.`);
-    }
-    const halfLifeDays =
-      query.hl === undefined ? DEFAULT_HALF_LIFE_BY_WINDOW[window] : query.hl === "off" || query.hl === 0 ? null : query.hl;
-    const built = trees.getTree({ color: query.color, window, timeClass: query.tc ?? null, halfLifeDays }, deps.now());
-    const epd = query.epd ?? START_EPD;
-    const node = built.tree.nodes.get(epd);
-    if (!node) {
-      throw new HttpError(404, `The ${query.color} games in this window never reached ${epd}.`);
-    }
+    const { built, node, path } = findTreeNode(trees, query, deps.now());
     response.json({
       window: built.window,
       color: query.color,
@@ -160,8 +202,35 @@ export function createApiRouter(deps: ApiDeps): express.Router {
       halfLifeDays: built.filters.halfLifeDays,
       maxPly: built.tree.maxPly,
       games: built.tree.games,
-      node
+      node: nodeView(node),
+      path
     } satisfies TreeResponse);
+  });
+
+  // One page of the games behind the move `uci` from a node, newest first, with the ply the
+  // move was played at (the Explorer's games drawer links each to its review).
+  router.get("/tree/games", (request, response) => {
+    const query = treeGamesQuerySchema.parse(request.query);
+    const { node } = findTreeNode(trees, query, deps.now());
+    const edge = node.edges.find((candidate) => candidate.uci === query.uci);
+    if (!edge) {
+      throw new HttpError(404, `No ${query.color} game in this window played ${query.uci} from ${node.epd}.`);
+    }
+    const pageSize = query.size ?? TREE_GAMES_PAGE_SIZE;
+    const pages = Math.max(1, Math.ceil(edge.gameIds.length / pageSize));
+    const page = Math.min(query.page ?? 1, pages);
+    const ids = edge.gameIds.slice((page - 1) * pageSize, page * pageSize);
+    response.json({
+      color: query.color,
+      epd: node.epd,
+      uci: edge.uci,
+      san: edge.san,
+      total: edge.gameIds.length,
+      page,
+      pageSize,
+      pages,
+      games: listMoveGames(deps.db(), ids, node.epd, edge.uci)
+    } satisfies TreeGamesResponse);
   });
 
   // Starts (or joins) the opening review of one stored game, keyed "review:<gameId>".

@@ -12,7 +12,7 @@ import {
   type ScoreAccumulator,
   type ScoreSummary
 } from "./stats.js";
-import type { GameRecord, OpeningPly, PlayerColor } from "./types.js";
+import type { GameRecord, OpeningPly, PlayerColor, TreeBreadcrumb, TreeNodeView } from "./types.js";
 
 // A per-colour opening tree keyed by EPD, so transpositions land on one node. Built in memory
 // from the stored opening plies (no replay); nothing here is persisted.
@@ -388,14 +388,47 @@ export function treeGameFrom(record: GameRecord, plies: readonly OpeningPly[], m
   };
 }
 
+export interface MovesWalk {
+  /** The node the moves reach, or undefined if the games never got there. */
+  node: TreeNode | undefined;
+  /** One breadcrumb per move that the games played. */
+  path: TreeBreadcrumb[];
+  /** Index of the first move no game played from its position, or null. */
+  missingAt: number | null;
+}
+
+/** Follows UCI moves from the start through the tree, collecting breadcrumbs. */
+export function walkMoves(tree: OpeningTree, ucis: readonly string[]): MovesWalk {
+  let node = tree.nodes.get(START_EPD);
+  const path: TreeBreadcrumb[] = [];
+  for (const [index, uci] of ucis.entries()) {
+    const edge = node?.edges.find((candidate) => candidate.uci === uci);
+    if (!edge) {
+      return { node: undefined, path, missingAt: index };
+    }
+    path.push({
+      ply: index + 1,
+      san: edge.san,
+      uci: edge.uci,
+      epd: edge.toEpd,
+      n: edge.n,
+      name: edge.name,
+      eco: edge.eco,
+      nameExact: edge.nameExact
+    });
+    node = tree.nodes.get(edge.toEpd);
+  }
+  return { node, path, missingAt: null };
+}
+
 /** The node reached from the start by a list of UCI moves, or undefined if the games never got there. */
 export function nodeByMoves(tree: OpeningTree, ucis: readonly string[]): TreeNode | undefined {
-  let node = tree.nodes.get(START_EPD);
-  for (const uci of ucis) {
-    const edge = node?.edges.find((candidate) => candidate.uci === uci);
-    node = edge && tree.nodes.get(edge.toEpd);
-  }
-  return node;
+  return walkMoves(tree, ucis).node;
+}
+
+/** A node as the API sends it: every edge without its game ids. */
+export function nodeView(node: TreeNode): TreeNodeView {
+  return { ...node, edges: node.edges.map(({ gameIds: _gameIds, ...edge }) => edge) };
 }
 
 /**

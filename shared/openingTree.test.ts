@@ -3,7 +3,7 @@ import { deriveMonth, utcMonth } from "../server/services/gameDerive.js";
 import { gameId, loadOwnerGames } from "../test/loadFixtures.js";
 import { START_EPD } from "./epd.js";
 import { buildBook, parseBookTsv } from "./openingBook.js";
-import { buildTree, nodeByMoves, preGameRatings, treeGameFrom, type OpeningTree, type TreeGame } from "./openingTree.js";
+import { buildTree, nodeByMoves, nodeView, preGameRatings, treeGameFrom, walkMoves, type OpeningTree, type TreeGame } from "./openingTree.js";
 import { replayOpening } from "./pgn.js";
 import { eloExpected, wilson } from "./stats.js";
 import type { PlayerColor } from "./types.js";
@@ -246,5 +246,39 @@ describe("preGameRatings", () => {
       { id: "r2", timeClass: "rapid", endTime: 40, myRating: 1290 }
     ]);
     expect(Object.fromEntries(ratings)).toEqual({ b1: 1000, b2: 1000, b3: 1010, r1: 1300, r2: 1300 });
+  });
+});
+
+describe("walkMoves and nodeView", () => {
+  const tree = buildTree(
+    [game("e4 e5 Nf3 Nc6", "black", 0), game("e4 e5 Nf3 d6", "black", 1), game("e4 c5", "black", 0.5)],
+    { color: "black", ...unweighted }
+  );
+
+  it("collects one breadcrumb per move with the games that played the path", () => {
+    const walk = walkMoves(tree, ucis("e4 e5 Nf3"));
+    expect(walk.missingAt).toBeNull();
+    expect(walk.node).toBe(at(tree, "e4 e5 Nf3"));
+    expect(walk.path.map(({ ply, san, n }) => [ply, san, n])).toEqual([
+      [1, "e4", 3],
+      [2, "e5", 2],
+      [3, "Nf3", 2]
+    ]);
+    expect(walk.path[2].epd).toBe(walk.node!.epd);
+    expect(walkMoves(tree, [])).toMatchObject({ node: tree.nodes.get(START_EPD), path: [], missingAt: null });
+  });
+
+  it("reports the first move no game played", () => {
+    const walk = walkMoves(tree, ucis("e4 e5 Bc4"));
+    expect(walk).toMatchObject({ node: undefined, missingAt: 2 });
+    expect(walk.path).toHaveLength(2);
+  });
+
+  it("strips game ids from the API view only", () => {
+    const node = at(tree, "e4")!;
+    const view = nodeView(node);
+    expect(view.edges.map((edge) => edge.san)).toEqual(["e5", "c5"]);
+    expect(view.edges[0]).not.toHaveProperty("gameIds");
+    expect(node.edges[0].gameIds).toHaveLength(2);
   });
 });
