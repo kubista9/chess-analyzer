@@ -2,7 +2,11 @@ import express from "express";
 import { z } from "zod";
 import { IMPORTED_TIME_CLASSES, OPENING_PLY_LIMIT } from "../shared/constants.js";
 import type {
+  FixListResponse,
   GameResponse,
+  PlayerColor,
+  RepertoireScope,
+  SnapshotResponse,
   QueryWindow,
   ReviewSummary,
   TreeBreadcrumb,
@@ -12,7 +16,18 @@ import type {
 } from "../shared/types.js";
 import { START_EPD } from "../shared/epd.js";
 import type { OpeningBook } from "../shared/openingBook.js";
-import { nodeView, walkMoves, type TreeNode } from "../shared/openingTree.js";
+import {
+  EARLY_LOSS_PLY,
+  FIX_FDR_Q,
+  FIX_MIN_ESS,
+  FIX_MIN_N,
+  FIX_MIN_POINTS,
+  FIX_MIN_Z,
+  buildFixList,
+  type FixSelection
+} from "../shared/fixList.js";
+import { nodeView, walkMoves, type OpeningTree, type TreeNode } from "../shared/openingTree.js";
+import { buildSnapshot } from "../shared/repertoireSnapshot.js";
 import { GAME_WINDOWS, parseGameWindow, windowBounds } from "../shared/window.js";
 import { config } from "./config.js";
 import { getDb, type Db } from "./db/connection.js";
@@ -22,7 +37,13 @@ import { syncArchives } from "./services/archiveImport.js";
 import { buildImportStatus } from "./services/importStatus.js";
 import { getOpeningBook } from "./services/openingBook.js";
 import { readCachedGameReview, runGameReview } from "./services/reviewAnalysis.js";
-import { DEFAULT_HALF_LIFE_BY_WINDOW, createTreeService, type BuiltTree, type TreeService } from "./services/treeService.js";
+import {
+  DEFAULT_HALF_LIFE_BY_WINDOW,
+  createTreeService,
+  type BuiltTree,
+  type TreeFilters,
+  type TreeService
+} from "./services/treeService.js";
 
 const reviewSchema = z.object({
   gameId: z.string().min(1)
@@ -43,6 +64,16 @@ const EPD_PATTERN = /^[1-8pnbrqkPNBRQK]+(?:\/[1-8pnbrqkPNBRQK]+){7} [wb] (?:-|[K
 
 const UCI_PATTERN = /^[a-h][1-8][a-h][1-8][qrbn]?$/;
 
+// Half-life in days, or "off" / 0 for unweighted; omitted = the window's default.
+const halfLifeSchema = z.union([z.literal("off"), z.coerce.number().min(0).max(3650)]).optional();
+
+// Filters for answers over both colours' trees (fix list, snapshot).
+const repertoireQuerySchema = z.object({
+  window: z.string().optional(),
+  tc: z.enum(IMPORTED_TIME_CLASSES).optional(),
+  hl: halfLifeSchema
+});
+
 const treeQuerySchema = z.object({
   color: z.enum(["white", "black"]),
   epd: z.string().regex(EPD_PATTERN, "an EPD: the first four FEN fields").optional(),
@@ -54,10 +85,7 @@ const treeQuerySchema = z.object({
     .optional(),
   window: z.string().optional(),
   tc: z.enum(IMPORTED_TIME_CLASSES).optional(),
-  // Half-life in days, or "off" / 0 for unweighted; omitted = the window's default.
-  hl: z
-    .union([z.literal("off"), z.coerce.number().min(0).max(3650)])
-    .optional()
+  hl: halfLifeSchema
 });
 
 const treeGamesQuerySchema = treeQuerySchema.extend({
@@ -89,19 +117,26 @@ function queryWindow(value: unknown, nowMs: number): QueryWindow {
 }
 
 type TreeQuery = z.infer<typeof treeQuerySchema>;
+type RepertoireQuery = z.infer<typeof repertoireQuerySchema>;
 
-/** The memoised tree for the query's filters and the node it asks for (moves=, epd= or the start). */
-function findTreeNode(trees: TreeService, query: TreeQuery, nowMs: number): { built: BuiltTree; node: TreeNode; path: TreeBreadcrumb[] } {
+/** The tree filters of a query, less the colour: window (6m default), time class and half-life. */
+function queryFilters(query: RepertoireQuery): Omit<TreeFilters, "color"> {
   const window = parseGameWindow(query.window);
   if (!window) {
     throw new HttpError(400, `Unknown window "${String(query.window)}"; use 6m or 3m.`);
   }
+  const halfLifeDays =
+    query.hl === undefined ? DEFAULT_HALF_LIFE_BY_WINDOW[window] : query.hl === "off" || query.hl === 0 ? null : query.hl;
+  return { window, timeClass: query.tc ?? null, halfLifeDays };
+}
+
+/** The memoised tree for the query's filters and the node it asks for (moves=, epd= or the start). */
+function findTreeNode(trees: TreeService, query: TreeQuery, nowMs: number): { built: BuiltTree; node: TreeNode; path: TreeBreadcrumb[] } {
+  const filters = queryFilters(query);
   if (query.moves && query.epd) {
     throw new HttpError(400, "Pass either moves= or epd=, not both.");
   }
-  const halfLifeDays =
-    query.hl === undefined ? DEFAULT_HALF_LIFE_BY_WINDOW[window] : query.hl === "off" || query.hl === 0 ? null : query.hl;
-  const built = trees.getTree({ color: query.color, window, timeClass: query.tc ?? null, halfLifeDays }, nowMs);
+  const built = trees.getTree({ color: query.color, ...filters }, nowMs);
 
   if (query.moves) {
     const walk = walkMoves(built.tree, query.moves);
@@ -134,6 +169,39 @@ export interface ApiDeps {
 export function createApiRouter(deps: ApiDeps): express.Router {
   const router = express.Router();
   const trees = createTreeService({ db: deps.db, owner: deps.owner, book: deps.book });
+
+  /** Both colours' memoised trees for a query, and the scope fields every such answer carries. */
+  const bothTrees = (query: RepertoireQuery) => {
+    const filters = queryFilters(query);
+    const nowMs = deps.now();
+    const built = { white: trees.getTree({ color: "white", ...filters }, nowMs), black: trees.getTree({ color: "black", ...filters }, nowMs) };
+    const scope: RepertoireScope = {
+      window: built.white.window,
+      timeClass: filters.timeClass,
+      halfLifeDays: filters.halfLifeDays,
+      maxPly: built.white.tree.maxPly,
+      games: { white: built.white.tree.games, black: built.black.tree.games }
+    };
+    return { built, scope };
+  };
+
+  // The fix list is recomputed only when either memoised tree was rebuilt.
+  const fixMemo = new Map<string, { trees: Record<PlayerColor, OpeningTree>; selection: FixSelection }>();
+  const fixList = (built: Record<PlayerColor, BuiltTree>): FixSelection => {
+    const { window, timeClass, halfLifeDays } = built.white.filters;
+    const key = `${window}|${timeClass ?? "all"}|${halfLifeDays ?? "off"}`;
+    const hit = fixMemo.get(key);
+    if (hit && hit.trees.white === built.white.tree && hit.trees.black === built.black.tree) {
+      return hit.selection;
+    }
+    const selection = buildFixList([built.white, built.black]);
+    fixMemo.delete(key);
+    fixMemo.set(key, { trees: { white: built.white.tree, black: built.black.tree }, selection });
+    if (fixMemo.size > 16) {
+      fixMemo.delete(fixMemo.keys().next().value!);
+    }
+    return selection;
+  };
 
   router.get("/health", (_request, response) => {
     response.json({ ok: true });
@@ -182,6 +250,34 @@ export function createApiRouter(deps: ApiDeps): express.Router {
       node: nodeView(node),
       path
     } satisfies TreeResponse);
+  });
+
+  // Fix list v0: the owner's moves that lose points against his Elo expectation, over both
+  // colours (one multiple-comparison family), with blame attribution. Results only.
+  router.get("/fixlist", (request, response) => {
+    const { built, scope } = bothTrees(repertoireQuerySchema.parse(request.query));
+    const selection = fixList(built);
+    response.json({
+      ...scope,
+      tested: selection.tested,
+      significant: selection.significant,
+      items: selection.items,
+      watch: selection.watch,
+      thresholds: {
+        minN: FIX_MIN_N,
+        minEss: FIX_MIN_ESS,
+        minZ: FIX_MIN_Z,
+        fdrQ: FIX_FDR_Q,
+        minPoints: FIX_MIN_POINTS,
+        earlyLossPly: EARLY_LOSS_PLY
+      }
+    } satisfies FixListResponse);
+  });
+
+  // Home's repertoire snapshot: the opponent's main moves and the owner's answers, per colour.
+  router.get("/snapshot", (request, response) => {
+    const { built, scope } = bothTrees(repertoireQuerySchema.parse(request.query));
+    response.json({ ...scope, white: buildSnapshot(built.white.tree), black: buildSnapshot(built.black.tree) } satisfies SnapshotResponse);
   });
 
   // One page of the games behind the move `uci` from a node, newest first, with the ply the

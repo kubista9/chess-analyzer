@@ -1,5 +1,7 @@
 import type { IMPORTED_TIME_CLASSES, MOVE_CATEGORIES, SKIP_REASONS } from "./constants.js";
+import type { FixItem } from "./fixList.js";
 import type { TreeEdge, TreeNode } from "./openingTree.js";
+import type { ColorSnapshot } from "./repertoireSnapshot.js";
 import type { GameWindow } from "./window.js";
 
 export type MoveCategory = (typeof MOVE_CATEGORIES)[number];
@@ -303,4 +305,32 @@ export interface TreeGamesResponse {
   pageSize: number;
   pages: number;
   games: TreeGameRow[];
+}
+
+/** The filters a whole-repertoire answer (fix list, snapshot) was computed for. */
+export interface RepertoireScope {
+  window: QueryWindow;
+  /** null = blitz and rapid together. */
+  timeClass: TimeClass | null;
+  /** Recency half-life in days; null = unweighted. */
+  halfLifeDays: number | null;
+  maxPly: number;
+  games: Record<PlayerColor, number>;
+}
+
+/** GET /api/fixlist: results-only leaks over both colours' trees. */
+export interface FixListResponse extends RepertoireScope {
+  /** Owner moves with enough games that were tested (one Benjamini-Hochberg family). */
+  tested: number;
+  significant: number;
+  items: FixItem[];
+  /** Nominally significant lines that do not survive the multiple-comparison control. */
+  watch: FixItem[];
+  thresholds: { minN: number; minEss: number; minZ: number; fdrQ: number; minPoints: number; earlyLossPly: number };
+}
+
+/** GET /api/snapshot: the main opponent moves and the owner's answers, per colour. */
+export interface SnapshotResponse extends RepertoireScope {
+  white: ColorSnapshot;
+  black: ColorSnapshot;
 }

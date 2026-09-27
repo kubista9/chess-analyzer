@@ -50,6 +50,8 @@ export interface BuiltTree {
   window: QueryWindow;
   filters: TreeFilters;
   tree: OpeningTree;
+  /** The games the tree was built from (the fix list re-reads their weights and ratings). */
+  games: TreeGame[];
   buildMs: number;
 }
 
@@ -90,7 +92,7 @@ export function createTreeService(deps: TreeServiceDeps) {
     const window: QueryWindow = { key: filters.window, days, ...windowBounds(now, days) };
     const games = loadTreeGames(db, deps.owner, window, filters);
     const tree = buildTree(games, { color: filters.color, now, halfLifeDays: filters.halfLifeDays, book: deps.book() });
-    const entry: MemoEntry = { window, filters, tree, buildMs: performance.now() - started, stamp, builtAt: nowMs };
+    const entry: MemoEntry = { window, filters, tree, games, buildMs: performance.now() - started, stamp, builtAt: nowMs };
 
     memo.delete(key);
     memo.set(key, entry);

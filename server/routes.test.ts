@@ -2,7 +2,7 @@ import type { AddressInfo } from "node:net";
 import type { Server } from "node:http";
 import { afterEach, describe, expect, it } from "vitest";
 import { START_EPD } from "../shared/epd.js";
-import type { JobState, SyncSummary, TreeGamesResponse, TreeResponse } from "../shared/types.js";
+import type { FixListResponse, JobState, SnapshotResponse, SyncSummary, TreeGamesResponse, TreeResponse } from "../shared/types.js";
 import { loadOwnerGames } from "../test/loadFixtures.js";
 import { createApp } from "./app.js";
 import { openDatabase, type Db } from "./db/connection.js";
@@ -209,5 +209,40 @@ describe("tree API", () => {
     const unreached = await call<{ error: string }>(`/tree?color=white&${epdQuery("8/8/8/8/8/8/8/K6k w - -")}`);
     expect(unreached.status).toBe(404);
     expect(unreached.body.error).toMatch(/never reached/);
+  });
+});
+
+describe("fix list and snapshot API", () => {
+  it("answers the fix list over both colours with its scope and thresholds", async () => {
+    const { call } = await startApi();
+    const { status, body } = await call<FixListResponse>("/fixlist");
+    expect(status).toBe(200);
+    // 8 fixture games: no line reaches 8 games, so nothing is tested or listed.
+    expect(body).toMatchObject({ halfLifeDays: 90, timeClass: null, maxPly: 20, tested: 0, significant: 0, items: [], watch: [] });
+    expect(body.games.white + body.games.black).toBe(8);
+    expect(body.window.key).toBe("6m");
+    expect(body.thresholds).toEqual({ minN: 8, minEss: 8, minZ: 1.64, fdrQ: 0.2, minPoints: 1, earlyLossPly: 40 });
+    // Memoised: a second request answers the same list.
+    expect((await call<FixListResponse>("/fixlist")).body).toEqual(body);
+    expect((await call<FixListResponse>("/fixlist?window=3m&tc=blitz")).body).toMatchObject({ halfLifeDays: null, timeClass: "blitz" });
+  });
+
+  it("answers the repertoire snapshot per colour", async () => {
+    const { call } = await startApi();
+    const { status, body } = await call<SnapshotResponse>("/snapshot?hl=off");
+    expect(status).toBe(200);
+    expect(body.halfLifeDays).toBeNull();
+    expect(body.white).toMatchObject({ color: "white", games: body.games.white });
+    expect(body.black).toMatchObject({ color: "black", games: body.games.black });
+    // As White the owner's first moves come first, whatever the sample.
+    expect(body.white.groups[0]).toMatchObject({ label: "First move", moves: [] });
+    expect(body.white.groups[0].answers[0].label).toMatch(/^1\./);
+  });
+
+  it("rejects bad filters", async () => {
+    const { call } = await startApi();
+    expect((await call("/fixlist?window=12m")).status).toBe(400);
+    expect((await call("/fixlist?tc=bullet")).status).toBe(400);
+    expect((await call("/snapshot?hl=-5")).status).toBe(400);
   });
 });
