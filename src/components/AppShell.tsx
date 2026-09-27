@@ -1,13 +1,11 @@
 import { useEffect, useState } from "react";
 import { Link, NavLink, Outlet, useLocation } from "react-router-dom";
-import { BookOpen, ChartColumnBig, History, Menu, Target, X } from "lucide-react";
+import { BookOpen, History, Menu, X } from "lucide-react";
 import { useWorkspace } from "../hooks/useWorkspace";
 
 const navItems = [
-  { to: "/dashboard", label: "Dashboard", icon: ChartColumnBig },
   { to: "/history", label: "Game History", icon: History },
-  { to: "/openings", label: "Opening Report", icon: BookOpen },
-  { to: "/training", label: "Game Plan", icon: Target }
+  { to: "/openings", label: "Opening Report", icon: BookOpen }
 ];
 
 export function AppShell() {

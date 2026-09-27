@@ -129,7 +129,7 @@ export function GameHistoryPage() {
       {!snapshot ? (
         <section className="panel empty-panel">
           <h2>No game history yet</h2>
-          <p>Run the dashboard analysis first so this table has something to work with.</p>
+          <p>Run an analysis from Home first so this table has something to work with.</p>
         </section>
       ) : (
         <section className="panel">

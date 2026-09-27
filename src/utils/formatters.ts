@@ -1,8 +1,4 @@
-import type { GameResult, MoveCategory } from "../../shared/types";
-
-export function formatDate(timestamp: number): string {
-  return new Date(timestamp * 1000).toLocaleDateString("en-CA");
-}
+import type { GameResult } from "../../shared/types";
 
 export function resultLabel(result: GameResult): string {
   if (result === "win") {
@@ -14,8 +10,4 @@ export function resultLabel(result: GameResult): string {
   }
 
   return "Draw";
-}
-
-export function categoryLabel(category: MoveCategory): string {
-  return category.charAt(0).toUpperCase() + category.slice(1);
 }
