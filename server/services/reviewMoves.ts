@@ -3,7 +3,7 @@ import { categorizeMove, checkmateEval, toWhiteEval, winPercentLoss, type WhiteE
 import { noteForCategory } from "../../shared/notes.js";
 import type {
   AnnotatedMove,
-  EngineLine,
+  LegacyEngineLine,
   GameRecord,
   PlayerColor,
   ReviewGameHeader,
@@ -16,7 +16,7 @@ import type { ParsedMove } from "./gameParser.js";
 /** One analysed position: its White-view eval and the raw engine lines (side-to-move view). */
 export interface PositionAnalysis {
   eval: WhiteEval;
-  lines: EngineLine[];
+  lines: LegacyEngineLine[];
 }
 
 export function sideToMove(fen: string): PlayerColor {
@@ -39,7 +39,7 @@ export function terminalAnalysis(fen: string): PositionAnalysis | null {
 }
 
 /** Turns raw engine lines for `fen` into a PositionAnalysis (eval from the top line). */
-export function analysisFromLines(fen: string, lines: EngineLine[]): PositionAnalysis {
+export function analysisFromLines(fen: string, lines: LegacyEngineLine[]): PositionAnalysis {
   const top = lines[0];
   if (!top) {
     throw new Error(`The engine returned no line for ${fen}`);
@@ -49,7 +49,7 @@ export function analysisFromLines(fen: string, lines: EngineLine[]): PositionAna
 }
 
 /** Converts a UCI engine line into SAN, stopping at the first move that does not apply. */
-export function toReviewLine(fen: string, line: EngineLine): ReviewLine {
+export function toReviewLine(fen: string, line: LegacyEngineLine): ReviewLine {
   const chess = new Chess(fen);
   const pvSan: string[] = [];
   for (const uci of line.pv) {

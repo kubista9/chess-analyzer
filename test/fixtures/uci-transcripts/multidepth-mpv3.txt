@@ -1,0 +1,22 @@
+# Scandinavian 1.e4 d5 2.exd5 Qxd5 3.Nc3, Black to move, MultiPV 3. Depth 16 completes; the
+# search is stopped inside depth 17 after rank 1. Stockfish then prints the ranks it has not
+# re-searched with the previous depth's label (16) and score. "Latest line per rank" would
+# give d5d6 twice at depth 16; the parser must ignore those leftovers and return depth 16.
+info string NNUE evaluation using nn-c288c895ea92.nnue
+info depth 1 seldepth 1 multipv 1 score cp -30 nodes 40 nps 40000 hashfull 0 tbhits 0 time 1 pv d5e6
+info depth 1 seldepth 1 multipv 2 score cp -41 nodes 40 nps 40000 hashfull 0 tbhits 0 time 1 pv d5a5
+info depth 1 seldepth 1 multipv 3 score cp -44 nodes 40 nps 40000 hashfull 0 tbhits 0 time 1 pv d5d8
+info depth 2 seldepth 2 multipv 1 score cp -35 nodes 120 nps 60000 hashfull 0 tbhits 0 time 2 pv d5a5 g1f3
+info depth 2 seldepth 2 multipv 2 score cp -40 nodes 120 nps 60000 hashfull 0 tbhits 0 time 2 pv d5d8 d2d4
+info depth 2 seldepth 2 multipv 3 score cp -48 nodes 120 nps 60000 hashfull 0 tbhits 0 time 2 pv d5e6 f1e2
+info depth 15 seldepth 20 multipv 1 score cp -80 nodes 301000 nps 580000 hashfull 90 tbhits 0 time 519 pv d5d6 d2d4 g8f6 g1f3 a7a6
+info depth 15 seldepth 21 multipv 2 score cp -82 nodes 301000 nps 580000 hashfull 90 tbhits 0 time 519 pv d5a5 d2d4 g8f6 g1f3 c7c6
+info depth 15 seldepth 19 multipv 3 score cp -84 nodes 301000 nps 580000 hashfull 90 tbhits 0 time 519 pv d5d8 d2d4 c7c6 g1f3 c8f5
+info depth 16 seldepth 22 multipv 1 score cp -70 upperbound nodes 355000 nps 580000 hashfull 101 tbhits 0 time 612 pv d5d6 d2d4
+info depth 16 seldepth 23 multipv 1 score cp -70 nodes 402000 nps 581000 hashfull 110 tbhits 0 time 692 pv d5d6 d2d4 g8f6 g1f3 a7a6 f1e2 c8g4
+info depth 16 seldepth 21 multipv 2 score cp -74 nodes 402000 nps 581000 hashfull 110 tbhits 0 time 692 pv d5d8 d2d4 c7c6 g1f3 c8f5 f3e5
+info depth 16 seldepth 24 multipv 3 score cp -81 nodes 402000 nps 581000 hashfull 110 tbhits 0 time 692 pv d5a5 d2d4 g8f6 g1f3 c7c6 f1c4
+info depth 17 seldepth 25 multipv 1 score cp -72 nodes 500000 nps 582000 hashfull 131 tbhits 0 time 859 pv d5d8 d2d4 c7c6 g1f3 c8f5 f1c4 e7e6
+info depth 16 seldepth 24 multipv 2 score cp -70 nodes 500000 nps 582000 hashfull 131 tbhits 0 time 859 pv d5d6 d2d4 g8f6 g1f3 a7a6
+info depth 16 seldepth 24 multipv 3 score cp -81 nodes 500000 nps 582000 hashfull 131 tbhits 0 time 859 pv d5a5 d2d4 g8f6 g1f3 c7c6
+bestmove d5d8 ponder d2d4

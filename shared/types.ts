@@ -28,8 +28,48 @@ export interface JobState<T> {
   updatedAt: number;
 }
 
-/** A raw engine line, as Stockfish reports it: UCI moves, score from the side to move. */
+/** Which analysis a position gets: the owner to move (MultiPV 3) or the opponent to move (MultiPV 1). */
+export type EngineTier = "owner" | "opponent";
+
+/**
+ * One engine line, as Stockfish reports it: UCI moves, score from the side to move (exactly
+ * one of cp / mate is set; mate <= 0 means the side to move is mated). winPct is the side to
+ * move's lichess win% for the score.
+ */
 export interface EngineLine {
+  uci: string;
+  cp: number | null;
+  mate: number | null;
+  winPct: number;
+  depth: number;
+  /** The principal variation, starting with `uci`, at most 10 moves. */
+  pv: string[];
+}
+
+/** The engine's verdict on one position under one engine config and tier. */
+export interface PositionEval {
+  epd: string;
+  tier: EngineTier;
+  /** Depth of the MultiPV iteration the lines come from (0 for a terminal position). */
+  depth: number;
+  /** Nodes searched for this position (main search plus searchmoves follow-ups). */
+  nodes: number;
+  /** The MultiPV lines, best first, one per move, all from one completed iteration. */
+  lines: EngineLine[];
+  /**
+   * Moves played from this position that are not in `lines`, scored at the same root with a
+   * depth-matched `go depth <depth> searchmoves ...` follow-up.
+   */
+  scored: EngineLine[];
+  terminal: "checkmate" | "stalemate" | null;
+  /** lines[0].uci, or null for a terminal position. */
+  bestUci: string | null;
+  /** The position's score from the side to move: lines[0], mate 0 for checkmate, cp 0 for stalemate. */
+  score: { cp: number | null; mate: number | null };
+}
+
+/** The P1b interim engine line (movetime wrapper), until the review switches to the pool. */
+export interface LegacyEngineLine {
   move: string;
   scoreCp: number;
   mate: number | null;

@@ -1,7 +1,7 @@
 import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
 import readline from "node:readline";
 import fs from "node:fs/promises";
-import type { EngineLine } from "../../shared/types.js";
+import type { LegacyEngineLine } from "../../shared/types.js";
 import { config } from "../config.js";
 
 interface AnalyzeOptions {
@@ -56,9 +56,9 @@ export class StockfishSession {
   private readyWaiters = new Set<(error: Error) => void>();
   private pending:
     | {
-        resolve: (value: EngineLine[]) => void;
+        resolve: (value: LegacyEngineLine[]) => void;
         reject: (error: Error) => void;
-        lines: Map<number, EngineLine>;
+        lines: Map<number, LegacyEngineLine>;
       }
     | null = null;
 
@@ -184,7 +184,7 @@ export class StockfishSession {
     });
   }
 
-  async analyzePosition(options: AnalyzeOptions): Promise<EngineLine[]> {
+  async analyzePosition(options: AnalyzeOptions): Promise<LegacyEngineLine[]> {
     if (this.pending) {
       throw new Error("Stockfish session is already busy");
     }
@@ -194,7 +194,7 @@ export class StockfishSession {
     this.send(`setoption name MultiPV value ${options.multiPv}`);
     this.send(`position fen ${options.fen}`);
 
-    return new Promise<EngineLine[]>((resolve, reject) => {
+    return new Promise<LegacyEngineLine[]>((resolve, reject) => {
       if (this.failure) {
         reject(this.failure);
         return;

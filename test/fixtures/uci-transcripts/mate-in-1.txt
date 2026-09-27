@@ -1,0 +1,5 @@
+# 1.f3 e5 2.g4, Black to move: mate in 1 (Qh4#). MultiPV 1.
+info depth 1 seldepth 2 multipv 1 score mate 1 nodes 30 nps 30000 hashfull 0 tbhits 0 time 1 pv d8h4
+info depth 2 seldepth 2 multipv 1 score mate 1 nodes 60 nps 30000 hashfull 0 tbhits 0 time 2 pv d8h4
+info depth 245 seldepth 2 multipv 1 score mate 1 nodes 900 nps 90000 hashfull 0 tbhits 0 time 10 pv d8h4
+bestmove d8h4

@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { OPENING_PLY_LIMIT, OWNER_USERNAME } from "../../shared/constants.js";
 import { formatEval } from "../../shared/eval.js";
-import type { EngineLine } from "../../shared/types.js";
+import type { LegacyEngineLine } from "../../shared/types.js";
 import { loadOwnerGames } from "../../test/loadFixtures.js";
 import { deriveGame, rawGameSchema, utcMonth } from "./gameDerive.js";
 import { parseGame, type ParsedMove } from "./gameParser.js";
@@ -27,7 +27,7 @@ function fakeAnalyses(moves: ParsedMove[], whiteCp: (index: number) => number): 
   return fens.map((fen, index) => {
     const next = moves[index];
     const sign = sideToMove(fen) === "white" ? 1 : -1;
-    const line: EngineLine = {
+    const line: LegacyEngineLine = {
       move: next?.uci ?? "a2a3",
       scoreCp: sign * whiteCp(index),
       mate: null,

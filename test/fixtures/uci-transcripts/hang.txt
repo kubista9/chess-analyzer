@@ -1,0 +1,3 @@
+# A search that never ends and ignores stop.
+info depth 1 seldepth 1 multipv 1 score cp 20 nodes 30 nps 30000 hashfull 0 tbhits 0 time 1 pv e2e4
+#hang
