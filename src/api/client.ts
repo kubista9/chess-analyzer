@@ -1,4 +1,5 @@
 import type {
+  AnalysisStatus,
   FixListResponse,
   GameResponse,
   ImportStatus,
@@ -17,7 +18,9 @@ import type { GameWindow } from "../../shared/window";
 export class ApiError extends Error {
   constructor(
     readonly status: number,
-    message: string
+    message: string,
+    /** The server's machine-readable reason, e.g. "on-battery". */
+    readonly code?: string
   ) {
     super(message);
   }
@@ -32,8 +35,8 @@ async function request<T>(input: string, init?: RequestInit): Promise<T> {
   });
 
   if (!response.ok) {
-    const payload = (await response.json().catch(() => null)) as { error?: string } | null;
-    throw new ApiError(response.status, payload?.error ?? `Request failed (${response.status})`);
+    const payload = (await response.json().catch(() => null)) as { error?: string; code?: string } | null;
+    throw new ApiError(response.status, payload?.error ?? `Request failed (${response.status})`, payload?.code);
   }
 
   return response.json() as Promise<T>;
@@ -127,4 +130,18 @@ export function fetchJob<T>(jobId: string, signal?: AbortSignal): Promise<JobSta
 
 export function fetchActiveJobs(signal?: AbortSignal): Promise<JobState<unknown>[]> {
   return request<JobState<unknown>[]>("/api/jobs/active", { signal });
+}
+
+/** The engine check: coverage, queue, and the running backfill (server or CLI). */
+export function fetchAnalysisStatus(signal?: AbortSignal): Promise<AnalysisStatus> {
+  return request<AnalysisStatus>("/api/analysis/status", { signal });
+}
+
+/** Starts or resumes the backfill. Fails with code "on-battery" unless allowBattery. */
+export function startBackfill(allowBattery = false): Promise<AnalysisStatus> {
+  return request<AnalysisStatus>("/api/analysis/backfill", { method: "POST", body: JSON.stringify({ allowBattery }) });
+}
+
+export function pauseBackfill(): Promise<AnalysisStatus> {
+  return request<AnalysisStatus>("/api/analysis/pause", { method: "POST", body: "{}" });
 }

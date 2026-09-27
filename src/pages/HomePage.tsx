@@ -1,6 +1,7 @@
 import { useMemo } from "react";
 import { fetchFixList, fetchSnapshot, type RepertoireQuery } from "../api/client";
 import { scopeText } from "../components/FixCard";
+import { EngineCard } from "../components/EngineCard";
 import { LeaksCard } from "../components/LeaksCard";
 import { RepertoireCard } from "../components/RepertoireCard";
 import { SyncCard } from "../components/SyncCard";
@@ -25,6 +26,7 @@ export function HomePage() {
   return (
     <div className="page-content">
       <SyncCard />
+      <EngineCard />
       {fixList.data || snapshot.data ? (
         <p className="explorer-scope home-scope">
           {scopeText(filters, halfLife)} · the Explorer's filters

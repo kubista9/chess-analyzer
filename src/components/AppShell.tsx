@@ -5,6 +5,7 @@ import { OWNER_USERNAME } from "../../shared/constants";
 import { useNow } from "../hooks/useNow";
 import { useWorkspace } from "../hooks/useWorkspace";
 import { formatAgo, formatCount } from "../utils/formatters";
+import { formatMinutes, searchedPercent } from "./EngineCard";
 
 const navItems = [
   { to: "/", label: "Home", icon: House, end: true },
@@ -13,7 +14,9 @@ const navItems = [
 ];
 
 export function AppShell() {
-  const { status } = useWorkspace();
+  const { status, analysis } = useWorkspace();
+  const engineRunning = analysis?.state === "running" || analysis?.state === "pausing";
+  const engineProgress = engineRunning ? analysis?.progress : null;
   const now = useNow();
   const footer = status
     ? [
@@ -135,6 +138,24 @@ export function AppShell() {
             );
           })}
         </nav>
+
+        {engineRunning ? (
+          <Link
+            className="engine-chip"
+            to="/"
+            tabIndex={isNavAccessible ? undefined : -1}
+            aria-label="Engine check running, see Home"
+            onClick={() => setIsMenuOpen(false)}
+          >
+            <span className="engine-chip-dot" aria-hidden="true" />
+            <span>
+              Engine check
+              {engineProgress ? ` ${searchedPercent(engineProgress)}%` : ""}
+              {engineProgress?.etaSec != null ? ` · ${formatMinutes(engineProgress.etaSec / 60)}` : ""}
+              {analysis?.state === "pausing" ? " · pausing" : ""}
+            </span>
+          </Link>
+        ) : null}
 
         <div className="sidebar-footer">
           <div className="footer-label">Current workspace</div>

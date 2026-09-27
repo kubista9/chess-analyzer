@@ -9,8 +9,17 @@ import {
   type ReactNode
 } from "react";
 import { JOB_LOST_MESSAGE, isJobActive } from "../../shared/jobPolling";
-import type { ImportStatus, JobState, ReviewSummary, SyncJobResult } from "../../shared/types";
-import { ApiError, fetchActiveJobs, fetchJob, fetchStatus, startSync as postSync } from "../api/client";
+import type { AnalysisStatus, ImportStatus, JobState, ReviewSummary, SyncJobResult } from "../../shared/types";
+import {
+  ApiError,
+  fetchActiveJobs,
+  fetchAnalysisStatus,
+  fetchJob,
+  fetchStatus,
+  pauseBackfill as postPause,
+  startBackfill as postBackfill,
+  startSync as postSync
+} from "../api/client";
 import { useJobPolling } from "./useJobPolling";
 
 // The pages read everything from the server's game store; nothing is cached in the browser
@@ -25,6 +34,12 @@ interface WorkspaceContextValue {
   startSync: (full?: boolean) => Promise<void>;
   /** Bumped when a sync completes, so pages refetch their store queries. */
   dataVersion: number;
+  /** GET /api/analysis/status: polled every 2 s while the engine check runs (here or in the CLI), else every 20 s. */
+  analysis: AnalysisStatus | null;
+  analysisError: string | null;
+  /** Starts or resumes the engine check; rejects with ApiError code "on-battery" unless allowBattery. */
+  startBackfill: (allowBattery?: boolean) => Promise<void>;
+  pauseBackfill: () => Promise<void>;
   // Reviews live in memory for this session only; the server caches them on disk.
   reviewCache: Record<string, ReviewSummary>;
   setReview: (gameId: string, review: ReviewSummary) => void;
@@ -33,6 +48,9 @@ interface WorkspaceContextValue {
 }
 
 const SYNC_JOB_KEY = "chess-analyst-sync-job";
+// How often the engine check status is read while it runs, and otherwise (a CLI run may start).
+const ANALYSIS_ACTIVE_POLL_MS = 2_000;
+const ANALYSIS_IDLE_POLL_MS = 20_000;
 // A stored job id older than the server's finished-job TTL can no longer be looked up.
 const SYNC_JOB_MAX_AGE_MS = 30 * 60 * 1000;
 // Keys of earlier workspaces: the v1 snapshot and review cache, and the v2 results snapshot
@@ -93,6 +111,10 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
   const [reviewCache, setReviewCache] = useState<Record<string, ReviewSummary>>({});
   const [reviewJobs, setReviewJobs] = useState<Record<string, JobState<ReviewSummary> | null>>({});
   const startingSync = useRef(false);
+  const [analysis, setAnalysis] = useState<AnalysisStatus | null>(null);
+  const [analysisError, setAnalysisError] = useState<string | null>(null);
+  // Bumped after a start/pause so the status loop re-reads at once (and picks its interval).
+  const [analysisNudge, setAnalysisNudge] = useState(0);
 
   const refreshStatus = useCallback(() => {
     fetchStatus()
@@ -174,6 +196,47 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
     }
   }, []);
 
+  // The engine check status: one request at a time, faster while a backfill runs. A sync
+  // (dataVersion) or an action (analysisNudge) restarts the loop with an immediate read.
+  useEffect(() => {
+    const controller = new AbortController();
+    let timer: number | undefined;
+    const tick = async () => {
+      let active = false;
+      try {
+        const next = await fetchAnalysisStatus(controller.signal);
+        setAnalysis(next);
+        setAnalysisError(null);
+        active = next.state === "running" || next.state === "pausing";
+      } catch (error) {
+        if (controller.signal.aborted) {
+          return;
+        }
+        setAnalysisError(errorText(error, "Could not read the engine status."));
+      }
+      if (!controller.signal.aborted) {
+        timer = window.setTimeout(() => void tick(), active ? ANALYSIS_ACTIVE_POLL_MS : ANALYSIS_IDLE_POLL_MS);
+      }
+    };
+    void tick();
+    return () => {
+      controller.abort();
+      window.clearTimeout(timer);
+    };
+  }, [dataVersion, analysisNudge]);
+
+  const startBackfill = useCallback(async (allowBattery = false) => {
+    const next = await postBackfill(allowBattery);
+    setAnalysis(next);
+    setAnalysisNudge((nudge) => nudge + 1);
+  }, []);
+
+  const pauseBackfill = useCallback(async () => {
+    const next = await postPause();
+    setAnalysis(next);
+    setAnalysisNudge((nudge) => nudge + 1);
+  }, []);
+
   const setReview = useCallback((gameId: string, review: ReviewSummary) => {
     setReviewCache((current) => ({ ...current, [gameId]: review }));
   }, []);
@@ -190,12 +253,31 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
       syncJob,
       startSync,
       dataVersion,
+      analysis,
+      analysisError,
+      startBackfill,
+      pauseBackfill,
       reviewCache,
       setReview,
       reviewJobs,
       setReviewJob
     }),
-    [status, statusError, refreshStatus, syncJob, startSync, dataVersion, reviewCache, setReview, reviewJobs, setReviewJob]
+    [
+      status,
+      statusError,
+      refreshStatus,
+      syncJob,
+      startSync,
+      dataVersion,
+      analysis,
+      analysisError,
+      startBackfill,
+      pauseBackfill,
+      reviewCache,
+      setReview,
+      reviewJobs,
+      setReviewJob
+    ]
   );
 
   return <WorkspaceContext.Provider value={value}>{children}</WorkspaceContext.Provider>;
