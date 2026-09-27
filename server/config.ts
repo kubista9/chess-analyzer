@@ -46,6 +46,8 @@ export const config = {
   host: process.env.HOST?.trim() || "127.0.0.1",
   stockfishPath: process.env.STOCKFISH_PATH ?? path.join(rootDir, "storage", "engines", "stockfish", "current", "stockfish"),
   cacheDir: path.join(rootDir, "storage", "cache"),
+  // The SQLite game store (archive months, games, opening plies). Safe to delete and re-sync.
+  dbPath: path.join(rootDir, "storage", "chess.db"),
   publicDistDir: path.join(rootDir, "dist", "web"),
   userAgent:
     process.env.CHESS_COM_USER_AGENT ??
