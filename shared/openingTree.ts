@@ -41,6 +41,8 @@ export interface TreeGame {
   oppRating: number;
   /** Base time in ms, for think time as a share of the clock; null if unknown. */
   baseMs: number | null;
+  /** Half-moves in the whole game (for early-loss rates); undefined if unknown. */
+  plyCount?: number;
   /** The opening plies in order, starting from the standard position. */
   plies: TreePly[];
 }
@@ -384,6 +386,7 @@ export function treeGameFrom(record: GameRecord, plies: readonly OpeningPly[], m
     myRating,
     oppRating: record.oppRating,
     baseMs: record.tc ? record.tc.base * 1000 : null,
+    plyCount: record.plyCount,
     plies: plies.map(({ san, uci, epdBefore, epdAfter, spentMs }) => ({ san, uci, epdBefore, epdAfter, spentMs }))
   };
 }
@@ -424,6 +427,53 @@ export function walkMoves(tree: OpeningTree, ucis: readonly string[]): MovesWalk
 /** The node reached from the start by a list of UCI moves, or undefined if the games never got there. */
 export function nodeByMoves(tree: OpeningTree, ucis: readonly string[]): TreeNode | undefined {
   return walkMoves(tree, ucis).node;
+}
+
+export interface TreePath {
+  /** UCI moves from the start. */
+  moves: string[];
+  sans: string[];
+}
+
+/**
+ * One move path from the start to every node: the shortest one, and among the shortest the
+ * one whose last move the most games played (each step is a move some game played, so
+ * walkMoves follows it). Transposed positions get the path of their main move order.
+ */
+export function principalPaths(tree: OpeningTree): Map<string, TreePath> {
+  const paths = new Map<string, TreePath>([[START_EPD, { moves: [], sans: [] }]]);
+  let frontier = [START_EPD];
+  while (frontier.length) {
+    const best = new Map<string, { from: string; edge: TreeEdge }>();
+    for (const epd of frontier) {
+      for (const edge of tree.nodes.get(epd)?.edges ?? []) {
+        if (paths.has(edge.toEpd)) {
+          continue;
+        }
+        const current = best.get(edge.toEpd);
+        if (!current || edge.n > current.edge.n) {
+          best.set(edge.toEpd, { from: epd, edge });
+        }
+      }
+    }
+    for (const [epd, { from, edge }] of best) {
+      const parent = paths.get(from)!;
+      paths.set(epd, { moves: [...parent.moves, edge.uci], sans: [...parent.sans, edge.san] });
+    }
+    frontier = [...best.keys()];
+  }
+  return paths;
+}
+
+/** SAN moves as a numbered line: "1.e4 e5 2.Nf3", or "1...e5" when it starts on Black's move. */
+export function formatLine(sans: readonly string[], firstPly: number = 1): string {
+  return sans
+    .map((san, index) => {
+      const ply = firstPly + index;
+      const number = Math.ceil(ply / 2);
+      return ply % 2 === 1 ? `${number}.${san}` : index === 0 ? `${number}...${san}` : san;
+    })
+    .join(" ");
 }
 
 /** A node as the API sends it: every edge without its game ids. */
