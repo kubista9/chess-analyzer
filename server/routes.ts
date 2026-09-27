@@ -3,7 +3,10 @@ import { z } from "zod";
 import { BULK_ANALYSIS_LIMITS } from "../shared/constants.js";
 import type { OpeningsSnapshot, ReviewSummary } from "../shared/types.js";
 import { config } from "./config.js";
+import { getDb } from "./db/connection.js";
 import { jobStore } from "./store/jobStore.js";
+import { syncOnce } from "./services/archiveImport.js";
+import { buildImportStatus } from "./services/importStatus.js";
 import { runBulkAnalysis } from "./services/batchAnalysis.js";
 import { readCachedGameReview, runGameReview } from "./services/reviewAnalysis.js";
 
@@ -15,10 +18,35 @@ const reviewSchema = z.object({
   gameId: z.string().min(1)
 });
 
+const syncSchema = z.object({
+  full: z.boolean().optional()
+});
+
 export const apiRouter = express.Router();
 
 apiRouter.get("/health", (_request, response) => {
   response.json({ ok: true });
+});
+
+// The SQLite game store (P2a). The legacy pages still use /bulk-analysis until P2b.
+apiRouter.get("/status", (_request, response, next) => {
+  try {
+    response.json(buildImportStatus(getDb(), config.owner));
+  } catch (error) {
+    next(error);
+  }
+});
+
+// Runs the archive sync and answers with its summary. A second request while one is
+// running joins it. {full: true} also revalidates closed months.
+apiRouter.post("/sync", async (request, response, next) => {
+  try {
+    const payload = syncSchema.parse(request.body ?? {});
+    const summary = await syncOnce(getDb(), config.owner, { full: payload.full });
+    response.json({ summary, status: buildImportStatus(getDb(), config.owner) });
+  } catch (error) {
+    next(error);
+  }
 });
 
 apiRouter.post("/bulk-analysis", async (request, response, next) => {
