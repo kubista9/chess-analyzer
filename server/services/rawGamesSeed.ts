@@ -16,7 +16,7 @@ export function rawGamesCachePath(owner: string, cacheDir = config.cacheDir): st
   return path.join(cacheDir, "raw-games", `${safeKey(owner)}.json`);
 }
 
-/** A game as the legacy fetcher stored it in raw-games/<owner>.json (read-only here). */
+/** The fields the seed reads from a game in the legacy raw-games/<owner>.json (read-only here). */
 export interface LegacyRawGame {
   id: string;
   url: string;
@@ -27,7 +27,6 @@ export interface LegacyRawGame {
   rated: boolean;
   openingName: string;
   openingUrl: string | null;
-  openingFamily: string;
   white: { username: string; rating: number; result: string };
   black: { username: string; rating: number; result: string };
 }

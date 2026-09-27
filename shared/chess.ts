@@ -48,12 +48,3 @@ export function normalizeResult(playerColor: PlayerColor, whiteResult: string, b
 
   return "loss";
 }
-
-export function familyFromOpening(openingName: string): string {
-  if (!openingName) {
-    return "Unknown";
-  }
-
-  const cleaned = openingName.replace(/(?:Opening|Defense|Attack|Game|System|Variation).*$/i, "").trim();
-  return cleaned || openingName;
-}

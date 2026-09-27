@@ -1,5 +1,4 @@
 import fs from "node:fs";
-import { familyFromOpening } from "../shared/chess.js";
 import type { LegacyRawGame } from "../server/services/rawGamesSeed.js";
 
 // Raw game objects as returned by https://api.chess.com/pub/player/<user>/games/YYYY/MM.
@@ -67,7 +66,6 @@ export function asLegacyRawGame(raw: RawChessComGame, timeClass: string = "blitz
     rated: raw.rated,
     openingName,
     openingUrl: raw.eco ?? null,
-    openingFamily: familyFromOpening(openingName),
     white: { username: raw.white.username, rating: raw.white.rating, result: raw.white.result },
     black: { username: raw.black.username, rating: raw.black.rating, result: raw.black.result }
   };

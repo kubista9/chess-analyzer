@@ -3,8 +3,6 @@ import { z } from "zod";
 import { IMPORTED_TIME_CLASSES, OPENING_PLY_LIMIT } from "../shared/constants.js";
 import type {
   GameResponse,
-  GamesResponse,
-  OpeningReportResponse,
   QueryWindow,
   ReviewSummary,
   TreeBreadcrumb,
@@ -18,12 +16,11 @@ import { nodeView, walkMoves, type TreeNode } from "../shared/openingTree.js";
 import { GAME_WINDOWS, parseGameWindow, windowBounds } from "../shared/window.js";
 import { config } from "./config.js";
 import { getDb, type Db } from "./db/connection.js";
-import { getGame, listGames, listMoveGames } from "./db/games.js";
+import { getGame, listMoveGames } from "./db/games.js";
 import { jobStore as defaultJobStore, type JobStore } from "./store/jobStore.js";
 import { syncArchives } from "./services/archiveImport.js";
 import { buildImportStatus } from "./services/importStatus.js";
 import { getOpeningBook } from "./services/openingBook.js";
-import { buildOpeningReport } from "./services/openingReport.js";
 import { readCachedGameReview, runGameReview } from "./services/reviewAnalysis.js";
 import { DEFAULT_HALF_LIFE_BY_WINDOW, createTreeService, type BuiltTree, type TreeService } from "./services/treeService.js";
 
@@ -161,32 +158,12 @@ export function createApiRouter(deps: ApiDeps): express.Router {
     response.status(202).json(job);
   });
 
-  // Every stored game in the window, newest first, with no count cap.
-  router.get("/games", (request, response) => {
-    const query = gamesQuerySchema.parse(request.query);
-    const window = queryWindow(query.window, deps.now());
-    const games = listGames(deps.db(), deps.owner, window, { timeClass: query.tc, color: query.color });
-    response.json({ window, games } satisfies GamesResponse);
-  });
-
   router.get("/games/:id", (request, response) => {
     const game = getGame(deps.db(), request.params.id);
     if (!game) {
       throw new HttpError(404, `Game ${request.params.id} is not in the game store.`);
     }
     response.json({ game } satisfies GameResponse);
-  });
-
-  // Results-only report over the stored games in the window.
-  router.get("/openings/report", (request, response) => {
-    const query = gamesQuerySchema.parse(request.query);
-    const window = queryWindow(query.window, deps.now());
-    const games = listGames(deps.db(), deps.owner, window, { timeClass: query.tc });
-    const totals = { white: 0, black: 0 };
-    for (const game of games) {
-      totals[game.color] += 1;
-    }
-    response.json({ window, totals, items: buildOpeningReport(games) } satisfies OpeningReportResponse);
   });
 
   // One node of the per-colour opening tree (by `moves=`, `epd=`, or the start position) with

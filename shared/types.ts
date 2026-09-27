@@ -8,18 +8,6 @@ export type TimeClass = (typeof IMPORTED_TIME_CLASSES)[number];
 export type PlayerColor = "white" | "black";
 export type GameResult = "win" | "loss" | "draw";
 
-/** Results for one opening family, played with one colour. */
-export interface OpeningReportItem {
-  color: PlayerColor;
-  openingFamily: string;
-  games: number;
-  wins: number;
-  draws: number;
-  losses: number;
-  /** (wins + 0.5 * draws) / games, as a percentage. */
-  scorePct: number;
-}
-
 export type JobType = "sync" | "game-review";
 export type JobStatus = "queued" | "running" | "completed" | "failed";
 
@@ -241,23 +229,9 @@ export interface QueryWindow {
   end: number;
 }
 
-/** GET /api/games. Newest first, no cap. */
-export interface GamesResponse {
-  window: QueryWindow;
-  games: GameRecord[];
-}
-
 /** GET /api/games/:id. */
 export interface GameResponse {
   game: GameRecord;
-}
-
-/** GET /api/openings/report. */
-export interface OpeningReportResponse {
-  window: QueryWindow;
-  /** Games per colour in the window; each colour's items add up to its total. */
-  totals: Record<PlayerColor, number>;
-  items: OpeningReportItem[];
 }
 
 /** A move row as the API sends it: the tree edge without its game ids (GET /api/tree/games pages them). */

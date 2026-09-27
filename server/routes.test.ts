@@ -2,7 +2,7 @@ import type { AddressInfo } from "node:net";
 import type { Server } from "node:http";
 import { afterEach, describe, expect, it } from "vitest";
 import { START_EPD } from "../shared/epd.js";
-import type { GamesResponse, JobState, OpeningReportResponse, SyncSummary, TreeGamesResponse, TreeResponse } from "../shared/types.js";
+import type { JobState, SyncSummary, TreeGamesResponse, TreeResponse } from "../shared/types.js";
 import { loadOwnerGames } from "../test/loadFixtures.js";
 import { createApp } from "./app.js";
 import { openDatabase, type Db } from "./db/connection.js";
@@ -49,7 +49,9 @@ async function startApi(sync: () => Promise<SyncSummary> = () => new Promise(() 
       ...init,
       headers: { "Content-Type": "application/json" }
     });
-    return { status: response.status, body: (await response.json()) as T };
+    // Unknown routes answer Express's HTML 404, not JSON.
+    const text = await response.text();
+    return { status: response.status, body: (text.startsWith("{") || text.startsWith("[") ? JSON.parse(text) : text) as T };
   };
   return { call, jobs, db };
 }
@@ -96,25 +98,7 @@ describe("jobs API", () => {
   });
 });
 
-describe("games and report API", () => {
-  it("lists every stored game in the window, newest first, and filters", async () => {
-    const { call } = await startApi();
-    const all = await call<GamesResponse>("/games");
-    expect(all.body.window).toMatchObject({ key: "6m", days: 183 });
-    expect(all.body.games).toHaveLength(8);
-    expect(all.body.games[0].id).toBe("184405952510");
-
-    const recent = await call<GamesResponse>("/games?window=3m");
-    expect(recent.body.games.map((game) => game.endTime >= recent.body.window.start)).not.toContain(false);
-    expect(recent.body.games).toHaveLength(5);
-
-    const black = await call<GamesResponse>("/games?color=black");
-    expect(black.body.games.every((game) => game.color === "black")).toBe(true);
-
-    expect((await call("/games?window=12m")).status).toBe(400);
-    expect((await call("/games?tc=bullet")).status).toBe(400);
-  });
-
+describe("games API", () => {
   it("opens a stored game by id and 404s an unknown one", async () => {
     const { call } = await startApi();
     const found = await call<{ game: { id: string; color: string } }>("/games/184405952510");
@@ -122,14 +106,10 @@ describe("games and report API", () => {
     expect((await call("/games/1")).status).toBe(404);
   });
 
-  it("reports per colour, and each colour's items add up to its games", async () => {
+  it("no longer serves the removed game list and name-based report", async () => {
     const { call } = await startApi();
-    const { body } = await call<OpeningReportResponse>("/openings/report");
-    expect(body.totals.white + body.totals.black).toBe(8);
-    for (const color of ["white", "black"] as const) {
-      const sum = body.items.filter((item) => item.color === color).reduce((total, item) => total + item.games, 0);
-      expect(sum).toBe(body.totals[color]);
-    }
+    expect((await call("/games")).status).toBe(404);
+    expect((await call("/openings/report")).status).toBe(404);
   });
 });
 
