@@ -1,12 +1,10 @@
 # Chess Analyst
 
-Local-first Chess.com analysis for recent public games. You provide a Chess.com username and the app pulls the latest 1, 5, 10, or 25 rapid, blitz, and bullet games, then runs Stockfish-backed analysis to surface:
+Local-first opening analysis for one Chess.com account, `kubista9` (hard-coded as `OWNER_USERNAME` in `shared/constants.ts`). The app pulls kubista9's latest 1, 5, 10, or 25 rapid, blitz, bullet, and daily games, then runs Stockfish-backed analysis to surface:
 
-- Dashboard metrics like win rate, accuracy, blunders, average game length, and rating context
-- A filtered game-history table with opening search plus result/color filters
-- A deep review page for a selected game with move labels such as `best`, `good`, `mistake`, `miss`, and `blunder`
 - Opening diagnostics grouped by opening family
-- Practice-game recommendations and a rule-based weekly training plan built from your recurring mistakes
+- A game list with opening search plus result/color filters, which links into review
+- A review page for a selected game with move labels such as `best`, `good`, `mistake`, `miss`, and `blunder`
 
 ## Stack
 
@@ -93,3 +91,5 @@ REVIEW_MOVE_TIME_MS=360
 REVIEW_REPLY_TIME_MS=180
 CHESS_ANALYZER_SKIP_ENGINE_DOWNLOAD=1
 ```
+
+`CHESS_OWNER` overrides the owner on the server side. It exists for tests only; the UI always uses `kubista9`.
