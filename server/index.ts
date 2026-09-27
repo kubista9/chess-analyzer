@@ -2,7 +2,7 @@ import cors from "cors";
 import express from "express";
 import path from "node:path";
 import fs from "node:fs/promises";
-import { config } from "./config.js";
+import { config, isLoopbackHost } from "./config.js";
 import { apiRouter } from "./routes.js";
 
 const app = express();
@@ -34,6 +34,11 @@ app.use((error: Error, _request: express.Request, response: express.Response, _n
   });
 });
 
-app.listen(config.port, () => {
-  console.log(`Chess Analyst server listening on http://localhost:${config.port}`);
+app.listen(config.port, config.host, () => {
+  const displayHost = config.host.includes(":") ? `[${config.host}]` : config.host;
+  console.log(`Chess Analyst server listening on http://${displayHost}:${config.port}`);
+
+  if (!isLoopbackHost(config.host)) {
+    console.warn(`WARNING: API exposed on LAN; no auth (HOST=${config.host}). Unset HOST to bind to 127.0.0.1 only.`);
+  }
 });

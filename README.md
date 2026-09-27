@@ -24,7 +24,23 @@ npm run dev
 
 Frontend: [http://localhost:5173](http://localhost:5173)
 
-The backend API runs on `http://localhost:3001` and Vite proxies `/api` requests automatically.
+The backend API runs on `http://127.0.0.1:3001` and Vite proxies `/api` requests automatically. The API listens on loopback only by default; it has no auth.
+
+`.env` in the repo root is loaded by `server/config.ts`, so the server, CLI and verify scripts all see it. Variables already set in the shell win. See `.env.example`.
+
+### Testing from a phone on the LAN
+
+```bash
+npm run dev:web -- --host
+```
+
+Vite then serves the UI on your LAN IP, and the API itself stays bound to 127.0.0.1. Note that the Vite proxy forwards `/api/*` for every LAN client, so anyone on the network can use the API through Vite while `--host` is on (including endpoints that start long engine jobs). Only use it on a network you trust, and stop it when done.
+
+To expose the API port itself (not recommended), opt in explicitly:
+
+```bash
+HOST=0.0.0.0 npm run dev:server   # prints: API exposed on LAN; no auth
+```
 
 ## Production build
 
@@ -55,6 +71,7 @@ This project approximates Chess.com-style review labels with Stockfish heuristic
 
 ```bash
 PORT=3001
+HOST=0.0.0.0 # opt-in LAN exposure; default 127.0.0.1
 STOCKFISH_PATH=/absolute/path/to/stockfish
 STOCKFISH_THREADS=4
 STOCKFISH_HASH_MB=192
