@@ -19,6 +19,28 @@ export function pieceValue(piece?: string): number {
   return piece ? PIECE_VALUES[piece] ?? 0 : 0;
 }
 
+/**
+ * The owner's colour in a game, comparing trimmed, case-insensitive usernames.
+ * Returns null when the owner played neither side. Callers skip or report such a game;
+ * they never fall back to a default colour.
+ */
+export function resolvePlayerColor(owner: string, whiteUsername: string, blackUsername: string): PlayerColor | null {
+  const needle = owner.trim().toLowerCase();
+  if (!needle) {
+    return null;
+  }
+
+  if (whiteUsername.trim().toLowerCase() === needle) {
+    return "white";
+  }
+
+  if (blackUsername.trim().toLowerCase() === needle) {
+    return "black";
+  }
+
+  return null;
+}
+
 export function emptyCategoryCounts(): Record<MoveCategory, number> {
   return Object.fromEntries(MOVE_CATEGORIES.map((category) => [category, 0])) as Record<
     MoveCategory,

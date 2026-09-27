@@ -9,7 +9,8 @@ import { WINDOW_DAYS, endOfUtcDay, windowBounds, type WindowBounds } from "../..
 
 export { isInWindow } from "../../shared/window.js";
 
-export const OWNER = "kubista9";
+// The one owner, from the app-wide constant (via config, so CHESS_OWNER applies in tests).
+export const OWNER = config.owner;
 
 /** Reads `--name value` or `--name=value` from argv. */
 export function argValue(name: string, argv: string[] = process.argv.slice(2)): string | undefined {

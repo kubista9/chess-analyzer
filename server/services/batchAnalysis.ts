@@ -52,10 +52,9 @@ function lineGap(lines: EngineLine[]): number | null {
 
 async function buildGameSummary(
   session: StockfishSession,
-  username: string,
-  game: ArchiveGame
+  game: ArchiveGame,
+  playerColor: PlayerColor
 ): Promise<HistoryGameSummary> {
-  const playerColor = playerColorForGame(game, username);
   const parsed = parseGame(game);
   const playerMoves = parsed.moves.filter((move) => move.color === playerColor);
   const categories = emptyCategoryCounts();
@@ -163,31 +162,48 @@ function buildOpeningsSnapshot(
 }
 
 export async function runBulkAnalysis(
-  username: string,
   limit: number,
   onProgress?: (progress: BatchProgress) => void
 ): Promise<OpeningsSnapshot> {
+  const username = config.owner;
   const recentGames = await fetchRecentGamesWithCacheStatus(username, limit, { refresh: true });
-  const { games } = recentGames;
+
+  // Resolve the owner's colour up front. A game the owner did not play is skipped and
+  // reported, never analysed from a guessed side.
+  const games: Array<{ game: ArchiveGame; color: PlayerColor }> = [];
+  for (const game of recentGames.games) {
+    const color = playerColorForGame(game, username);
+    if (color) {
+      games.push({ game, color });
+    } else {
+      console.warn(`Skipping game ${game.id}: ${username} is neither White nor Black.`);
+    }
+  }
+  const skippedGames = recentGames.games.length - games.length;
 
   if (!games.length) {
-    throw new Error(`No supported recent rapid, blitz, bullet, or daily games found for ${username}.`);
+    throw new Error(
+      skippedGames > 0
+        ? `None of the ${skippedGames} fetched game(s) were played by ${username}.`
+        : `No supported recent rapid, blitz, bullet, or daily games found for ${username}.`
+    );
   }
 
   const previousFetch = recentGames.cache.previousFetchedAt
     ? formatCacheTimestamp(recentGames.cache.previousFetchedAt)
     : null;
+  const skippedNote = skippedGames > 0 ? ` Skipped ${skippedGames} game(s) ${username} did not play.` : "";
   onProgress?.({
     completedGames: 0,
     totalGames: games.length,
-    message: previousFetch
+    message: (previousFetch
       ? `Last Chess.com fetch was ${previousFetch}; found ${recentGames.cache.newGames} new stored game(s).`
-      : `Fetched Chess.com games for ${username}.`
+      : `Fetched Chess.com games for ${username}.`) + skippedNote
   });
 
   const cachedSummaries = new Map<string, HistoryGameSummary>();
   const missingGameIds = new Set<string>();
-  for (const game of games) {
+  for (const { game } of games) {
     const cachedSummary = await loadCachedGameSummary(username, game.id);
     if (cachedSummary) {
       cachedSummaries.set(game.id, {
@@ -204,7 +220,7 @@ export async function runBulkAnalysis(
 
   try {
     const summaries: HistoryGameSummary[] = [];
-    for (const [index, game] of games.entries()) {
+    for (const [index, { game, color }] of games.entries()) {
       const cachedSummary = cachedSummaries.get(game.id);
       if (cachedSummary) {
         summaries.push(cachedSummary);
@@ -226,7 +242,7 @@ export async function runBulkAnalysis(
         await session.initialize();
       }
 
-      const summary = await buildGameSummary(session, username, game);
+      const summary = await buildGameSummary(session, game, color);
       await writeCachedGameSummary(username, game.id, summary);
       analyzedNewGames += 1;
       summaries.push(summary);

@@ -321,7 +321,6 @@ export function GameReviewPage() {
     setError(null);
     try {
       const job = await startGameReview({
-        username: snapshot.username,
         gameId: game.id,
         gameSummary: game
       });

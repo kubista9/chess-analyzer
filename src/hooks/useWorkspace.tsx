@@ -5,6 +5,7 @@ import {
   useState,
   type ReactNode
 } from "react";
+import { OWNER_USERNAME } from "../../shared/constants";
 import type { OpeningsSnapshot, JobState, ReviewSummary } from "../../shared/types";
 
 interface WorkspaceContextValue {
@@ -29,7 +30,9 @@ function loadStoredSnapshot(): OpeningsSnapshot | null {
       return null;
     }
 
-    return JSON.parse(raw) as OpeningsSnapshot;
+    const stored = JSON.parse(raw) as OpeningsSnapshot;
+    // The owner is hard-coded; a snapshot saved for any other account is ignored.
+    return stored.username?.trim().toLowerCase() === OWNER_USERNAME ? stored : null;
   } catch {
     return null;
   }

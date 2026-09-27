@@ -23,17 +23,17 @@ function reviewCachePath(username: string, gameId: string): string {
   return path.join(config.cacheDir, "reviews", safeKey(username), `${safeKey(gameId)}.json`);
 }
 
-export async function readCachedGameReview(username: string, gameId: string): Promise<ReviewSummary | null> {
-  return readJsonFile<ReviewSummary>(reviewCachePath(username, gameId));
+export async function readCachedGameReview(gameId: string): Promise<ReviewSummary | null> {
+  return readJsonFile<ReviewSummary>(reviewCachePath(config.owner, gameId));
 }
 
 export async function runGameReview(
-  username: string,
   gameId: string,
   fallbackGameSummary: HistoryGameSummary | null = null
 ): Promise<ReviewSummary> {
+  const username = config.owner;
   const cachePath = reviewCachePath(username, gameId);
-  const cached = await readCachedGameReview(username, gameId);
+  const cached = await readCachedGameReview(gameId);
   if (cached) {
     return cached;
   }
@@ -43,8 +43,12 @@ export async function runGameReview(
     throw new Error(`Could not find game ${gameId} for ${username}. Run bulk analysis first.`);
   }
 
-  const parsed = parseGame(game);
   const playerColor = playerColorForGame(game, username);
+  if (!playerColor) {
+    throw new Error(`Game ${gameId} was not played by ${username}, so it cannot be reviewed from their side.`);
+  }
+
+  const parsed = parseGame(game);
   const session = new StockfishSession();
   await session.initialize();
 

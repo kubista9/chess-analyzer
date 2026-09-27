@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { gameId, loadOwnerGames } from "../test/loadFixtures.js";
-import { clamp, normalizeResult } from "./chess.js";
+import { OWNER_USERNAME } from "./constants.js";
+import { clamp, normalizeResult, resolvePlayerColor } from "./chess.js";
 
 describe("clamp", () => {
   it("passes values inside the range through", () => {
@@ -62,5 +63,19 @@ describe("normalizeResult", () => {
       const color = game.white.username.toLowerCase() === "kubista9" ? "white" : "black";
       expect(normalizeResult(color, game.white.result, game.black.result), gameId(game)).toBe(expected[gameId(game)]);
     }
+  });
+});
+
+describe("resolvePlayerColor", () => {
+  it("matches the owner by trimmed, case-insensitive name", () => {
+    expect(resolvePlayerColor(OWNER_USERNAME, " Kubista9 ", "someone")).toBe("white");
+    expect(resolvePlayerColor(OWNER_USERNAME, "someone", " Kubista9 ")).toBe("black");
+    expect(resolvePlayerColor(" Kubista9 ", "KUBISTA9", "someone")).toBe("white");
+  });
+
+  it("returns null, not a default colour, when the owner played neither side", () => {
+    expect(resolvePlayerColor(OWNER_USERNAME, "hikaru", "magnuscarlsen")).toBeNull();
+    expect(resolvePlayerColor(OWNER_USERNAME, "kubista", "kubista99")).toBeNull();
+    expect(resolvePlayerColor("  ", "  ", "someone")).toBeNull();
   });
 });

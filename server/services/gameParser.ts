@@ -1,5 +1,5 @@
 import { Chess, type PieceSymbol } from "chess.js";
-import { classifyPhase } from "../../shared/chess.js";
+import { classifyPhase, resolvePlayerColor } from "../../shared/chess.js";
 import type { ArchiveGame, ChessPhase, PlayerColor } from "../../shared/types.js";
 
 export interface ParsedMove {
@@ -50,6 +50,7 @@ export function parseGame(game: ArchiveGame): ParsedGame {
   return { moves };
 }
 
-export function playerColorForGame(game: ArchiveGame, username: string): PlayerColor {
-  return game.white.username.toLowerCase() === username.toLowerCase() ? "white" : "black";
+/** The owner's colour in this game, or null when the owner played neither side. */
+export function playerColorForGame(game: ArchiveGame, owner: string): PlayerColor | null {
+  return resolvePlayerColor(owner, game.white.username, game.black.username);
 }

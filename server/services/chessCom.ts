@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { BULK_ANALYSIS_LIMITS, SUPPORTED_TIME_CLASSES } from "../../shared/constants.js";
-import { familyFromOpening } from "../../shared/chess.js";
-import type { ArchiveGame, PlayerColor, TimeClass } from "../../shared/types.js";
+import { familyFromOpening, resolvePlayerColor } from "../../shared/chess.js";
+import type { ArchiveGame, TimeClass } from "../../shared/types.js";
 import { config } from "../config.js";
 import { readJsonFile, safeKey, writeJsonFile } from "../store/fileStore.js";
 
@@ -75,20 +75,6 @@ function openingFromEcoUrl(ecoUrl: string | null | undefined): string | null {
 
 function normalizeOpeningName(ecoUrl: string | null | undefined): string {
   return openingFromEcoUrl(ecoUrl) ?? "Unknown opening";
-}
-
-function resolvePlayerColor(username: string, whiteUsername: string, blackUsername: string): PlayerColor | null {
-  const needle = username.toLowerCase();
-
-  if (whiteUsername.toLowerCase() === needle) {
-    return "white";
-  }
-
-  if (blackUsername.toLowerCase() === needle) {
-    return "black";
-  }
-
-  return null;
 }
 
 function toArchiveGame(username: string, rawGame: z.infer<typeof gameSchema>): ArchiveGame | null {

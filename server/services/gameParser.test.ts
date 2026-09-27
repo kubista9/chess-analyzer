@@ -63,6 +63,11 @@ describe("parseGame on the owner's real games", () => {
   it("resolves the owner's colour", () => {
     expect(playerColorForGame(owner.get("184397818138")!, "kubista9")).toBe("black");
     expect(playerColorForGame(owner.get("170183655724")!, "KUBISTA9")).toBe("white");
+    expect(playerColorForGame(owner.get("170183655724")!, " Kubista9 ")).toBe("white");
+  });
+
+  it("returns null for a player who is on neither side", () => {
+    expect(playerColorForGame(owner.get("184397818138")!, "not-a-player-here")).toBeNull();
   });
 });
 
@@ -80,6 +85,14 @@ describe("synthetic archive month fixture", () => {
         [game.white.username, game.black.username].some((name) => name !== "kubista9" && name.trim().toLowerCase() === "kubista9")
       )
     ).toBe(true);
+  });
+
+  it("resolves the padded, mixed-case owner name in the synthetic month", () => {
+    const padded = games.find((game) =>
+      [game.white.username, game.black.username].some((name) => name !== "kubista9" && name.trim().toLowerCase() === "kubista9")
+    )!;
+    const expected = padded.white.username.trim().toLowerCase() === "kubista9" ? "white" : "black";
+    expect(playerColorForGame(asArchiveGame(padded), "kubista9")).toBe(expected);
   });
 
   it("holds only legal PGNs, including the chess960 start position", () => {

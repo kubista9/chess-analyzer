@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { Link, NavLink, Outlet, useLocation } from "react-router-dom";
 import { BookOpen, History, Menu, X } from "lucide-react";
+import { OWNER_USERNAME } from "../../shared/constants";
 import { useWorkspace } from "../hooks/useWorkspace";
 
 const navItems = [
@@ -126,7 +127,7 @@ export function AppShell() {
         <div className="sidebar-footer">
           <div className="footer-label">Current workspace</div>
           <div className="footer-value">
-            {snapshot ? `${snapshot.username} · ${snapshot.limit} games` : "Ready for public Chess.com username"}
+            {snapshot ? `${OWNER_USERNAME} · ${snapshot.limit} games` : OWNER_USERNAME}
           </div>
         </div>
       </aside>

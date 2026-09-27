@@ -2,6 +2,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import os from "node:os";
+import { OWNER_USERNAME } from "../shared/constants.js";
 
 // Anchor every storage path to the repo root, not process.cwd(), so the server, CLI and
 // verify scripts share one storage/ no matter where they are started from. Walking up to
@@ -37,6 +38,8 @@ export function isLoopbackHost(host: string): boolean {
 
 export const config = {
   rootDir,
+  // The one Chess.com account this app analyses. CHESS_OWNER is for tests only.
+  owner: (process.env.CHESS_OWNER ?? OWNER_USERNAME).trim().toLowerCase(),
   port: Number(process.env.PORT ?? 3001),
   // Loopback by default: the API has no auth and can start long engine jobs.
   // Set HOST=0.0.0.0 to opt in to LAN exposure.

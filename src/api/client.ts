@@ -17,15 +17,14 @@ async function request<T>(input: RequestInfo, init?: RequestInit): Promise<T> {
   return response.json() as Promise<T>;
 }
 
-export async function startBulkAnalysis(username: string, limit: BulkAnalysisLimit): Promise<JobState<OpeningsSnapshot>> {
+export async function startBulkAnalysis(limit: BulkAnalysisLimit): Promise<JobState<OpeningsSnapshot>> {
   return request<JobState<OpeningsSnapshot>>("/api/bulk-analysis", {
     method: "POST",
-    body: JSON.stringify({ username, limit })
+    body: JSON.stringify({ limit })
   });
 }
 
 export async function startGameReview(params: {
-  username: string;
   gameId: string;
   gameSummary?: OpeningsSnapshot["games"][number];
 }): Promise<JobState<ReviewSummary>> {

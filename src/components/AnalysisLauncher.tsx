@@ -2,6 +2,7 @@ import { useCallback, useState, type FormEvent } from "react";
 import {
   BULK_ANALYSIS_LIMITS,
   DEFAULT_BULK_ANALYSIS_LIMIT,
+  OWNER_USERNAME,
   type BulkAnalysisLimit
 } from "../../shared/constants";
 import type { OpeningsSnapshot, JobState } from "../../shared/types";
@@ -15,7 +16,6 @@ function isBulkAnalysisLimit(value: number | undefined): value is BulkAnalysisLi
 
 export function AnalysisLauncher() {
   const { snapshot, setSnapshot, bulkJob, setBulkJob } = useWorkspace();
-  const [username, setUsername] = useState(snapshot?.username ?? "");
   const [limit, setLimit] = useState<BulkAnalysisLimit>(
     isBulkAnalysisLimit(snapshot?.limit) ? snapshot.limit : DEFAULT_BULK_ANALYSIS_LIMIT
   );
@@ -40,7 +40,7 @@ export function AnalysisLauncher() {
     setError(null);
 
     try {
-      const job = await startBulkAnalysis(username, limit);
+      const job = await startBulkAnalysis(limit);
       setBulkJob(job);
     } catch (submissionError) {
       setError(submissionError instanceof Error ? submissionError.message : "Could not start analysis.");
@@ -51,18 +51,10 @@ export function AnalysisLauncher() {
     <section className="hero">
       <div className="hero-copy">
         <h1>Run a local review pipeline for 1, 5, 10, or 25 recent games.</h1>
+        <p>Chess.com player: {OWNER_USERNAME}</p>
       </div>
 
       <form className="hero-form" onSubmit={handleSubmit}>
-        <label className="field">
-          <span>Chess.com username</span>
-          <input
-            value={username}
-            onChange={(event) => setUsername(event.target.value)}
-            placeholder="e.g. hikaru"
-            required
-          />
-        </label>
 
         <label className="field">
           <span>Games to analyze</span>

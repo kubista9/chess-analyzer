@@ -1,3 +1,7 @@
+// The one Chess.com account this app analyses. The server reads it through config.owner
+// (CHESS_OWNER overrides it, for tests only); the client uses this constant directly.
+export const OWNER_USERNAME = "kubista9";
+
 export const BULK_ANALYSIS_LIMITS = [1, 5, 10, 25] as const;
 export type BulkAnalysisLimit = (typeof BULK_ANALYSIS_LIMITS)[number];
 export const DEFAULT_BULK_ANALYSIS_LIMIT: BulkAnalysisLimit = 10;

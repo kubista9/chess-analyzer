@@ -2,17 +2,16 @@ import express from "express";
 import { z } from "zod";
 import { BULK_ANALYSIS_LIMITS } from "../shared/constants.js";
 import type { OpeningsSnapshot, ReviewSummary } from "../shared/types.js";
+import { config } from "./config.js";
 import { jobStore } from "./store/jobStore.js";
 import { runBulkAnalysis } from "./services/batchAnalysis.js";
 import { readCachedGameReview, runGameReview } from "./services/reviewAnalysis.js";
 
 const bulkSchema = z.object({
-  username: z.string().min(1),
   limit: z.literal(BULK_ANALYSIS_LIMITS)
 });
 
 const reviewSchema = z.object({
-  username: z.string().min(1),
   gameId: z.string().min(1),
   gameSummary: z.any().optional()
 });
@@ -26,17 +25,17 @@ apiRouter.get("/health", (_request, response) => {
 apiRouter.post("/bulk-analysis", async (request, response, next) => {
   try {
     const payload = bulkSchema.parse(request.body);
-    const job = jobStore.create<OpeningsSnapshot>("bulk-analysis", `Queued analysis for ${payload.username}`);
+    const job = jobStore.create<OpeningsSnapshot>("bulk-analysis", `Queued analysis for ${config.owner}`);
 
     void (async () => {
       try {
         jobStore.update(job.id, {
           status: "running",
           progress: 2,
-          message: `Fetching recent games for ${payload.username}`
+          message: `Fetching recent games for ${config.owner}`
         });
 
-        const result = await runBulkAnalysis(payload.username, payload.limit, (progress) => {
+        const result = await runBulkAnalysis(payload.limit, (progress) => {
           const analysisProgress =
             progress.totalGames > 0 ? Math.round((progress.completedGames / progress.totalGames) * 90) : 90;
 
@@ -50,7 +49,7 @@ apiRouter.post("/bulk-analysis", async (request, response, next) => {
         jobStore.update(job.id, {
           status: "completed",
           progress: 100,
-          message: `Analysis ready for ${payload.username}`,
+          message: `Analysis ready for ${config.owner}`,
           result
         });
       } catch (error) {
@@ -73,7 +72,7 @@ apiRouter.post("/game-review", async (request, response, next) => {
   try {
     const payload = reviewSchema.parse(request.body);
     const job = jobStore.create<ReviewSummary>("game-review", `Queued deep review for ${payload.gameId}`);
-    const cachedReview = await readCachedGameReview(payload.username, payload.gameId);
+    const cachedReview = await readCachedGameReview(payload.gameId);
 
     if (cachedReview) {
       const completedJob = jobStore.update<ReviewSummary>(job.id, {
@@ -95,7 +94,6 @@ apiRouter.post("/game-review", async (request, response, next) => {
         });
 
         const result = await runGameReview(
-          payload.username,
           payload.gameId,
           (payload.gameSummary as OpeningsSnapshot["games"][number] | undefined) ?? null
         );
