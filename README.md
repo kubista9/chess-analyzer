@@ -1,9 +1,10 @@
 # Chess Analyst
 
-Local-first opening analysis for one Chess.com account, `kubista9` (hard-coded as `OWNER_USERNAME` in `shared/constants.ts`). The app pulls kubista9's latest 1, 5, 10, or 25 rapid, blitz, bullet, and daily games and shows:
+Local-first opening analysis for one Chess.com account, `kubista9` (hard-coded as `OWNER_USERNAME` in `shared/constants.ts`). The app imports every standard blitz and rapid game of the last 6 months into a local SQLite store (about 1,380 games) and shows:
 
-- An Opening Report split into "As White" and "As Black", with W/D/L and score% (a draw counts 0.5) per opening family. It is built from game results only; no engine runs for it.
-- A game list with opening search plus result/color filters, which links into review
+- Home: a Sync card with the stored games (`1,380 games · 1,234 blitz / 146 rapid · Mar 28 – Sep 27 · synced 5 min ago`), the Sync button and a Full re-check.
+- An Opening Report split into "As White" and "As Black", with W/D/L and score% (a draw counts 0.5) per opening family, over every stored game in the last 6 months (or 3 months). It is built from game results only; no engine runs for it.
+- A game list of the same window with opening/ECO search plus result, colour and time-class filters, which links into review
 - An opening review of a selected game: Stockfish looks at the first 20 plies (10 moves each). Evals are shown from White's side (`+0.80`, `M3`, `-M3`), and each move is labelled `best`, `good`, `inaccuracy`, `mistake` or `blunder` by the lichess win% it gives away (< 1, < 5, < 10, < 15, >= 15).
 
 ## Stack
@@ -53,10 +54,12 @@ The sync lists the archives, then requests the months that overlap the last 183 
 Only standard games are imported: `rules == "chess"`, no `SetUp`/`FEN` start position, and time class blitz or rapid. Each skipped game is counted under one reason (variant, custom-start, time-class, not-owner, duplicate, malformed), so kept + skipped always equals the month's archive length. Kept games go to `games`, and their first 30 plies (SAN, UCI, EPD before/after, clock, time spent) go to `game_plies`. The 6-month window is applied when querying, not when fetching or deriving. Ratings are Chess.com's post-game ratings.
 
 - `GET /api/status`: window counts by time class and colour, the date range, the last sync, a stale flag (no successful sync in 24 h) and per-month rows with skip reasons and the last HTTP status.
-- `POST /api/sync` (`{"full": true}` optional): runs the sync and returns its summary; a second request while one runs joins it.
+- `POST /api/sync` (`{"full": true}` optional): starts the sync as a background job keyed `sync` and answers 202 with the job. A second request while it runs gets the same job. The completed job's result is `{summary, status}`.
+- `GET /api/games?window=6m|3m&tc=blitz|rapid&color=white|black`: every stored game in the window (6 months by default), newest first, with no cap. `GET /api/games/:id` returns one stored game, or 404.
+- `GET /api/openings/report?window=6m|3m`: the results-only report over the window, with the games per colour.
 - `npx tsx scripts/verify/verify-import.ts --asof 2026-09-26` recounts the stored raw months independently and checks the invariants and the golden window numbers (read-only).
 
-The pages still use the legacy "Load games" run until the next phase moves them onto the store. `storage/chess.db` is gitignored and can be deleted and re-synced at any time; the app never deletes the caches under `storage/cache`.
+The pages read only from the store; the browser keeps no snapshot of games (just the id of a running sync job). `storage/chess.db` is gitignored and can be deleted and re-synced at any time; the app never deletes the caches under `storage/cache`.
 
 ## Production build
 
@@ -75,7 +78,13 @@ npm run check       # typecheck, then test, then build:web
 
 `npm run build` also runs the typecheck first, because `vite build` does not type-check `src/`.
 
-Verify scripts live in `scripts/verify/` and are read-only. They take `--asof YYYY-MM-DD`, meaning the end of that UTC day, inclusive (see `scripts/verify/_lib.ts`). `npx tsx scripts/verify/check-report.ts` prints the per-colour Opening Report over the raw games cache (options: `--time-class blitz,rapid`, `--asof`, `--days`; without `--asof` every cached game counts).
+Verify scripts live in `scripts/verify/` and are read-only. They take `--asof YYYY-MM-DD`, meaning the end of that UTC day, inclusive (see `scripts/verify/_lib.ts`). `npx tsx scripts/verify/check-report.ts` prints the per-colour Opening Report over the game store and checks that each colour's items add up to its games (options: `--time-class blitz|rapid`, `--asof`, `--days`; without `--asof` the window ends today).
+
+## Jobs
+
+Syncs and reviews run as in-memory background jobs with a dedupe key (`sync`, `review:<gameId>`): starting a key that is still running joins that job, so a double click or a second tab never starts a second sync or a second Stockfish review. Finished jobs are kept for 30 minutes, then evicted. `GET /api/jobs/:id` answers 404 for an unknown job, and `GET /api/jobs/active` lists the running ones.
+
+The client polls one request at a time (a timeout chain, every 1.4 s) and stops when the job completes or fails, on a 404, or after 5 consecutive errors. After a server restart the job is gone, so the page shows "Job lost (the server restarted), run again." with a Retry instead of polling forever. A failed job shows its reason and a Retry.
 
 ## Stockfish
 
@@ -84,6 +93,8 @@ The install script downloads Stockfish automatically into:
 ```text
 storage/engines/stockfish/current/stockfish
 ```
+
+If the engine process fails to start, exits or errors, the running review fails with that reason instead of hanging.
 
 You can override the binary path with:
 
