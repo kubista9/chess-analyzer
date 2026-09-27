@@ -49,15 +49,18 @@ const timeClassOptions: Option<TimeClass | null>[] = [
   { value: "rapid", label: "Rapid" }
 ];
 
-/** Colour (in the URL), window, time class and recency weighting for the Explorer. */
+/**
+ * Colour (in the URL), window, time class and recency weighting for the Explorer. Without
+ * `color` (Home, Leaks) the colour switch is left out; the other filters are shared.
+ */
 export function FilterBar({
   color,
   onColorChange,
   filters,
   onFiltersChange
 }: {
-  color: PlayerColor;
-  onColorChange: (color: PlayerColor) => void;
+  color?: PlayerColor;
+  onColorChange?: (color: PlayerColor) => void;
   filters: ExplorerFilters;
   onFiltersChange: (change: Partial<ExplorerFilters>) => void;
 }) {
@@ -65,8 +68,8 @@ export function FilterBar({
   const canWeight = filters.window === "6m";
 
   return (
-    <section className="panel filter-bar" aria-label="Explorer filters">
-      <Segmented label="Colour" options={colorOptions} value={color} onChange={onColorChange} />
+    <section className="panel filter-bar" aria-label="Filters">
+      {color && onColorChange ? <Segmented label="Colour" options={colorOptions} value={color} onChange={onColorChange} /> : null}
       <Segmented label="Window" options={windowOptions} value={filters.window} onChange={(window) => onFiltersChange({ window })} />
       <Segmented
         label="Time class"

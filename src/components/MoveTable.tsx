@@ -1,21 +1,7 @@
 import { ArrowDownRight, ArrowRight, ArrowUpRight, ListVideo } from "lucide-react";
 import { moveSignals, trendDirection, type MoveSignal } from "../../shared/moveSignals";
 import type { PlayerColor, TreeEdgeView, TreeNodeView } from "../../shared/types";
-import { formatCount } from "../utils/formatters";
-
-const pct = (value: number) => `${Math.round(value * 100)}%`;
-const pctOne = (value: number) => `${(value * 100).toFixed(1)}%`;
-
-/** Percentage points with a sign: -9.1, +3.0. */
-function formatDelta(delta: number): string {
-  const points = delta * 100;
-  return `${points > 0 ? "+" : points < 0 ? "−" : "±"}${Math.abs(points).toFixed(1)}`;
-}
-
-/** Points above/below the expectation over all games: -21.2, +9.8. */
-function formatPoints(points: number): string {
-  return `${points > 0 ? "+" : points < 0 ? "−" : "±"}${Math.abs(points).toFixed(1)}`;
-}
+import { formatCount, formatDelta, formatPoints, pct, pctOne } from "../utils/formatters";
 
 function formatSeconds(ms: number): string {
   return ms < 10_000 ? `${(ms / 1000).toFixed(1)} s` : `${Math.round(ms / 1000)} s`;
@@ -34,8 +20,8 @@ const signalLabel: Record<MoveSignal, string | null> = {
   "low-sample": "Low sample"
 };
 
-function ScoreWhisker({ edge }: { edge: TreeEdgeView }) {
-  const { score, expected, ci } = edge.weighted;
+/** Score dot, 95% CI bar, 50% tick and an amber tick at the Elo expectation, on a 0-100% axis. */
+export function ScoreWhisker({ score, expected, ci }: { score: number; expected: number; ci: [number, number] }) {
   const x = (value: number) => 4 + value * 92;
   return (
     <svg className="score-whisker" viewBox="0 0 100 14" preserveAspectRatio="none" aria-hidden="true">
@@ -209,7 +195,7 @@ export function MoveTable({ node, color, ply, selected, onSelect, onFollow, onSh
                   }`}
                 >
                   <span className="cell-main">{pct(summary.score)}</span>
-                  <ScoreWhisker edge={edge} />
+                  <ScoreWhisker {...summary} />
                   <span className="cell-sub">
                     {pct(summary.ci[0])}–{pct(summary.ci[1])}
                   </span>

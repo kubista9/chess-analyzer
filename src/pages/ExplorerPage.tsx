@@ -118,6 +118,7 @@ export function ExplorerPage() {
       setSearchParams(
         (params) => {
           const next = new URLSearchParams(params);
+          next.delete("select");
           if (moves.length) {
             next.set("moves", moves.join(","));
           } else {
@@ -130,6 +131,26 @@ export function ExplorerPage() {
     },
     [setSearchParams]
   );
+
+  // ?select=<uci> (links from Home and Leaks) highlights that move's row once the node loads.
+  const selectUci = searchParams.get("select");
+  useEffect(() => {
+    if (!selectUci || !fresh) {
+      return;
+    }
+    const index = edges.findIndex((edge) => edge.uci === selectUci);
+    if (index >= 0) {
+      setSelected(index);
+    }
+    setSearchParams(
+      (params) => {
+        const next = new URLSearchParams(params);
+        next.delete("select");
+        return next;
+      },
+      { replace: true }
+    );
+  }, [edges, fresh, selectUci, setSearchParams]);
 
   const setColor = (next: PlayerColor) => {
     if (next === color) {

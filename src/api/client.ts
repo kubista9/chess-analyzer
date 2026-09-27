@@ -1,9 +1,11 @@
 import type {
+  FixListResponse,
   GameResponse,
   ImportStatus,
   JobState,
   PlayerColor,
   ReviewSummary,
+  SnapshotResponse,
   SyncJobResult,
   TimeClass,
   TreeGamesResponse,
@@ -93,6 +95,23 @@ export function fetchTreeGames(
     `/api/tree/games${query({ ...treeParams(tree, moves), uci, page: String(page) })}`,
     { signal }
   );
+}
+
+/** Filters for the answers over both colours (fix list, snapshot). */
+export type RepertoireQuery = Omit<TreeQuery, "color">;
+
+function repertoireParams(filters: RepertoireQuery): Record<string, string | undefined> {
+  return { window: filters.window, tc: filters.timeClass, hl: filters.weighted ? undefined : "off" };
+}
+
+/** The results-only fix list over both colours. */
+export function fetchFixList(filters: RepertoireQuery, signal?: AbortSignal): Promise<FixListResponse> {
+  return request<FixListResponse>(`/api/fixlist${query(repertoireParams(filters))}`, { signal });
+}
+
+/** The opponent's main moves and the owner's answers, per colour. */
+export function fetchSnapshot(filters: RepertoireQuery, signal?: AbortSignal): Promise<SnapshotResponse> {
+  return request<SnapshotResponse>(`/api/snapshot${query(repertoireParams(filters))}`, { signal });
 }
 
 export function startGameReview(gameId: string): Promise<JobState<ReviewSummary>> {

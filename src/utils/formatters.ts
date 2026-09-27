@@ -26,3 +26,19 @@ export function formatAgo(atMs: number, nowMs: number = Date.now()): string {
   const days = Math.floor(hours / 24);
   return `${days} day${days === 1 ? "" : "s"} ago`;
 }
+
+/** 0.395 -> "40%". */
+export const pct = (value: number) => `${Math.round(value * 100)}%`;
+/** 0.395 -> "39.5%". */
+export const pctOne = (value: number) => `${(value * 100).toFixed(1)}%`;
+
+/** A score difference as percentage points with a sign: -9.1, +3.0. */
+export function formatDelta(delta: number): string {
+  const points = delta * 100;
+  return `${points > 0 ? "+" : points < 0 ? "−" : "±"}${Math.abs(points).toFixed(1)}`;
+}
+
+/** Points above/below the expectation over all games: -21.2, +9.8. */
+export function formatPoints(points: number): string {
+  return `${points > 0 ? "+" : points < 0 ? "−" : "±"}${Math.abs(points).toFixed(1)}`;
+}
