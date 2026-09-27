@@ -2,7 +2,8 @@
 
 Local-first opening analysis for one Chess.com account, `kubista9` (hard-coded as `OWNER_USERNAME` in `shared/constants.ts`). The app imports every standard blitz and rapid game of the last 6 months into a local SQLite store (about 1,380 games) and shows:
 
-- Home: a Sync card with the stored games (`1,380 games · 1,234 blitz / 146 rapid · Mar 28 – Sep 27 · synced 5 min ago`), the Sync button and a Full re-check.
+- Home: a Sync card with the stored games (`1,380 games · 1,234 blitz / 146 rapid · Mar 28 – Sep 27 · synced 5 min ago`), the Sync button and a Full re-check; the top 3 "Biggest leaks" from the fix list (below); and a repertoire snapshot per colour (`vs 1.e4: 1...d5 55% (223) mostly lately · 1...e5 39% (216) rarely played lately`), each move linking into the Explorer.
+- Leaks (`/leaks`): the whole results-only fix list, a "worth watching" list and how the list is made.
 - An Explorer (`/explorer`): pick As White or As Black, then walk the opening move by move on a board (click or drag a move, click a row, or use the arrow keys). Each position shows its book name and ECO, and each move row shows raw n with its share (and the effective n when recent games count more), W/D/L, the score with a 95% interval whisker, the score against the Elo expectation, the 90-day trend, your average think time and the book name or "out of book". A row is coloured as below or above expectation only when the difference clears the noise gate (see below). Each row opens a games drawer that links every game to its review and to Chess.com. It is built from game results only; no engine runs for it.
 - An opening review of a selected game: Stockfish looks at the first 20 plies (10 moves each). Evals are shown from White's side (`+0.80`, `M3`, `-M3`), and each move is labelled `best`, `good`, `inaccuracy`, `mistake` or `blunder` by the lichess win% it gives away (< 1, < 5, < 10, < 15, >= 15).
 
@@ -71,6 +72,19 @@ The Explorer colours a row only when it has at least 8 raw games and an effectiv
 - `GET /api/tree/games?<the same filters>&uci=<move>&page=N&size=20`: the games that played `uci` from that node, newest first, 20 per page, with opponent, ratings, result, date, time control, the Chess.com URL and the ply of the move (the drawer links to `/review/:id?ply=N`).
 - `npx tsx scripts/verify/verify-tree.ts --asof 2026-09-26` checks the golden lines, names, effective n, book exit and the counts along every path (read-only).
 
+## Fix list (results only)
+
+`shared/fixList.ts` lists the owner's moves that lose points against his Elo expectation, from results only (no engine yet):
+
+- Candidates are the owner's own moves in both colours' trees (the first 20 plies) with at least 8 raw games and an effective n of 8.
+- A candidate is a leak when z >= 1.64 and it is a Benjamini-Hochberg discovery at q = 0.2 across the whole candidate set (one-sided p). Nominally significant lines that fail BH are a separate "watch" list; on simulated no-leak results about as many lines land there as on the real games.
+- Blame attribution runs bottom-up: a game counted for an emitted deeper move no longer counts for the moves before it, so a line and its continuation are never listed for the same points. A shorter line is still listed when its residual has 8 games, loses at least 1 weighted point and has z >= 1.
+- Items are ranked by those recency-weighted points lost and carry the CI, the expectation and delta, the 90-day trend, the share of games lost by move 20 and up to 3 recent losing games.
+
+- `GET /api/fixlist?window=6m|3m&tc=blitz|rapid&hl=<days>|off`: `{tested, significant, items, watch, thresholds, games, ...}`.
+- `GET /api/snapshot?<the same filters>`: per colour, the opponent's main moves at his first decision and the owner's answers with score, n, trend and a usage hint.
+- `npx tsx scripts/verify/verify-fixlist.ts --asof 2026-09-26 [--sims 200]` checks the items against the tree and re-runs the null simulation (every result redrawn at its Elo expectation): the plan's gate emits about 11-13 lines on no-leak data, the fix list about 0.15.
+
 ## Production build
 
 ```bash
@@ -88,7 +102,7 @@ npm run check       # typecheck, then test, then build:web
 
 `npm run build` also runs the typecheck first, because `vite build` does not type-check `src/`.
 
-Verify scripts live in `scripts/verify/` and are read-only. They take `--asof YYYY-MM-DD`, meaning the end of that UTC day, inclusive (see `scripts/verify/_lib.ts`). `verify-import.ts` recounts the stored months, and `verify-tree.ts` checks the opening tree's golden numbers and path counts.
+Verify scripts live in `scripts/verify/` and are read-only. They take `--asof YYYY-MM-DD`, meaning the end of that UTC day, inclusive (see `scripts/verify/_lib.ts`). `verify-import.ts` recounts the stored months, `verify-tree.ts` checks the opening tree's golden numbers and path counts, and `verify-fixlist.ts` checks the fix list and its null simulation.
 
 ## Jobs
 
