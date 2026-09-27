@@ -49,6 +49,18 @@ npm run build
 npm start
 ```
 
+## Checks
+
+```bash
+npm run typecheck   # web, server and test tsconfigs
+npm test            # vitest (shared/ and server/ tests)
+npm run check       # typecheck, then test, then build:web
+```
+
+`npm run build` also runs the typecheck first, because `vite build` does not type-check `src/`.
+
+Verify scripts live in `scripts/verify/` and are read-only. They take `--asof YYYY-MM-DD`, meaning the end of that UTC day, inclusive (see `scripts/verify/_lib.ts`).
+
 ## Stockfish
 
 The install script downloads Stockfish automatically into:
