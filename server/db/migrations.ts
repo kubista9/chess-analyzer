@@ -130,6 +130,32 @@ export const MIGRATIONS: Migration[] = [
       ) WITHOUT ROWID;
       CREATE INDEX game_analysis_config ON game_analysis (config_id);
     `
+  },
+  {
+    version: 3,
+    name: "backfill runs",
+    sql: `
+      -- One row per backfill run (CLI or server): what it did and the throughput it measured,
+      -- so the next --dry-run and the Home estimate use this machine's real speed.
+      CREATE TABLE backfill_runs (
+        id                 INTEGER PRIMARY KEY,
+        source             TEXT    NOT NULL,      -- 'cli' | 'server'
+        pid                INTEGER NOT NULL,
+        config_id          INTEGER NOT NULL REFERENCES engine_configs (id),
+        workers            INTEGER NOT NULL,
+        on_battery         INTEGER,               -- 1 / 0, NULL when unknown
+        started_at         INTEGER NOT NULL,
+        finished_at        INTEGER,
+        status             TEXT    NOT NULL,      -- 'running' | 'completed' | 'paused' | 'failed'
+        games_queued       INTEGER NOT NULL,
+        games_done         INTEGER NOT NULL DEFAULT 0,
+        games_failed       INTEGER NOT NULL DEFAULT 0,
+        positions_searched INTEGER NOT NULL DEFAULT 0,
+        nodes              INTEGER NOT NULL DEFAULT 0,
+        search_ms          INTEGER NOT NULL DEFAULT 0, -- wall time with searches running
+        error              TEXT
+      );
+    `
   }
 ];
 

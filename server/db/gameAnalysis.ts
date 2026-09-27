@@ -99,3 +99,29 @@ export function listAnalysisQueue(db: Db, query: AnalysisQueueQuery): QueuedGame
 export function countAnalysisQueue(db: Db, query: AnalysisQueueQuery): number {
   return (db.prepare(`SELECT COUNT(*) AS n ${QUEUE_WHERE}`).get(queueParams(query)) as { n: number }).n;
 }
+
+/** Window games per colour, and how many of them are analysed under the config (the queue's complement). */
+export function analysisCoverage(
+  db: Db,
+  query: Omit<AnalysisQueueQuery, "limit">
+): Record<PlayerColor, { total: number; analysed: number }> {
+  const rows = db
+    .prepare(
+      `SELECT g.color, COUNT(*) AS total,
+         SUM(a.game_id IS NOT NULL AND a.plies >= MIN(@openingPlies, g.ply_count)) AS analysed
+       FROM games g
+       LEFT JOIN game_analysis a ON a.game_id = g.id AND a.config_id = @configId
+       WHERE g.username = @username
+         AND g.end_time >= @windowStart AND (@windowEnd IS NULL OR g.end_time <= @windowEnd)
+       GROUP BY g.color`
+    )
+    .all(queueParams(query)) as { color: PlayerColor; total: number; analysed: number | null }[];
+  const coverage: Record<PlayerColor, { total: number; analysed: number }> = {
+    white: { total: 0, analysed: 0 },
+    black: { total: 0, analysed: 0 }
+  };
+  for (const row of rows) {
+    coverage[row.color] = { total: row.total, analysed: row.analysed ?? 0 };
+  }
+  return coverage;
+}

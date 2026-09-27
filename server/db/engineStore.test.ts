@@ -118,6 +118,18 @@ describe("positions", () => {
     expect(getPositionEval(db, other.id, epd, "owner")).toBeUndefined();
   });
 
+  it("merges scored moves when two writers extended the same search, and replaces a different search", () => {
+    const db = memoryDb();
+    const config = currentEngineConfig(db, "Stockfish 18");
+    // Two processes read the row without f8c5, then each adds a different follow-up.
+    putPositionEval(db, config.id, { ...owner, scored: [line("f8c5", -166)] });
+    putPositionEval(db, config.id, { ...owner, scored: [line("h7h6", -90)] });
+    expect(getPositionEval(db, config.id, epd, "owner")?.scored.map((scored) => scored.uci)).toEqual(["h7h6", "f8c5"]);
+    // A fresh main search with other lines replaces the row, follow-ups and all.
+    putPositionEval(db, config.id, { ...owner, lines: [line("g8f6", -40), line("b8c6", -44), line("d7d6", -55)], scored: [] });
+    expect(getPositionEval(db, config.id, epd, "owner")?.scored).toEqual([]);
+  });
+
   it("stores terminal positions with mate 0 and no best move", () => {
     const db = memoryDb();
     const config = currentEngineConfig(db, "Stockfish 18");

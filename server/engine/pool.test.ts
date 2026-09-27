@@ -185,6 +185,24 @@ describe("EnginePool", () => {
     await expect(pool.analyseGame("next", gameRequests(["d2d4", "d7d5"]), { priority: "backfill" })).resolves.toHaveLength(2);
   });
 
+  it("hands each position to onResult as it resolves, and a throwing consumer fails the game", async () => {
+    const { pool } = fakePool(1);
+    const seen: number[] = [];
+    await pool.analyseGame("g", gameRequests(GAME, 3), { priority: "backfill", onResult: (index) => seen.push(index) });
+    expect(seen).toEqual([0, 1, 2]);
+
+    const failing = pool.analyseGame("h", gameRequests(GAME, 3), {
+      priority: "backfill",
+      onResult: (index) => {
+        if (index === 2) {
+          throw new Error("disk full");
+        }
+      }
+    });
+    await expect(failing).rejects.toThrow("disk full");
+    await expect(pool.analyseGame("next", gameRequests(["d2d4"], 1), { priority: "backfill" })).resolves.toHaveLength(1);
+  });
+
   it("rejects an illegal move history at once", async () => {
     const { pool } = fakePool(1);
     await expect(pool.analyseGame("bad", [{ moves: ["e2e5"], tier: "owner" }], { priority: "backfill" })).rejects.toThrow(/Illegal move/);

@@ -336,3 +336,43 @@ export function gamesStamp(db: Db, username: string): string {
     .get(username) as { n: number; lastRow: number; lastEnd: number; lastSync: number };
   return `${row.n}|${row.lastRow}|${row.lastEnd}|${row.lastSync}`;
 }
+
+export interface GameOpeningMoves {
+  color: PlayerColor;
+  endTime: number;
+  plies: Pick<OpeningPly, "ply" | "san" | "uci" | "epdBefore">[];
+}
+
+/**
+ * The opening moves (ply <= maxPly) of the owner's games that ended at or after
+ * `windowStart`, by game id, in ply order: what the engine backfill plans its positions from.
+ */
+export function listOpeningMoves(db: Db, username: string, windowStart: number, maxPly: number): Map<string, GameOpeningMoves> {
+  const rows = db
+    .prepare(
+      `SELECT p.game_id, g.color, g.end_time, p.ply, p.san, p.uci, p.epd_before
+       FROM game_plies p JOIN games g ON g.id = p.game_id
+       WHERE g.username = ? AND g.end_time >= ? AND p.ply <= ?
+       ORDER BY p.game_id, p.ply`
+    )
+    .all(username, windowStart, maxPly) as {
+    game_id: string;
+    color: PlayerColor;
+    end_time: number;
+    ply: number;
+    san: string;
+    uci: string;
+    epd_before: string;
+  }[];
+
+  const byGame = new Map<string, GameOpeningMoves>();
+  for (const row of rows) {
+    let game = byGame.get(row.game_id);
+    if (!game) {
+      game = { color: row.color, endTime: row.end_time, plies: [] };
+      byGame.set(row.game_id, game);
+    }
+    game.plies.push({ ply: row.ply, san: row.san, uci: row.uci, epdBefore: row.epd_before });
+  }
+  return byGame;
+}

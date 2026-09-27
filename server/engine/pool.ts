@@ -34,6 +34,8 @@ export interface EnginePoolOptions {
 export interface GameOptions {
   priority: Priority;
   onProgress?: (done: number, total: number) => void;
+  /** Called as each position resolves (in completion order), e.g. to store it at once. A throw fails the game. */
+  onResult?: (index: number, evaluation: PositionEval) => void;
 }
 
 export interface PoolStats {
@@ -118,17 +120,34 @@ export class EnginePool {
 
     let done = 0;
     options.onProgress?.(0, requests.length);
-    for (const promise of promises) {
+    for (const [index, promise] of promises.entries()) {
       promise.then(
-        () => options.onProgress?.(++done, requests.length),
+        (evaluation) => {
+          try {
+            options.onResult?.(index, evaluation);
+          } catch (error) {
+            // A failing consumer (e.g. a store write) fails the game rather than escaping.
+            this.failGroup(group, error instanceof Error ? error : new Error(String(error)));
+            return;
+          }
+          options.onProgress?.(++done, requests.length);
+        },
         () => undefined
       );
     }
 
-    return Promise.all(promises).catch((error: Error) => {
-      this.failGroup(group, error);
-      throw error;
-    });
+    return Promise.all(promises).then(
+      (results) => {
+        if (group.failed) {
+          throw group.failed;
+        }
+        return results;
+      },
+      (error: Error) => {
+        this.failGroup(group, error);
+        throw error;
+      }
+    );
   }
 
   /** Analyses one position as its own group. */

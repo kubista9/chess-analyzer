@@ -68,6 +68,130 @@ export interface PositionEval {
   score: { cp: number | null; mate: number | null };
 }
 
+/** One move of a game's opening, judged at its own root (best line vs the played move). */
+export interface OpeningMoveVerdict {
+  ply: number;
+  san: string;
+  uci: string;
+  /** The mover's win% loss against the best line, rounded to 0.01. */
+  lossWinPct: number;
+  category: MoveCategory;
+}
+
+/** One side's moves in a game's opening window. */
+export interface OpeningSideSummary {
+  moves: number;
+  categories: Record<MoveCategory, number>;
+  /** Mean win% loss per move. */
+  avgLoss: number;
+  /** Mean lichess per-move accuracy, 0-100. */
+  accuracy: number;
+  /** The first move classed mistake or worse ("opening error"), or null. */
+  firstError: OpeningMoveVerdict | null;
+  /** The move with the largest loss, or null when the side made no move. */
+  worst: OpeningMoveVerdict | null;
+}
+
+/** An eval from the owner's side: cp clamped to +/-1000, mate > 0 when the owner mates. */
+export interface OwnerViewEval {
+  /** The eval after this ply: the played move's score at the ply's root. */
+  ply: number;
+  cp: number;
+  mate: number | null;
+  /** The owner's (engine) win chance, 0-100. */
+  winPct: number;
+}
+
+/** game_analysis.summary_json: a game's opening under one engine config. */
+export interface GameOpeningSummary {
+  version: 1;
+  color: PlayerColor;
+  /** Plies covered: min(OPENING_PLY_LIMIT, the game's length). */
+  plies: number;
+  owner: OpeningSideSummary;
+  opponent: OpeningSideSummary;
+  /** Evals after plies 12, 16 and 20 (those the game reached). */
+  evalAfter: OwnerViewEval[];
+}
+
+/** A backfill pass: the owner-to-move positions first, then the opponent-to-move ones. */
+export type BackfillPass = EngineTier | "done";
+
+export interface BackfillProgress {
+  pass: BackfillPass;
+  games: { total: number; done: number; failed: number };
+  positions: {
+    /** Unique (tier, EPD) positions in the queued games. */
+    total: number;
+    /** Positions the cache already answered when the run started. */
+    cached: number;
+    /** Positions to search, per pass. */
+    owner: { done: number; total: number };
+    opponent: { done: number; total: number };
+  };
+  nodes: number;
+  /** Pool-wide nodes per second over the last searches, or null before the first ones. */
+  nps: number | null;
+  etaSec: number | null;
+  startedAt: number;
+  updatedAt: number;
+}
+
+export type BackfillRunStatus = "running" | "completed" | "paused" | "failed";
+
+/** A row of backfill_runs. */
+export interface BackfillRun {
+  id: number;
+  source: "cli" | "server";
+  configId: number;
+  workers: number;
+  onBattery: boolean | null;
+  startedAt: number;
+  finishedAt: number | null;
+  status: BackfillRunStatus;
+  gamesQueued: number;
+  gamesDone: number;
+  gamesFailed: number;
+  positionsSearched: number;
+  nodes: number;
+  searchMs: number;
+  error: string | null;
+}
+
+export interface PowerState {
+  onBattery: boolean;
+  /** Battery charge, 0-100, when there is a battery. */
+  percent: number | null;
+  lowPowerMode: boolean | null;
+}
+
+/** "idle": nothing running (the queue may still hold games); "paused": stopped by the owner. */
+export type BackfillState = "idle" | "running" | "pausing" | "paused" | "failed";
+
+/** GET /api/analysis/status. */
+export interface AnalysisStatus {
+  engine: { idName: string; configId: number } | null;
+  engineError: string | null;
+  state: BackfillState;
+  /** Who runs the backfill right now: this server, or `npm run backfill` in a terminal. */
+  runner: { source: "server" | "cli"; pid: number; startedAt: number } | null;
+  progress: BackfillProgress | null;
+  error: string | null;
+  lastRun: BackfillRun | null;
+  window: { start: number; days: number };
+  games: {
+    total: number;
+    analysed: number;
+    queued: number;
+    byColor: Record<PlayerColor, { total: number; analysed: number }>;
+  };
+  positions: { total: number; cached: number; byTier: Record<EngineTier, { total: number; cached: number }> };
+  /** The time the queue would take, from this machine's last measured speed when there is one. */
+  estimate: { minutes: number; nps: number; measured: boolean } | null;
+  power: PowerState | null;
+  autoBackfill: boolean;
+}
+
 /** An engine line prepared for display: SAN moves, White-view eval. */
 export interface ReviewLine {
   uci: string;
