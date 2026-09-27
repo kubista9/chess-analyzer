@@ -6,7 +6,7 @@ import type { EngineLine, PositionEval } from "../../shared/types.js";
 import { loadOwnerGames } from "../../test/loadFixtures.js";
 import { deriveGame, rawGameSchema, utcMonth } from "./gameDerive.js";
 import { parseGame, type ParsedMove } from "./gameParser.js";
-import { annotateMoves, reviewHeader, reviewRequests, sideToMove, toReviewLine } from "./reviewMoves.js";
+import { annotateMoves, reviewHeader, sideToMove, toReviewLine } from "./reviewMoves.js";
 
 const scandinavianRaw = rawGameSchema.parse(loadOwnerGames().find((raw) => raw.url.endsWith("/184405952510"))!);
 const scandinavian = deriveGame(OWNER_USERNAME, utcMonth(scandinavianRaw.end_time), scandinavianRaw);
@@ -21,7 +21,8 @@ function line(uci: string, cp: number | null, mate: number | null = null, pv: st
  * to the side to move the way UCI reports them. So a move loses exactly the swing it causes.
  */
 function fakeEvals(moves: ParsedMove[], whiteCp: (index: number) => number, bestIsPlayed = false): PositionEval[] {
-  const fens = [moves[0].fenBefore, ...moves.map((move) => move.fenAfter)];
+  // One position per move: the position before it (the opening pass's positions).
+  const fens = moves.map((move) => move.fenBefore);
   return fens.map((fen, index) => {
     const sign = sideToMove(fen) === "white" ? 1 : -1;
     const next = moves[index];
@@ -42,19 +43,6 @@ function fakeEvals(moves: ParsedMove[], whiteCp: (index: number) => number, best
     };
   });
 }
-
-describe("reviewRequests", () => {
-  it("asks for every position with its played move, by tier", () => {
-    const requests = reviewRequests(["e2e4", "d7d5", "e4d5"], "black");
-    expect(requests).toEqual([
-      { moves: [], tier: "opponent", played: ["e2e4"] },
-      { moves: ["e2e4"], tier: "owner", played: ["d7d5"] },
-      { moves: ["e2e4", "d7d5"], tier: "opponent", played: ["e4d5"] },
-      { moves: ["e2e4", "d7d5", "e4d5"], tier: "owner", played: [] }
-    ]);
-    expect(reviewRequests(["e2e4"], "white")[0].tier).toBe("owner");
-  });
-});
 
 describe("annotateMoves", () => {
   const moves = parseGame(scandinavian.pgn).moves.slice(0, OPENING_PLY_LIMIT);
@@ -100,6 +88,11 @@ describe("annotateMoves", () => {
     expect(annotated[0].bestLine).toMatchObject({ uci: "e2e4", san: "e4", pvSan: ["e4", "d5", "exd5"] });
   });
 
+  it("takes the eval after the last move from the played move's score at its root", () => {
+    const annotated = annotateMoves(moves, fakeEvals(moves, (index) => (index >= 20 ? 120 : 50)), "black");
+    expect(annotated[19]).toMatchObject({ whiteCpBefore: 50, whiteCpAfter: 120 });
+  });
+
   it("rejects a mismatched number of evals, and a move the engine did not score", () => {
     expect(() => annotateMoves(moves, fakeEvals(moves, () => 0).slice(1), "black")).toThrow();
     const evals = fakeEvals(moves, () => 0);
@@ -118,8 +111,8 @@ describe("mates", () => {
     evals[2] = { ...evals[2], scored: [line("g2g4", null, -1)] };
     // Before 2...Qh4#: Black to move mates in 1.
     evals[3] = { ...evals[3], lines: [line("d8h4", null, 1)], scored: [], bestUci: "d8h4", score: { cp: null, mate: 1 } };
-    // After it: checkmate, no engine line.
-    evals[4] = { ...evals[4], lines: [], scored: [], terminal: "checkmate", bestUci: null, score: { cp: null, mate: 0 } };
+    // After it the game is over: checkmate, which the review shows without an analysed position.
+    expect(evals).toHaveLength(4);
 
     const annotated = annotateMoves(moves, evals, "white");
     const mate = annotated[3];

@@ -32,7 +32,8 @@ export function createApp(router: express.Router = apiRouter): express.Express {
   app.use((error: Error, _request: express.Request, response: express.Response, _next: express.NextFunction) => {
     const status = error instanceof HttpError ? error.status : error instanceof z.ZodError ? 400 : 500;
     response.status(status).json({
-      error: error instanceof z.ZodError ? `Invalid request: ${z.prettifyError(error)}` : error.message
+      error: error instanceof z.ZodError ? `Invalid request: ${z.prettifyError(error)}` : error.message,
+      ...(error instanceof HttpError && error.code ? { code: error.code } : {})
     });
   });
 

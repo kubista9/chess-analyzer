@@ -1,8 +1,22 @@
+import fs from "node:fs";
 import type { AddressInfo } from "node:net";
+import os from "node:os";
+import path from "node:path";
 import type { Server } from "node:http";
 import { afterEach, describe, expect, it } from "vitest";
 import { START_EPD } from "../shared/epd.js";
-import type { FixListResponse, JobState, SnapshotResponse, SyncSummary, TreeGamesResponse, TreeResponse } from "../shared/types.js";
+import type {
+  AnalysisStatus,
+  FixListResponse,
+  JobState,
+  PowerState,
+  ReviewSummary,
+  SnapshotResponse,
+  SyncSummary,
+  TreeGamesResponse,
+  TreeResponse
+} from "../shared/types.js";
+import { legalFakePool } from "../test/fakeEngine.js";
 import { loadOwnerGames } from "../test/loadFixtures.js";
 import { createApp } from "./app.js";
 import { openDatabase, type Db } from "./db/connection.js";
@@ -11,6 +25,9 @@ import { createApiRouter } from "./routes.js";
 import { deriveMonth, utcMonth } from "./services/gameDerive.js";
 import { getOpeningBook } from "./services/openingBook.js";
 import { JobStore } from "./store/jobStore.js";
+import { currentEngineConfig } from "./engine/engineConfig.js";
+import type { EnginePool } from "./engine/pool.js";
+import { BackfillService } from "./services/backfillService.js";
 
 const OWNER = "kubista9";
 const NOW = Date.parse("2026-09-27T00:00:00Z");
@@ -36,10 +53,42 @@ afterEach(() => {
   }
 });
 
-async function startApi(sync: () => Promise<SyncSummary> = () => new Promise(() => {})) {
+const pools: EnginePool[] = [];
+const lockDirs: string[] = [];
+afterEach(async () => {
+  await Promise.all(pools.splice(0).map((pool) => pool.close()));
+  lockDirs.splice(0).forEach((dir) => fs.rmSync(dir, { recursive: true, force: true }));
+});
+
+async function startApi(sync: () => Promise<SyncSummary> = () => new Promise(() => {}), options: { power?: PowerState | null } = {}) {
   const db = storeWithOwnerGames();
   const jobs = new JobStore();
-  const router = createApiRouter({ db: () => db, jobs, owner: OWNER, now: () => NOW, sync, book: getOpeningBook });
+  const fake = legalFakePool({ size: 2 });
+  pools.push(fake.pool);
+  const lockDir = fs.mkdtempSync(path.join(os.tmpdir(), "chess-routes-"));
+  lockDirs.push(lockDir);
+  const engineConfig = async (store: Db) => currentEngineConfig(store, "Stockfish 18");
+  const backfill = new BackfillService({
+    db: () => db,
+    pool: () => fake.pool,
+    owner: OWNER,
+    lockPath: path.join(lockDir, "backfill.lock"),
+    engineConfig,
+    power: () => options.power ?? null,
+    autoBackfill: false,
+    now: () => NOW
+  });
+  const router = createApiRouter({
+    db: () => db,
+    jobs,
+    owner: OWNER,
+    now: () => NOW,
+    sync,
+    book: getOpeningBook,
+    backfill,
+    pool: () => fake.pool,
+    engineConfig
+  });
   const server = createApp(router).listen(0, "127.0.0.1");
   servers.push(server);
   await new Promise((resolve) => server.once("listening", resolve));
@@ -53,7 +102,7 @@ async function startApi(sync: () => Promise<SyncSummary> = () => new Promise(() 
     const text = await response.text();
     return { status: response.status, body: (text.startsWith("{") || text.startsWith("[") ? JSON.parse(text) : text) as T };
   };
-  return { call, jobs, db };
+  return { call, jobs, db, backfill, log: fake.log };
 }
 
 describe("jobs API", () => {
@@ -244,5 +293,85 @@ describe("fix list and snapshot API", () => {
     expect((await call("/fixlist?window=12m")).status).toBe(400);
     expect((await call("/fixlist?tc=bullet")).status).toBe(400);
     expect((await call("/snapshot?hl=-5")).status).toBe(400);
+  });
+});
+
+describe("engine check API", () => {
+  it("reports the queue and coverage, asks before running on battery, and runs the backfill", async () => {
+    const { call, backfill } = await startApi(undefined, { power: { onBattery: true, percent: 50, lowPowerMode: false } });
+    const before = await call<AnalysisStatus>("/analysis/status");
+    expect(before.status).toBe(200);
+    expect(before.body).toMatchObject({
+      engine: { idName: "Stockfish 18", configId: 1 },
+      state: "idle",
+      runner: null,
+      games: { total: 8, analysed: 0, queued: 8 },
+      positions: { cached: 0 },
+      estimate: { measured: false },
+      power: { onBattery: true }
+    });
+    expect(before.body.positions.total).toBeGreaterThan(100);
+
+    const refused = await call<{ error: string; code: string }>("/analysis/backfill", { method: "POST", body: "{}" });
+    expect(refused.status).toBe(409);
+    expect(refused.body).toMatchObject({ code: "on-battery" });
+    expect(refused.body.error).toMatch(/on battery \(50%\)/);
+
+    const started = await call<AnalysisStatus>("/analysis/backfill", { method: "POST", body: JSON.stringify({ allowBattery: true }) });
+    expect(started.status).toBe(202);
+    expect(started.body).toMatchObject({ state: "running", runner: { source: "server" } });
+    await backfill.idle();
+
+    const after = await call<AnalysisStatus>("/analysis/status");
+    expect(after.body).toMatchObject({
+      state: "idle",
+      runner: null,
+      games: { analysed: 8, queued: 0, byColor: { white: { analysed: after.body.games.byColor.white.total } } },
+      lastRun: { status: "completed", gamesDone: 8, source: "server" },
+      progress: { pass: "done", games: { done: 8 } }
+    });
+    expect(after.body.positions.cached).toBe(after.body.positions.total);
+  });
+
+  it("pauses between games and resumes on the next start", async () => {
+    const { call, backfill } = await startApi();
+    await call("/analysis/backfill", { method: "POST", body: "{}" });
+    const pausing = await call<AnalysisStatus>("/analysis/pause", { method: "POST", body: "{}" });
+    expect(pausing.body.state).toBe("pausing");
+    await backfill.idle();
+    const paused = await call<AnalysisStatus>("/analysis/status");
+    expect(paused.body.state).toBe("paused");
+    expect(paused.body.games.queued).toBeGreaterThan(0);
+
+    await call("/analysis/backfill", { method: "POST", body: "{}" });
+    await backfill.idle();
+    expect((await call<AnalysisStatus>("/analysis/status")).body).toMatchObject({ state: "idle", games: { queued: 0 } });
+  });
+
+  it("serves a backfilled game's review at once from the position cache, with no engine search", async () => {
+    const { call, backfill, log, db } = await startApi();
+    await call("/analysis/backfill", { method: "POST", body: "{}" });
+    await backfill.idle();
+    const searches = log.length;
+    const [{ id }] = db.prepare("SELECT id FROM games ORDER BY end_time DESC LIMIT 1").all() as { id: string }[];
+
+    const review = await call<JobState<ReviewSummary>>("/game-review", { method: "POST", body: JSON.stringify({ gameId: id }) });
+    expect(review.status).toBe(200);
+    expect(review.body).toMatchObject({ status: "completed", result: { gameId: id } });
+    expect(review.body.result?.moves).toHaveLength(20);
+    expect(log).toHaveLength(searches);
+  });
+
+  it("runs an unanalysed game's review on the pool and then records the game as analysed", async () => {
+    const { call, db, jobs } = await startApi();
+    const [{ id }] = db.prepare("SELECT id FROM games ORDER BY end_time DESC LIMIT 1").all() as { id: string }[];
+    const started = await call<JobState<ReviewSummary>>("/game-review", { method: "POST", body: JSON.stringify({ gameId: id }) });
+    expect(started.status).toBe(202);
+    for (let tries = 0; tries < 100 && jobs.get(started.body.id)?.status !== "completed"; tries += 1) {
+      await new Promise((resolve) => setTimeout(resolve, 20));
+    }
+    expect(jobs.get<ReviewSummary>(started.body.id)?.result?.moves.length).toBeGreaterThan(0);
+    const status = await call<AnalysisStatus>("/analysis/status");
+    expect(status.body.games.analysed).toBe(1);
   });
 });

@@ -1,17 +1,16 @@
 import { Chess } from "chess.js";
-import { classifyLoss, rootMoveLoss, toWhiteEval } from "../../shared/eval.js";
+import { checkmateEval, classifyLoss, rootMoveLoss, toWhiteEval, type WhiteEval } from "../../shared/eval.js";
 import { noteForCategory } from "../../shared/notes.js";
 import type {
   AnnotatedMove,
   EngineLine,
-  EngineTier,
   GameRecord,
   PlayerColor,
   PositionEval,
   ReviewGameHeader,
   ReviewLine
 } from "../../shared/types.js";
-import { lineFor, type PositionRequest } from "../engine/analysePosition.js";
+import { lineFor } from "../engine/analysePosition.js";
 import type { ParsedMove } from "./gameParser.js";
 
 // Pure review maths: position evals in, White-view annotated moves out. No engine here.
@@ -22,19 +21,6 @@ export function sideToMove(fen: string): PlayerColor {
 
 function opposite(color: PlayerColor): PlayerColor {
   return color === "white" ? "black" : "white";
-}
-
-/**
- * The engine requests for reviewing `ucis` (the first plies of a game): every position from
- * the start to after the last move. The owner's positions get the owner tier, the opponent's
- * the opponent tier, and each position's played move is scored at that root.
- */
-export function reviewRequests(ucis: readonly string[], ownerColor: PlayerColor): PositionRequest[] {
-  return Array.from({ length: ucis.length + 1 }, (_, index) => {
-    const mover: PlayerColor = index % 2 === 0 ? "white" : "black";
-    const tier: EngineTier = mover === ownerColor ? "owner" : "opponent";
-    return { moves: ucis.slice(0, index), tier, played: index < ucis.length ? [ucis[index]] : [] };
-  });
 }
 
 /** Converts a UCI engine line into SAN, stopping at the first move that does not apply. */
@@ -62,21 +48,36 @@ export function toReviewLine(fen: string, line: EngineLine): ReviewLine {
 }
 
 /**
- * Annotates moves from per-position evals: `evals[i]` is the position before `moves[i]` and
- * `evals[i + 1]` the position after it (so evals.length = moves.length + 1). The loss of a
- * move is measured at its own root: the best line against the played move, both scored in
- * the position before the move at the same depth. The White-view evals shown before and
- * after a move are the two positions' own top lines, so the eval after ply N is the eval
- * before ply N + 1.
+ * The White-view eval after the last reviewed move, which has no analysed position of its own:
+ * checkmate or stalemate when the game ended there, otherwise the played move's score at its
+ * root (the same search as the best move).
+ */
+function evalAfterLast(move: ParsedMove, played: EngineLine): WhiteEval {
+  const after = new Chess(move.fenAfter);
+  if (after.isCheckmate()) {
+    return checkmateEval(opposite(move.color));
+  }
+  if (after.isStalemate()) {
+    return { cp: 0, mate: null };
+  }
+  return toWhiteEval(played, move.color);
+}
+
+/**
+ * Annotates moves from per-position evals: `evals[i]` is the position before `moves[i]` (the
+ * opening pass's positions, so evals.length = moves.length). The loss of a move is measured
+ * at its own root: the best line against the played move, both scored in the position before
+ * the move at the same depth. The White-view eval after a move is the next position's own top
+ * line, so the eval after ply N is the eval before ply N + 1; after the last move it is the
+ * played move's score at its root.
  */
 export function annotateMoves(moves: ParsedMove[], evals: PositionEval[], ownerColor: PlayerColor): AnnotatedMove[] {
-  if (evals.length !== moves.length + 1) {
-    throw new Error(`Expected ${moves.length + 1} analysed positions, got ${evals.length}`);
+  if (evals.length !== moves.length) {
+    throw new Error(`Expected ${moves.length} analysed positions, got ${evals.length}`);
   }
 
   return moves.map((move, index) => {
     const before = evals[index];
-    const after = evals[index + 1];
     const best = before.lines[0];
     const played = lineFor(before, move.uci);
     if (!best || !played) {
@@ -87,7 +88,8 @@ export function annotateMoves(moves: ParsedMove[], evals: PositionEval[], ownerC
     const category = classifyLoss(lossWinPct);
     const isPlayerMove = move.color === ownerColor;
     const evalBefore = toWhiteEval(before.score, move.color);
-    const evalAfter = toWhiteEval(after.score, opposite(move.color));
+    const next = evals[index + 1];
+    const evalAfter = next ? toWhiteEval(next.score, opposite(move.color)) : evalAfterLast(move, played);
 
     return {
       ply: move.ply,

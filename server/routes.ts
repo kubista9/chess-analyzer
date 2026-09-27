@@ -2,9 +2,11 @@ import express from "express";
 import { z } from "zod";
 import { IMPORTED_TIME_CLASSES, OPENING_PLY_LIMIT } from "../shared/constants.js";
 import type {
+  AnalysisStatus,
   FixListResponse,
   GameResponse,
   PlayerColor,
+  PowerState,
   RepertoireScope,
   SnapshotResponse,
   QueryWindow,
@@ -36,7 +38,13 @@ import { jobStore as defaultJobStore, type JobStore } from "./store/jobStore.js"
 import { syncArchives } from "./services/archiveImport.js";
 import { buildImportStatus } from "./services/importStatus.js";
 import { getOpeningBook } from "./services/openingBook.js";
-import { readCachedGameReview, runGameReview } from "./services/reviewAnalysis.js";
+import { cachedGameReview, runGameReview } from "./services/reviewAnalysis.js";
+import { BackfillService, BackfillStartError } from "./services/backfillService.js";
+import { readPowerState } from "./services/power.js";
+import type { EngineConfig } from "./db/engineConfigs.js";
+import { resolveEngineConfig } from "./engine/engineConfig.js";
+import type { EnginePool } from "./engine/pool.js";
+import { getEnginePool } from "./engine/sharedPool.js";
 import {
   DEFAULT_HALF_LIFE_BY_WINDOW,
   createTreeService,
@@ -51,6 +59,11 @@ const reviewSchema = z.object({
 
 const syncSchema = z.object({
   full: z.boolean().optional()
+});
+
+const backfillSchema = z.object({
+  allowBattery: z.boolean().optional(),
+  limit: z.number().int().min(1).optional()
 });
 
 const gamesQuerySchema = z.object({
@@ -100,7 +113,9 @@ export const TREE_GAMES_PAGE_SIZE = 20;
 export class HttpError extends Error {
   constructor(
     readonly status: number,
-    message: string
+    message: string,
+    /** A machine-readable reason the client can act on (e.g. "on-battery"). */
+    readonly code?: string
   ) {
     super(message);
   }
@@ -164,6 +179,11 @@ export interface ApiDeps {
   sync: typeof syncArchives;
   /** The opening book (built once on first use). */
   book: () => OpeningBook;
+  /** The engine backfill (start / pause / status). */
+  backfill: BackfillService;
+  /** The engine pool reviews run on, and the current engine config. */
+  pool: () => Pick<EnginePool, "analyseGame">;
+  engineConfig: (db: Db) => Promise<EngineConfig>;
 }
 
 export function createApiRouter(deps: ApiDeps): express.Router {
@@ -221,6 +241,8 @@ export function createApiRouter(deps: ApiDeps): express.Router {
         full: payload.full,
         onProgress: ({ done, total, message }) => reporter.progress(5 + (total ? (done / total) * 90 : 90), message)
       });
+      // AUTO_BACKFILL: analyse the new games right away (Home offers the button otherwise).
+      deps.backfill.autoStart();
       return { summary, status: buildImportStatus(deps.db(), deps.owner, deps.now()) };
     });
     response.status(202).json(job);
@@ -306,15 +328,18 @@ export function createApiRouter(deps: ApiDeps): express.Router {
     } satisfies TreeGamesResponse);
   });
 
-  // Starts (or joins) the opening review of one stored game, keyed "review:<gameId>".
+  // Starts (or joins) the opening review of one stored game, keyed "review:<gameId>". A game
+  // whose positions are all in the position cache (e.g. backfilled) is answered at once.
   router.post("/game-review", async (request, response) => {
     const { gameId } = reviewSchema.parse(request.body);
-    if (!getGame(deps.db(), gameId)) {
+    const db = deps.db();
+    if (!getGame(db, gameId)) {
       throw new HttpError(404, `Game ${gameId} is not in the game store. Sync from Home first.`);
     }
 
     const key = `review:${gameId}`;
-    const cached = await readCachedGameReview(gameId);
+    const engineConfig = await deps.engineConfig(db);
+    const cached = cachedGameReview(db, gameId, engineConfig.id);
     if (cached) {
       response.json(deps.jobs.completed<ReviewSummary>(key, "game-review", "Opening review ready", cached));
       return;
@@ -322,12 +347,38 @@ export function createApiRouter(deps: ApiDeps): express.Router {
 
     const { job } = deps.jobs.startOrReuse<ReviewSummary>(key, "game-review", "Opening review", async (reporter) => {
       reporter.progress(5, "Starting Stockfish");
-      const review = await runGameReview(deps.db(), gameId, (done, total) =>
+      return runGameReview(deps.db(), deps.pool(), engineConfig.id, gameId, (done, total) =>
         reporter.progress(5 + (done / total) * 90, `Stockfish: ${done} of ${total} positions`)
       );
-      return review;
     });
     response.status(202).json(job);
+  });
+
+  // The engine check: coverage of the window, the queue, and the running backfill (in this
+  // server or in `npm run backfill`), with progress and an ETA.
+  router.get("/analysis/status", async (_request, response) => {
+    response.json((await deps.backfill.status()) satisfies AnalysisStatus);
+  });
+
+  // Starts or resumes the backfill over the queue (newest games first). 409 "on-battery" unless
+  // {allowBattery: true}; 409 "locked" while another process runs it.
+  router.post("/analysis/backfill", async (request, response) => {
+    const payload = backfillSchema.parse(request.body ?? {});
+    try {
+      deps.backfill.start(payload);
+    } catch (error) {
+      if (error instanceof BackfillStartError) {
+        throw new HttpError(409, error.message, error.code);
+      }
+      throw error;
+    }
+    response.status(202).json(await deps.backfill.status());
+  });
+
+  // Pauses the backfill: the games in progress finish, the rest stays queued.
+  router.post("/analysis/pause", async (_request, response) => {
+    deps.backfill.pause();
+    response.json(await deps.backfill.status());
   });
 
   // Before /jobs/:jobId, which would otherwise match "active".
@@ -346,11 +397,34 @@ export function createApiRouter(deps: ApiDeps): express.Router {
   return router;
 }
 
+// The Mac's power state changes rarely; read pmset at most every 30 s.
+let power: { at: number; state: PowerState | null } | null = null;
+function cachedPowerState(): PowerState | null {
+  if (!power || Date.now() - power.at > 30_000) {
+    power = { at: Date.now(), state: readPowerState() };
+  }
+  return power.state;
+}
+
+export const backfillService = new BackfillService({
+  db: getDb,
+  pool: getEnginePool,
+  owner: config.owner,
+  lockPath: config.backfillLockPath,
+  engineConfig: resolveEngineConfig,
+  power: cachedPowerState,
+  autoBackfill: config.autoBackfill,
+  log: (message) => console.log(message)
+});
+
 export const apiRouter = createApiRouter({
   db: getDb,
   jobs: defaultJobStore,
   owner: config.owner,
   now: Date.now,
   sync: syncArchives,
-  book: getOpeningBook
+  book: getOpeningBook,
+  backfill: backfillService,
+  pool: getEnginePool,
+  engineConfig: resolveEngineConfig
 });
