@@ -5,7 +5,7 @@ Local-first opening analysis for one Chess.com account, `kubista9` (hard-coded a
 - Home: a Sync card with the stored games (`1,380 games · 1,234 blitz / 146 rapid · Mar 28 – Sep 27 · synced 5 min ago`), the Sync button and a Full re-check; the top 3 "Biggest leaks" from the fix list (below); and a repertoire snapshot per colour (`vs 1.e4: 1...d5 55% (223) mostly lately · 1...e5 39% (216) rarely played lately`), each move linking into the Explorer.
 - Leaks (`/leaks`): the whole results-only fix list, a "worth watching" list and how the list is made.
 - An Explorer (`/explorer`): pick As White or As Black, then walk the opening move by move on a board (click or drag a move, click a row, or use the arrow keys). Each position shows its book name and ECO, and each move row shows raw n with its share (and the effective n when recent games count more), W/D/L, the score with a 95% interval whisker, the score against the Elo expectation, the 90-day trend, your average think time and the book name or "out of book". A row is coloured as below or above expectation only when the difference clears the noise gate (see below). Each row opens a games drawer that links every game to its review and to Chess.com. It is built from game results only; no engine runs for it.
-- An opening review of a selected game: Stockfish looks at the first 20 plies (10 moves each). Evals are shown from White's side (`+0.80`, `M3`, `-M3`), and each move is labelled `best`, `good`, `inaccuracy`, `mistake` or `blunder` by the lichess win% it gives away (< 1, < 5, < 10, < 15, >= 15).
+- An opening review of a selected game: Stockfish looks at the first 20 plies (10 moves each) at a fixed depth. Evals are shown from White's side (`+0.80`, `M3`, `-M3`), and each move is labelled `best`, `good`, `inaccuracy`, `mistake` or `blunder` by the lichess win% it gives away against the best move in the same position (< 1, < 5, < 10, < 15, >= 15).
 
 ## Stack
 
@@ -102,7 +102,7 @@ npm run check       # typecheck, then test, then build:web
 
 `npm run build` also runs the typecheck first, because `vite build` does not type-check `src/`.
 
-Verify scripts live in `scripts/verify/` and are read-only. They take `--asof YYYY-MM-DD`, meaning the end of that UTC day, inclusive (see `scripts/verify/_lib.ts`). `verify-import.ts` recounts the stored months, `verify-tree.ts` checks the opening tree's golden numbers and path counts, and `verify-fixlist.ts` checks the fix list and its null simulation.
+Verify scripts live in `scripts/verify/` and are read-only. They take `--asof YYYY-MM-DD`, meaning the end of that UTC day, inclusive (see `scripts/verify/_lib.ts`). `verify-import.ts` recounts the stored months, `verify-tree.ts` checks the opening tree's golden numbers and path counts, and `verify-fixlist.ts` checks the fix list and its null simulation. `engine-smoke.ts` (below) is the opt-in real-engine check.
 
 ## Jobs
 
@@ -118,19 +118,28 @@ The install script downloads Stockfish automatically into:
 storage/engines/stockfish/current/stockfish
 ```
 
-If the engine process fails to start, exits or errors, the running review fails with that reason instead of hanging.
-
 You can override the binary path with:
 
 ```bash
 STOCKFISH_PATH=/absolute/path/to/stockfish
 ```
 
+### Engine core (`server/engine/`)
+
+- **Protocol** (`protocol.ts`): fixed depth, single thread, Hash 64. The owner's positions get MultiPV 3 at depth 15, the opponent's MultiPV 1 at depth 14. A move played from a position but outside its lines is scored with `go depth <depth of the lines> searchmoves <move>` on the same root and warm hash, so the best and the played move always come from one root at one depth. A 3M-node cap guards against pathological positions. The depth was chosen from measurements on the owner's M1 so that the full 6-month backfill (about 16k positions) takes about an hour on battery, roughly half that on mains power (see `docs/phases/P4a.md`).
+- **UCI session** (`uci.ts`): reads the engine version from `id name`; any process error, exit or stdin error rejects the pending search and marks the engine dead; each search has a watchdog (`stop`, a grace period, then kill). MultiPV is only re-sent when it changes, and `ucinewgame` is sent once per game, never per position.
+- **MultiPV parser** (`multipv.ts`): skips lowerbound/upperbound lines and returns the deepest iteration in which all ranks completed at the same depth with distinct moves, ignoring the previous-depth leftovers Stockfish prints when a search stops mid-iteration. `bestmove` is informational only.
+- **Checkmate and stalemate** are resolved with chess.js without searching (mate 0 / cp 0).
+- **Pool** (`pool.ts`): `ENGINE_WORKERS` (default 3) single-thread workers. Work comes in games; a worker keeps a game on one engine. Interactive work (the review) runs before backfill work and is checked between positions. A crashed engine is respawned and the position retried once; a second failure fails the job with the engine's error. The server closes the engines on SIGINT/SIGTERM, so `tsx watch` restarts leave none behind.
+- **Store** (`server/db/engineConfigs.ts`, `positions.ts`, `gameAnalysis.ts`): `engine_configs` has one row per (engine version, protocol); `positions` holds the evals per (EPD, config, tier); `game_analysis` marks a game as fully analysed under a config. The analysis work queue is every window game without a `game_analysis` row for the current config, newest first, so a game is never analysed twice under one config, and a new engine or protocol re-queues the window automatically (old rows are kept).
+
+`npx tsx scripts/verify/engine-smoke.ts [--store]` runs the real engine on a few opening positions, prints timings, checks the evals, runs them through the pool and kills an engine mid-search. With `--store` it also creates the current engine config in `storage/chess.db` and prints the work-queue size. It never runs the backfill.
+
 ## Notes on move labels
 
-Centipawn evals are clamped to +/-1000 and mates are kept separately, so a mate counts as a clamped eval of the mating side and a mate-to-mate move costs 0. The loss of a move is the drop in the mover's lichess win% (`shared/eval.ts`); the engine's top move is always `best`. The win% curve was fitted on much stronger players, so read it as the engine's win chance.
+Centipawn evals are clamped to +/-1000 and mates are kept separately, so a mate counts as a clamped eval of the mating side and a mate-to-mate move costs 0. The loss of a move is the drop in the mover's lichess win% between the best line and the played move, both scored in the position before the move (`shared/eval.ts`). The class depends on that loss only: `best` < 1, `good` < 5, `inaccuracy` < 10, `mistake` < 15, `blunder` >= 15. Whether the move was the engine's rank-1 move does not matter, since near-equal moves swap ranks between runs. The win% curve was fitted on much stronger players, so read it as the engine's win chance.
 
-Reviews are cached on disk in `storage/cache/reviews-v2/` with a `schemaVersion`; a file with another version is ignored and recomputed. The legacy `storage/cache/reviews/` and `storage/cache/scans/` directories are no longer read or written, and the app never deletes them.
+Reviews are cached on disk in `storage/cache/reviews-v3/` with a `schemaVersion`; a file with another version is ignored and recomputed. Older `storage/cache/reviews*/` and `storage/cache/scans/` directories are no longer read or written, and the app never deletes them.
 
 ## Tunable environment variables
 
@@ -138,9 +147,7 @@ Reviews are cached on disk in `storage/cache/reviews-v2/` with a `schemaVersion`
 PORT=3001
 HOST=0.0.0.0 # opt-in LAN exposure; default 127.0.0.1
 STOCKFISH_PATH=/absolute/path/to/stockfish
-STOCKFISH_THREADS=4
-STOCKFISH_HASH_MB=192
-REVIEW_MOVE_TIME_MS=360
+ENGINE_WORKERS=3 # single-thread Stockfish workers, 1-8
 CHESS_ANALYZER_SKIP_ENGINE_DOWNLOAD=1
 ```
 
