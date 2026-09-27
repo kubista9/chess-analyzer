@@ -3,8 +3,7 @@
 Local-first opening analysis for one Chess.com account, `kubista9` (hard-coded as `OWNER_USERNAME` in `shared/constants.ts`). The app imports every standard blitz and rapid game of the last 6 months into a local SQLite store (about 1,380 games) and shows:
 
 - Home: a Sync card with the stored games (`1,380 games · 1,234 blitz / 146 rapid · Mar 28 – Sep 27 · synced 5 min ago`), the Sync button and a Full re-check.
-- An Opening Report split into "As White" and "As Black", with W/D/L and score% (a draw counts 0.5) per opening family, over every stored game in the last 6 months (or 3 months). It is built from game results only; no engine runs for it.
-- A game list of the same window with opening/ECO search plus result, colour and time-class filters, which links into review
+- An Explorer (`/explorer`): pick As White or As Black, then walk the opening move by move on a board (click or drag a move, click a row, or use the arrow keys). Each position shows its book name and ECO, and each move row shows raw n with its share (and the effective n when recent games count more), W/D/L, the score with a 95% interval whisker, the score against the Elo expectation, the 90-day trend, your average think time and the book name or "out of book". A row is coloured as below or above expectation only when the difference clears the noise gate (see below). Each row opens a games drawer that links every game to its review and to Chess.com. It is built from game results only; no engine runs for it.
 - An opening review of a selected game: Stockfish looks at the first 20 plies (10 moves each). Evals are shown from White's side (`+0.80`, `M3`, `-M3`), and each move is labelled `best`, `good`, `inaccuracy`, `mistake` or `blunder` by the lichess win% it gives away (< 1, < 5, < 10, < 15, >= 15).
 
 ## Stack
@@ -55,11 +54,10 @@ Only standard games are imported: `rules == "chess"`, no `SetUp`/`FEN` start pos
 
 - `GET /api/status`: window counts by time class and colour, the date range, the last sync, a stale flag (no successful sync in 24 h) and per-month rows with skip reasons and the last HTTP status.
 - `POST /api/sync` (`{"full": true}` optional): starts the sync as a background job keyed `sync` and answers 202 with the job. A second request while it runs gets the same job. The completed job's result is `{summary, status}`.
-- `GET /api/games?window=6m|3m&tc=blitz|rapid&color=white|black`: every stored game in the window (6 months by default), newest first, with no cap. `GET /api/games/:id` returns one stored game, or 404.
-- `GET /api/openings/report?window=6m|3m`: the results-only report over the window, with the games per colour.
+- `GET /api/games/:id` returns one stored game, or 404.
 - `npx tsx scripts/verify/verify-import.ts --asof 2026-09-26` recounts the stored raw months independently and checks the invariants and the golden window numbers (read-only).
 
-The pages read only from the store; the browser keeps no snapshot of games (just the id of a running sync job). `storage/chess.db` is gitignored and can be deleted and re-synced at any time; the app never deletes the caches under `storage/cache`.
+The pages read only from the store; the browser keeps no snapshot of games (just the id of a running sync job and the Explorer's filters). `storage/chess.db` is gitignored and can be deleted and re-synced at any time; the app never deletes the caches under `storage/cache`.
 
 ## Opening tree and book
 
@@ -67,7 +65,10 @@ Opening names come from the [lichess-org/chess-openings](https://github.com/lich
 
 The opening tree is built in memory per colour from `game_plies` (the first 20 plies), keyed by EPD, so move orders that transpose land on one node. Each game counts a position once. Every move row carries raw n and W/D/L, the score against the Elo expectation (the owner's pre-game rating, taken from his previous game in the same time class) as a delta in points, a Wilson 95% interval, recency-weighted versions of those with the effective n, a leak z-score, the 90-day trend, the owner's average think time and the book name. Nothing is persisted; trees are memoised per filter set until the stored games change.
 
-- `GET /api/tree?color=white|black&epd=<EPD>&window=6m|3m&tc=blitz|rapid&hl=<days>|off`: one node (the start position by default) with its move rows, newest game ids first. The default half-life is 90 days on the 6-month window and off on the 3-month window. 404 when the games never reached the position.
+The Explorer colours a row only when it has at least 8 raw games and an effective n of at least 8, |z| >= 1.64, and it survives Benjamini-Hochberg at q = 0.2 across the rows of its table (`shared/moveSignals.ts`). A plain "n >= 8 and z >= 1" gate flags about as many lines on simulated no-leak data as on the real games. Rows under 8 games are greyed as low sample; the trend arrow needs 8 games on each side of the 90-day split.
+
+- `GET /api/tree?color=white|black&moves=<uci,uci,...>|epd=<EPD>&window=6m|3m&tc=blitz|rapid&hl=<days>|off`: one node (the start position by default) with its move rows, and with `moves=` the breadcrumbs of the path (each step's SAN, n and name). Rows carry no game ids. The default half-life is 90 days on the 6-month window and off on the 3-month window. 404 when the games never reached the position.
+- `GET /api/tree/games?<the same filters>&uci=<move>&page=N&size=20`: the games that played `uci` from that node, newest first, 20 per page, with opponent, ratings, result, date, time control, the Chess.com URL and the ply of the move (the drawer links to `/review/:id?ply=N`).
 - `npx tsx scripts/verify/verify-tree.ts --asof 2026-09-26` checks the golden lines, names, effective n, book exit and the counts along every path (read-only).
 
 ## Production build
@@ -87,7 +88,7 @@ npm run check       # typecheck, then test, then build:web
 
 `npm run build` also runs the typecheck first, because `vite build` does not type-check `src/`.
 
-Verify scripts live in `scripts/verify/` and are read-only. They take `--asof YYYY-MM-DD`, meaning the end of that UTC day, inclusive (see `scripts/verify/_lib.ts`). `npx tsx scripts/verify/check-report.ts` prints the per-colour Opening Report over the game store and checks that each colour's items add up to its games (options: `--time-class blitz|rapid`, `--asof`, `--days`; without `--asof` the window ends today).
+Verify scripts live in `scripts/verify/` and are read-only. They take `--asof YYYY-MM-DD`, meaning the end of that UTC day, inclusive (see `scripts/verify/_lib.ts`). `verify-import.ts` recounts the stored months, and `verify-tree.ts` checks the opening tree's golden numbers and path counts.
 
 ## Jobs
 
