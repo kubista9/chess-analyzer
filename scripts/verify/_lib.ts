@@ -3,6 +3,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { config } from "../../server/config.js";
+import { openDatabase, type Db } from "../../server/db/connection.js";
 import { safeKey } from "../../server/store/fileStore.js";
 import type { ArchiveGame } from "../../shared/types.js";
 import { WINDOW_DAYS, endOfUtcDay, windowBounds, type WindowBounds } from "../../shared/window.js";
@@ -64,6 +65,66 @@ export function loadRawGames(username: string = OWNER): ArchiveGame[] {
 
   const payload = JSON.parse(fs.readFileSync(filePath, "utf8")) as { games?: ArchiveGame[] };
   return payload.games ?? [];
+}
+
+/** storage/chess.db, opened read-only (no migrations, no writes). */
+export function openStoreReadonly(filePath: string = config.dbPath): Db {
+  if (!fs.existsSync(filePath)) {
+    throw new Error(`No game store at ${filePath}. Run \`npm run sync\` first.`);
+  }
+  return openDatabase(filePath, { readonly: true });
+}
+
+export interface StoredArchiveMonth {
+  month: string;
+  url: string;
+  etag: string | null;
+  fetchedAt: number;
+  checkedAt: number;
+  lastStatus: number;
+  gameCount: number;
+  keptCount: number | null;
+  skipped: Record<string, number> | null;
+  deriveVersion: number | null;
+  /** The raw archive entries, exactly as Chess.com returned them. */
+  games: Record<string, unknown>[];
+}
+
+/** Every stored raw archive month of `username`, oldest first, straight from archive_months. */
+export function loadArchiveMonths(db: Db, username: string = OWNER): StoredArchiveMonth[] {
+  const rows = db
+    .prepare(
+      `SELECT month, url, etag, fetched_at, checked_at, last_status, game_count, kept_count, skipped_json,
+              derive_version, raw_json
+       FROM archive_months WHERE username = ? ORDER BY month`
+    )
+    .all(username) as {
+    month: string;
+    url: string;
+    etag: string | null;
+    fetched_at: number;
+    checked_at: number;
+    last_status: number;
+    game_count: number;
+    kept_count: number | null;
+    skipped_json: string | null;
+    derive_version: number | null;
+    raw_json: string;
+  }[];
+
+  return rows.map((row) => ({
+    month: row.month,
+    url: row.url,
+    etag: row.etag,
+    fetchedAt: row.fetched_at,
+    checkedAt: row.checked_at,
+    lastStatus: row.last_status,
+    gameCount: row.game_count,
+    keptCount: row.kept_count,
+    skipped: row.skipped_json ? (JSON.parse(row.skipped_json) as Record<string, number>) : null,
+    deriveVersion: row.derive_version,
+    games: (JSON.parse(row.raw_json) as { games: Record<string, unknown>[] }).games
+  }));
 }
 
 export type TableRow = Record<string, string | number | boolean | null | undefined>;
