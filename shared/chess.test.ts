@@ -15,7 +15,7 @@ describe("clamp", () => {
     expect(clamp(-1500, -1000, 1000)).toBe(-1000);
   });
 
-  it("returns min when min > max (current behaviour)", () => {
+  it("returns max when min > max (current behaviour)", () => {
     expect(clamp(5, 10, 0)).toBe(0);
   });
 });
