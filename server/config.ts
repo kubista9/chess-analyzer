@@ -1,7 +1,6 @@
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import os from "node:os";
 import { OWNER_USERNAME } from "../shared/constants.js";
 
 // Anchor every storage path to the repo root, not process.cwd(), so the server, CLI and
@@ -36,6 +35,12 @@ export function isLoopbackHost(host: string): boolean {
   return LOOPBACK_HOSTS.has(host);
 }
 
+/** ENGINE_WORKERS: 1-8, default 3. */
+export function parseEngineWorkers(value: string | undefined): number {
+  const parsed = Number(value?.trim() || 3);
+  return Number.isInteger(parsed) ? Math.max(1, Math.min(8, parsed)) : 3;
+}
+
 export const config = {
   rootDir,
   // The one Chess.com account this app analyses. CHESS_OWNER is for tests only.
@@ -54,8 +59,7 @@ export const config = {
   userAgent:
     process.env.CHESS_COM_USER_AGENT ??
     "chess-analyst-local/0.1 (contact: local-user@localhost)",
-  // Interim review: one movetime search per position (P4 replaces this protocol).
-  reviewMoveTimeMs: Number(process.env.REVIEW_MOVE_TIME_MS ?? 360),
-  stockfishThreads: Math.max(1, Math.min(4, Number(process.env.STOCKFISH_THREADS ?? os.cpus().length - 1))),
-  stockfishHashMb: Math.max(32, Number(process.env.STOCKFISH_HASH_MB ?? 192))
+  // Single-thread Stockfish workers in the engine pool (the M1 has 4 performance cores).
+  // Threads, Hash and the search depth are part of the engine protocol (server/engine/protocol.ts).
+  engineWorkers: parseEngineWorkers(process.env.ENGINE_WORKERS)
 };

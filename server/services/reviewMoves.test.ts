@@ -1,41 +1,60 @@
 import { describe, expect, it } from "vitest";
 import { OPENING_PLY_LIMIT, OWNER_USERNAME } from "../../shared/constants.js";
-import { formatEval } from "../../shared/eval.js";
-import type { LegacyEngineLine } from "../../shared/types.js";
+import { toEpd } from "../../shared/epd.js";
+import { formatEval, scoreWinPercent } from "../../shared/eval.js";
+import type { EngineLine, PositionEval } from "../../shared/types.js";
 import { loadOwnerGames } from "../../test/loadFixtures.js";
 import { deriveGame, rawGameSchema, utcMonth } from "./gameDerive.js";
 import { parseGame, type ParsedMove } from "./gameParser.js";
-import {
-  analysisFromLines,
-  annotateMoves,
-  reviewHeader,
-  sideToMove,
-  terminalAnalysis,
-  toReviewLine,
-  type PositionAnalysis
-} from "./reviewMoves.js";
+import { annotateMoves, reviewHeader, reviewRequests, sideToMove, toReviewLine } from "./reviewMoves.js";
 
 const scandinavianRaw = rawGameSchema.parse(loadOwnerGames().find((raw) => raw.url.endsWith("/184405952510"))!);
 const scandinavian = deriveGame(OWNER_USERNAME, utcMonth(scandinavianRaw.end_time), scandinavianRaw);
 
+function line(uci: string, cp: number | null, mate: number | null = null, pv: string[] = [uci]): EngineLine {
+  return { uci, cp, mate, winPct: scoreWinPercent({ cp, mate }), depth: 15, pv };
+}
+
 /**
- * A fake engine: for each position, the top line is `topMove` (default: the move the game
- * played next) and the score is `whiteCp` converted to the side to move, the way UCI reports it.
+ * Fake engine output: position i has a best line `a2a3`-style dummy move worth whiteCp(i), and
+ * the move the game played from it is scored (searchmoves) at whiteCp(i + 1), both converted
+ * to the side to move the way UCI reports them. So a move loses exactly the swing it causes.
  */
-function fakeAnalyses(moves: ParsedMove[], whiteCp: (index: number) => number): PositionAnalysis[] {
+function fakeEvals(moves: ParsedMove[], whiteCp: (index: number) => number, bestIsPlayed = false): PositionEval[] {
   const fens = [moves[0].fenBefore, ...moves.map((move) => move.fenAfter)];
   return fens.map((fen, index) => {
-    const next = moves[index];
     const sign = sideToMove(fen) === "white" ? 1 : -1;
-    const line: LegacyEngineLine = {
-      move: next?.uci ?? "a2a3",
-      scoreCp: sign * whiteCp(index),
-      mate: null,
-      pv: next ? moves.slice(index, index + 3).map((move) => move.uci) : []
+    const next = moves[index];
+    const best = bestIsPlayed && next
+      ? line(next.uci, sign * whiteCp(index), null, moves.slice(index, index + 3).map((move) => move.uci))
+      : line("zzzz", sign * whiteCp(index));
+    const scored = next && !bestIsPlayed ? [line(next.uci, sign * whiteCp(index + 1))] : [];
+    return {
+      epd: toEpd(fen),
+      tier: "owner",
+      depth: 15,
+      nodes: 1,
+      lines: [best],
+      scored,
+      terminal: null,
+      bestUci: best.uci,
+      score: { cp: best.cp, mate: null }
     };
-    return next ? analysisFromLines(fen, [line]) : { eval: { cp: whiteCp(index), mate: null }, lines: [] };
   });
 }
+
+describe("reviewRequests", () => {
+  it("asks for every position with its played move, by tier", () => {
+    const requests = reviewRequests(["e2e4", "d7d5", "e4d5"], "black");
+    expect(requests).toEqual([
+      { moves: [], tier: "opponent", played: ["e2e4"] },
+      { moves: ["e2e4"], tier: "owner", played: ["d7d5"] },
+      { moves: ["e2e4", "d7d5"], tier: "opponent", played: ["e4d5"] },
+      { moves: ["e2e4", "d7d5", "e4d5"], tier: "owner", played: [] }
+    ]);
+    expect(reviewRequests(["e2e4"], "white")[0].tier).toBe("owner");
+  });
+});
 
 describe("annotateMoves", () => {
   const moves = parseGame(scandinavian.pgn).moves.slice(0, OPENING_PLY_LIMIT);
@@ -45,80 +64,75 @@ describe("annotateMoves", () => {
     expect(moves).toHaveLength(20);
   });
 
-  it("keeps a constant White advantage positive on both colours' moves", () => {
-    const annotated = annotateMoves(moves, fakeAnalyses(moves, () => 50), "black");
+  it("keeps a constant White advantage positive on both colours' moves, and calls equal moves best", () => {
+    const annotated = annotateMoves(moves, fakeEvals(moves, () => 50), "black");
     expect(annotated).toHaveLength(20);
     for (const move of annotated) {
       expect(move.whiteCpBefore, `ply ${move.ply}`).toBe(50);
       expect(move.whiteCpAfter, `ply ${move.ply}`).toBe(50);
       expect(move.lossWinPct).toBe(0);
+      // "best" by loss, although the engine's rank-1 move was another one.
       expect(move.category).toBe("best");
+      expect(move.bestLine.uci).toBe("zzzz");
       expect(formatEval({ cp: move.whiteCpAfter, mate: move.mateAfter })).toBe("+0.50");
     }
   });
 
-  it("charges the mover, from the mover's side", () => {
+  it("charges the mover, from the mover's side, at the move's own root", () => {
     // White is +0.50 until Black's 3...Qa5 (ply 6), then +4.00.
-    const annotated = annotateMoves(moves, fakeAnalyses(moves, (index) => (index >= 6 ? 400 : 50)), "black");
+    const annotated = annotateMoves(moves, fakeEvals(moves, (index) => (index >= 6 ? 400 : 50)), "black");
     const qa5 = annotated[5];
     expect(qa5).toMatchObject({ san: "Qa5", color: "black", whiteCpBefore: 50, whiteCpAfter: 400, isPlayerMove: true });
     expect(qa5.lossWinPct).toBeCloseTo(26.8, 1);
+    expect(qa5.category).toBe("blunder");
     expect(annotated[6].lossWinPct).toBe(0);
   });
 
   it("uses second-person copy only on the owner's moves", () => {
-    const annotated = annotateMoves(moves, fakeAnalyses(moves, () => 0), "black");
+    const annotated = annotateMoves(moves, fakeEvals(moves, () => 0), "black");
     expect(annotated[1].note).toContain("Engine agrees with your move");
     expect(annotated[0].note).toBe("Engine agrees with this move.");
     expect(annotated.filter((move) => move.isPlayerMove).every((move) => move.color === "black")).toBe(true);
   });
 
   it("puts the engine line in SAN", () => {
-    const annotated = annotateMoves(moves, fakeAnalyses(moves, () => 0), "black");
+    const annotated = annotateMoves(moves, fakeEvals(moves, () => 0, true), "black");
     expect(annotated[0].bestLine).toMatchObject({ uci: "e2e4", san: "e4", pvSan: ["e4", "d5", "exd5"] });
   });
 
-  it("rejects a mismatched number of analyses", () => {
-    expect(() => annotateMoves(moves, fakeAnalyses(moves, () => 0).slice(1), "black")).toThrow();
+  it("rejects a mismatched number of evals, and a move the engine did not score", () => {
+    expect(() => annotateMoves(moves, fakeEvals(moves, () => 0).slice(1), "black")).toThrow();
+    const evals = fakeEvals(moves, () => 0);
+    evals[3] = { ...evals[3], scored: [] };
+    expect(() => annotateMoves(moves, evals, "black")).toThrow(/did not score/);
   });
 });
 
 describe("mates", () => {
-  // Fool's mate: 1. f3 e5 2. g4 Qh4#
+  // Fool's mate: 1. f3 e5 2. g4 Qh4# 0-1
   const moves = parseGame("1. f3 e5 2. g4 Qh4# 0-1").moves;
 
-  it("evaluates the checkmated position without the engine", () => {
-    expect(terminalAnalysis(moves[3].fenAfter)).toEqual({ eval: { cp: -1000, mate: 0 }, lines: [] });
-    expect(terminalAnalysis(moves[0].fenBefore)).toBeNull();
-  });
+  it("keeps mate scores separate, clamps cp, and charges walking into mate the maximum", () => {
+    const evals = fakeEvals(moves, () => 0);
+    // Before 2.g4: White's best is 0.00, 2.g4 allows mate in 1 (score mate -1 for White).
+    evals[2] = { ...evals[2], scored: [line("g2g4", null, -1)] };
+    // Before 2...Qh4#: Black to move mates in 1.
+    evals[3] = { ...evals[3], lines: [line("d8h4", null, 1)], scored: [], bestUci: "d8h4", score: { cp: null, mate: 1 } };
+    // After it: checkmate, no engine line.
+    evals[4] = { ...evals[4], lines: [], scored: [], terminal: "checkmate", bestUci: null, score: { cp: null, mate: 0 } };
 
-  it("keeps mate scores separate and clamps cp", () => {
-    // Before 2...Qh4# Black to move, mate in 1 (UCI: score mate 1, parsed cp 99000).
-    const before = analysisFromLines(moves[3].fenBefore, [
-      { move: "d8h4", scoreCp: 99000, mate: 1, pv: ["d8h4"] }
-    ]);
-    expect(before.eval).toEqual({ cp: -1000, mate: -1 });
-    expect(formatEval(before.eval)).toBe("-M1");
-
-    const beforeG4 = analysisFromLines(moves[2].fenBefore, [{ move: "e2e4", scoreCp: 0, mate: null, pv: ["e2e4"] }]);
-    const analyses = [
-      ...fakeAnalyses(moves.slice(0, 2), () => 0).slice(0, 2),
-      beforeG4,
-      before,
-      terminalAnalysis(moves[3].fenAfter)!
-    ];
-    const annotated = annotateMoves(moves, analyses, "white");
+    const annotated = annotateMoves(moves, evals, "white");
     const mate = annotated[3];
     expect(mate).toMatchObject({ san: "Qh4#", mateBefore: -1, mateAfter: 0, whiteCpAfter: -1000, lossWinPct: 0, category: "best" });
-    // 2. g4 walks into mate: from 0.00 to -M1, the biggest possible loss.
+    expect(formatEval({ cp: mate.whiteCpBefore, mate: mate.mateBefore })).toBe("-M1");
     expect(annotated[2].category).toBe("blunder");
     expect(annotated[2].lossWinPct).toBeCloseTo(47.5, 1);
     expect(Math.max(...annotated.map((move) => Math.abs(move.whiteCpBefore)))).toBeLessThanOrEqual(1000);
   });
 
   it("converts a mating line to SAN", () => {
-    const line = toReviewLine(moves[3].fenBefore, { move: "d8h4", scoreCp: 99000, mate: 1, pv: ["d8h4"] });
-    expect(line).toEqual({ uci: "d8h4", san: "Qh4#", pvSan: ["Qh4#"], whiteCp: -1000, mate: -1 });
+    const converted = toReviewLine(moves[3].fenBefore, line("d8h4", null, 1));
+    expect(converted).toEqual({ uci: "d8h4", san: "Qh4#", pvSan: ["Qh4#"], whiteCp: -1000, mate: -1 });
   });
 });
 

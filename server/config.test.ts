@@ -1,7 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
-import { config, findRepoRoot, isLoopbackHost } from "./config.js";
+import { config, findRepoRoot, isLoopbackHost, parseEngineWorkers } from "./config.js";
 
 describe("config.rootDir", () => {
   it("is the repo root, independent of process.cwd()", () => {
@@ -27,5 +27,16 @@ describe("isLoopbackHost", () => {
     expect(isLoopbackHost("localhost")).toBe(true);
     expect(isLoopbackHost("0.0.0.0")).toBe(false);
     expect(isLoopbackHost("192.168.1.10")).toBe(false);
+  });
+});
+
+describe("parseEngineWorkers", () => {
+  it("defaults to 3 and clamps to 1-8", () => {
+    expect(parseEngineWorkers(undefined)).toBe(3);
+    expect(parseEngineWorkers("")).toBe(3);
+    expect(parseEngineWorkers("4")).toBe(4);
+    expect(parseEngineWorkers("0")).toBe(1);
+    expect(parseEngineWorkers("99")).toBe(8);
+    expect(parseEngineWorkers("two")).toBe(3);
   });
 });

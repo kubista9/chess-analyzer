@@ -45,9 +45,9 @@ describe("versioned JSON", () => {
 });
 
 describe("reviewCachePath", () => {
-  it("points into reviews-v2, never the legacy reviews directory", () => {
+  it("points into reviews-v3 (fixed-depth protocol), never an older reviews directory", () => {
     const file = reviewCachePath("/cache", "kubista9", "184405952510");
-    expect(file).toBe(path.join("/cache", "reviews-v2", "kubista9", "184405952510.json"));
-    expect(REVIEW_SCHEMA_VERSION).toBe(2);
+    expect(file).toBe(path.join("/cache", "reviews-v3", "kubista9", "184405952510.json"));
+    expect(REVIEW_SCHEMA_VERSION).toBe(3);
   });
 });

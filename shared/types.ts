@@ -68,14 +68,6 @@ export interface PositionEval {
   score: { cp: number | null; mate: number | null };
 }
 
-/** The P1b interim engine line (movetime wrapper), until the review switches to the pool. */
-export interface LegacyEngineLine {
-  move: string;
-  scoreCp: number;
-  mate: number | null;
-  pv: string[];
-}
-
 /** An engine line prepared for display: SAN moves, White-view eval. */
 export interface ReviewLine {
   uci: string;

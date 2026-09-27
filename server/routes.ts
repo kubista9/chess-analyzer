@@ -323,7 +323,7 @@ export function createApiRouter(deps: ApiDeps): express.Router {
     const { job } = deps.jobs.startOrReuse<ReviewSummary>(key, "game-review", "Opening review", async (reporter) => {
       reporter.progress(5, "Starting Stockfish");
       const review = await runGameReview(deps.db(), gameId, (done, total) =>
-        reporter.progress(5 + (done / total) * 90, `Stockfish: position ${done + 1} of ${total}`)
+        reporter.progress(5 + (done / total) * 90, `Stockfish: ${done} of ${total} positions`)
       );
       return review;
     });

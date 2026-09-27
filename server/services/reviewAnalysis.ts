@@ -6,13 +6,13 @@ import { readVersionedJson, writeVersionedJson } from "../store/fileStore.js";
 import type { Db } from "../db/connection.js";
 import { getGame, getGamePgn } from "../db/games.js";
 import { parseGame } from "./gameParser.js";
-import { analysisFromLines, annotateMoves, reviewHeader, terminalAnalysis, type PositionAnalysis } from "./reviewMoves.js";
-import { StockfishSession } from "./stockfish.js";
+import { getEnginePool } from "../engine/sharedPool.js";
+import { annotateMoves, reviewHeader, reviewRequests } from "./reviewMoves.js";
 
-// Interim opening review: the first OPENING_PLY_LIMIT plies, one movetime search per
-// position (P4 replaces the engine protocol). Cached in reviews-v2 with a schemaVersion.
-
-const REVIEW_MULTI_PV = 2;
+// Interim opening review (a thin adapter until P4b/P6): the first OPENING_PLY_LIMIT plies on
+// the engine pool at interactive priority, under the fixed-depth protocol. Each move's loss
+// is measured at its own root (best line vs the played move, depth-matched searchmoves).
+// Results are not written to the position cache yet (P4b). Cached in reviews-v3.
 
 export async function readCachedGameReview(gameId: string): Promise<ReviewSummary | null> {
   return readVersionedJson<ReviewSummary>(
@@ -45,40 +45,19 @@ export async function runGameReview(
     throw new Error(`Game ${gameId} has no moves to review.`);
   }
 
-  // Every position from before the first move to after the last reviewed move. The eval
-  // after ply N is the eval before ply N + 1, so the eval bar never jumps between plies.
-  const positions = [moves[0].fenBefore, ...moves.map((move) => move.fenAfter)];
-  const session = new StockfishSession();
+  const requests = reviewRequests(
+    moves.map((move) => move.uci),
+    playerColor
+  );
+  const evals = await getEnginePool().analyseGame(`review:${game.id}`, requests, { priority: "interactive", onProgress });
 
-  try {
-    await session.initialize();
-    const analyses: PositionAnalysis[] = [];
-    for (const fen of positions) {
-      onProgress?.(analyses.length, positions.length);
-      const terminal = terminalAnalysis(fen);
-      if (terminal) {
-        analyses.push(terminal);
-        continue;
-      }
+  const review: ReviewSummary = {
+    gameId: game.id,
+    color: playerColor,
+    header: reviewHeader(game, username),
+    moves: annotateMoves(moves, evals, playerColor)
+  };
 
-      const lines = await session.analyzePosition({
-        fen,
-        multiPv: REVIEW_MULTI_PV,
-        moveTimeMs: config.reviewMoveTimeMs
-      });
-      analyses.push(analysisFromLines(fen, lines));
-    }
-
-    const review: ReviewSummary = {
-      gameId: game.id,
-      color: playerColor,
-      header: reviewHeader(game, username),
-      moves: annotateMoves(moves, analyses, playerColor)
-    };
-
-    await writeVersionedJson(reviewCachePath(config.cacheDir, username, gameId), REVIEW_SCHEMA_VERSION, review);
-    return review;
-  } finally {
-    session.close();
-  }
+  await writeVersionedJson(reviewCachePath(config.cacheDir, username, gameId), REVIEW_SCHEMA_VERSION, review);
+  return review;
 }

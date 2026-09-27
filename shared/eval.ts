@@ -151,18 +151,3 @@ export function formatEval(evaluation: WhiteEval): string {
   const value = evaluation.cp / 100;
   return `${value >= 0 ? "+" : ""}${value.toFixed(2)}`;
 }
-
-// Interim (P1b) review helpers, kept until the review moves to one-root scoring.
-
-/** A raw engine score, from the side to move (UCI "score cp" / "score mate"). */
-export type SideToMoveScore = EngineScore;
-
-/** How much win% the mover gave away between two separately searched positions, never negative. */
-export function winPercentLoss(before: WhiteEval, after: WhiteEval, mover: PlayerColor): number {
-  return Math.max(0, winPercentFor(before, mover) - winPercentFor(after, mover));
-}
-
-/** The P1b classes: the engine's top move is always best, otherwise classifyLoss. */
-export function categorizeMove(lossWinPct: number, isTopMove: boolean): MoveCategory {
-  return isTopMove ? "best" : classifyLoss(lossWinPct);
-}

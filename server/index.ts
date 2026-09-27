@@ -1,6 +1,10 @@
 import { createApp } from "./app.js";
 import { config, isLoopbackHost } from "./config.js";
+import { installEngineShutdown } from "./engine/sharedPool.js";
 import { getOpeningBook } from "./services/openingBook.js";
+
+// Close the engine pool's Stockfish processes on SIGINT/SIGTERM (tsx watch restarts on edits).
+installEngineShutdown();
 
 createApp().listen(config.port, config.host, () => {
   const displayHost = config.host.includes(":") ? `[${config.host}]` : config.host;
