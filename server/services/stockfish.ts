@@ -40,9 +40,20 @@ function parseScore(tokens: string[]): EngineScore | null {
   return null;
 }
 
+export interface StockfishSessionOptions {
+  path?: string;
+  args?: string[];
+}
+
+// Interim wrapper (P4a rewrites it). If the engine process fails to start, exits or errors,
+// every pending search and readiness wait rejects, so a review job fails instead of hanging.
 export class StockfishSession {
   private process: ChildProcessWithoutNullStreams;
   private lines: readline.Interface;
+  private readonly path: string;
+  private failure: Error | null = null;
+  private closed = false;
+  private readyWaiters = new Set<(error: Error) => void>();
   private pending:
     | {
         resolve: (value: EngineLine[]) => void;
@@ -51,12 +62,34 @@ export class StockfishSession {
       }
     | null = null;
 
-  constructor() {
-    this.process = spawn(config.stockfishPath, [], {
+  constructor(options: StockfishSessionOptions = {}) {
+    this.path = options.path ?? config.stockfishPath;
+    this.process = spawn(this.path, options.args ?? [], {
       stdio: ["pipe", "pipe", "pipe"]
     });
     this.lines = readline.createInterface({ input: this.process.stdout });
+    this.process.on("error", (error) => this.fail(new Error(`Stockfish failed: ${error.message}`)));
+    this.process.on("exit", (code, signal) =>
+      this.fail(new Error(`Stockfish exited unexpectedly (${signal ? `signal ${signal}` : `code ${code}`})`))
+    );
+    // Writes after the process died emit EPIPE here; the exit handler reports the failure.
+    this.process.stdin.on("error", (error) => this.fail(new Error(`Stockfish input failed: ${error.message}`)));
     this.bindOutput();
+  }
+
+  /** Rejects everything that waits on the engine. The first failure wins. */
+  private fail(error: Error): void {
+    if (this.closed) {
+      return;
+    }
+    this.failure ??= error;
+    const pending = this.pending;
+    this.pending = null;
+    pending?.reject(this.failure);
+    for (const reject of this.readyWaiters) {
+      reject(this.failure);
+    }
+    this.readyWaiters.clear();
   }
 
   private bindOutput(): void {
@@ -111,11 +144,14 @@ export class StockfishSession {
   }
 
   private send(command: string): void {
+    if (this.failure) {
+      throw this.failure;
+    }
     this.process.stdin.write(`${command}\n`);
   }
 
   async initialize(): Promise<void> {
-    await fs.access(config.stockfishPath);
+    await fs.access(this.path);
 
     this.send("uci");
     this.send(`setoption name Threads value ${config.stockfishThreads}`);
@@ -124,14 +160,25 @@ export class StockfishSession {
   }
 
   private ready(): Promise<void> {
-    return new Promise((resolve) => {
+    return new Promise((resolve, reject) => {
+      if (this.failure) {
+        reject(this.failure);
+        return;
+      }
+
       const onLine = (line: string) => {
         if (line.trim() === "readyok") {
           this.lines.off("line", onLine);
+          this.readyWaiters.delete(onFailure);
           resolve();
         }
       };
+      const onFailure = (error: Error) => {
+        this.lines.off("line", onLine);
+        reject(error);
+      };
 
+      this.readyWaiters.add(onFailure);
       this.lines.on("line", onLine);
       this.send("isready");
     });
@@ -148,6 +195,10 @@ export class StockfishSession {
     this.send(`position fen ${options.fen}`);
 
     return new Promise<EngineLine[]>((resolve, reject) => {
+      if (this.failure) {
+        reject(this.failure);
+        return;
+      }
       this.pending = {
         resolve,
         reject,
@@ -160,6 +211,7 @@ export class StockfishSession {
   }
 
   close(): void {
+    this.closed = true;
     this.lines.close();
     this.process.kill();
   }
