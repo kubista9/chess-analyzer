@@ -113,7 +113,7 @@ for (const item of [...selection.items, ...selection.watch]) {
   }
   check(item.pointsLost <= -item.deltaPts + 1e-9 || item.explainedBy.length === 0, `${item.id}: blamed for more than it lost`);
   check(item.residualN <= item.n && item.residualN >= FIX_MIN_N, `${item.id}: residual n out of range`);
-  check(item.examples.length === Math.min(3, item.n), `${item.id}: expected 3 examples`);
+  check(item.examples.length === Math.min(3, item.residualN), `${item.id}: expected 3 examples`);
   check(item.examples.every((example) => example.ply === item.moves.length), `${item.id}: example ply is not the move's ply`);
 }
 for (const item of selection.items) {

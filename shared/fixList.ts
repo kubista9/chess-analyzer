@@ -161,6 +161,7 @@ export interface FixItem {
   trend: TreeTrend & { direction: TrendDirection };
   /** Losses within EARLY_LOSS_PLY half-moves, as a share of the line's games. */
   earlyLoss: { ply: number; n: number; rate: number };
+  /** Up to FIX_EXAMPLES of the games this item is blamed for: the most recent losses first. */
   examples: FixExample[];
 }
 
@@ -237,7 +238,7 @@ export function selectLeaks(candidates: readonly FixCandidate[], scoreOf?: (game
         }
       }
     }
-    (tier === "leak" ? items : watch).push(toItem(candidate, entry, s, pointsLost, residual.n, [...explainedBy]));
+    (tier === "leak" ? items : watch).push(toItem(candidate, entry, s, pointsLost, residualGames, [...explainedBy]));
   }
 
   const rank = (a: FixItem, b: FixItem) => b.pointsLost - a.pointsLost || b.n - a.n || (a.id < b.id ? -1 : 1);
@@ -274,7 +275,7 @@ function toItem(
   entry: { summary: ReturnType<typeof summarize>; z: number; p: number; q: number; tier: FixTier },
   s: (game: CandidateGame) => number,
   pointsLost: number,
-  residualN: number,
+  residualGames: CandidateGame[],
   explainedBy: string[]
 ): FixItem {
   const { edge, games } = candidate;
@@ -291,8 +292,9 @@ function toItem(
     early += score === 0 && game.plyCount !== null && game.plyCount <= EARLY_LOSS_PLY ? 1 : 0;
   }
   const raw = summarize(rawAcc);
-  // The most recent losses, then draws, then wins (games are newest first).
-  const examples = [...games]
+  // The most recent losses, then draws, then wins, among the games this item is blamed for
+  // (a deeper item shows its own). Games are newest first.
+  const examples = [...residualGames]
     .map((game, order) => ({ game, order, score: s(game) }))
     .sort((a, b) => a.score - b.score || a.order - b.order)
     .slice(0, FIX_EXAMPLES)
@@ -327,7 +329,7 @@ function toItem(
     confidence: entry.z >= FIX_HIGH_Z ? "high" : "medium",
     raw: { score: raw.score, delta: raw.delta, deltaPts: raw.deltaPts },
     pointsLost,
-    residualN,
+    residualN: residualGames.length,
     explainedBy,
     trend: { ...edge.trend, direction: trendDirection(edge.trend) },
     earlyLoss: { ply: EARLY_LOSS_PLY, n: early, rate: games.length ? early / games.length : 0 },

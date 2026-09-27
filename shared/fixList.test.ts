@@ -184,12 +184,15 @@ describe("blame attribution", () => {
   });
 
   it("also emits the parent's residual when two children explain 40% each", () => {
-    const selection = fixList([
-      ...results("e4 e5 Nf3 Nc6", "black", { losses: 9, wins: 1 }),
-      ...results("e4 e5 Bc4 Nf6", "black", { losses: 9, wins: 1 }),
+    const residualGames = [
       // 12 more 1...e5 games over two replies with under 8 games each: 2.0 points lost (residual z 1.15).
       ...results("e4 e5 d4 exd4", "black", { losses: 4, wins: 2 }),
       ...results("e4 e5 Nc3 Nf6", "black", { losses: 3, wins: 1, draws: 2 })
+    ];
+    const selection = fixList([
+      ...results("e4 e5 Nf3 Nc6", "black", { losses: 9, wins: 1 }),
+      ...results("e4 e5 Bc4 Nf6", "black", { losses: 9, wins: 1 }),
+      ...residualGames
     ]);
     const lines = selection.items.map(lineOf);
     expect(lines).toEqual(["e4 e5 Bc4 Nf6", "e4 e5 Nf3 Nc6", "e4 e5"]);
@@ -199,6 +202,9 @@ describe("blame attribution", () => {
     expect(parent.pointsLost).toBeCloseTo(2, 12);
     expect(parent.residualN).toBe(12);
     expect(parent.explainedBy.sort()).toEqual(["black:e2e4,e7e5,f1c4,g8f6", "black:e2e4,e7e5,g1f3,b8c6"]);
+    // Its example games are ones it is blamed for, not the children's.
+    const residualIds = new Set(residualGames.map((entry) => entry.id));
+    expect(parent.examples.map((example) => residualIds.has(example.id))).toEqual([true, true, true]);
     // The lost points are shared out, never counted twice: 4 + 4 + 2 = the parent's 10.
     expect(selection.items.reduce((sum, item) => sum + item.pointsLost, 0)).toBeCloseTo(10, 12);
   });
