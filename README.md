@@ -1,10 +1,10 @@
 # Chess Analyst
 
-Local-first opening analysis for one Chess.com account, `kubista9` (hard-coded as `OWNER_USERNAME` in `shared/constants.ts`). The app pulls kubista9's latest 1, 5, 10, or 25 rapid, blitz, bullet, and daily games, then runs Stockfish-backed analysis to surface:
+Local-first opening analysis for one Chess.com account, `kubista9` (hard-coded as `OWNER_USERNAME` in `shared/constants.ts`). The app pulls kubista9's latest 1, 5, 10, or 25 rapid, blitz, bullet, and daily games and shows:
 
-- Opening diagnostics grouped by opening family
+- An Opening Report split into "As White" and "As Black", with W/D/L and score% (a draw counts 0.5) per opening family. It is built from game results only; no engine runs for it.
 - A game list with opening search plus result/color filters, which links into review
-- A review page for a selected game with move labels such as `best`, `good`, `mistake`, `miss`, and `blunder`
+- An opening review of a selected game: Stockfish looks at the first 20 plies (10 moves each). Evals are shown from White's side (`+0.80`, `M3`, `-M3`), and each move is labelled `best`, `good`, `inaccuracy`, `mistake` or `blunder` by the lichess win% it gives away (< 1, < 5, < 10, < 15, >= 15).
 
 ## Stack
 
@@ -57,7 +57,7 @@ npm run check       # typecheck, then test, then build:web
 
 `npm run build` also runs the typecheck first, because `vite build` does not type-check `src/`.
 
-Verify scripts live in `scripts/verify/` and are read-only. They take `--asof YYYY-MM-DD`, meaning the end of that UTC day, inclusive (see `scripts/verify/_lib.ts`).
+Verify scripts live in `scripts/verify/` and are read-only. They take `--asof YYYY-MM-DD`, meaning the end of that UTC day, inclusive (see `scripts/verify/_lib.ts`). `npx tsx scripts/verify/check-report.ts` prints the per-colour Opening Report over the raw games cache (options: `--time-class blitz,rapid`, `--asof`, `--days`; without `--asof` every cached game counts).
 
 ## Stockfish
 
@@ -75,7 +75,9 @@ STOCKFISH_PATH=/absolute/path/to/stockfish
 
 ## Notes on move labels
 
-This project approximates Chess.com-style review labels with Stockfish heuristics. The labels are intentionally useful and consistent, but they are not intended to be an exact replica of Chess.com's proprietary scoring logic.
+Centipawn evals are clamped to +/-1000 and mates are kept separately, so a mate counts as a clamped eval of the mating side and a mate-to-mate move costs 0. The loss of a move is the drop in the mover's lichess win% (`shared/eval.ts`); the engine's top move is always `best`. The win% curve was fitted on much stronger players, so read it as the engine's win chance.
+
+Reviews are cached on disk in `storage/cache/reviews-v2/` with a `schemaVersion`; a file with another version is ignored and recomputed. The legacy `storage/cache/reviews/` and `storage/cache/scans/` directories are no longer read or written, and the app never deletes them.
 
 ## Tunable environment variables
 
@@ -85,10 +87,7 @@ HOST=0.0.0.0 # opt-in LAN exposure; default 127.0.0.1
 STOCKFISH_PATH=/absolute/path/to/stockfish
 STOCKFISH_THREADS=4
 STOCKFISH_HASH_MB=192
-BATCH_MOVE_TIME_MS=110
-BATCH_REPLY_TIME_MS=65
 REVIEW_MOVE_TIME_MS=360
-REVIEW_REPLY_TIME_MS=180
 CHESS_ANALYZER_SKIP_ENGINE_DOWNLOAD=1
 ```
 
