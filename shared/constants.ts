@@ -10,7 +10,7 @@ export const OPENING_PLY_LIMIT = 20;
 // separate field and count as a clamped eval of the mating side.
 export const CP_CLAMP = 1000;
 
-// Ordered from best to worst. Thresholds (lichess win% loss) live in shared/eval.ts.
+// Ordered from best to worst. Thresholds (the mover's win% loss at one root) live in shared/eval.ts.
 export const MOVE_CATEGORIES = ["best", "good", "inaccuracy", "mistake", "blunder"] as const;
 
 // The importer keeps only these standard time classes; bullet and daily are never stored.
