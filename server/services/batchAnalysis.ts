@@ -4,17 +4,14 @@ import {
   calculateAccuracy,
   categorizeMove,
   emptyCategoryCounts,
-  emptyPhaseMap,
   normalizeResult,
-  scoreToWinProbability,
-  signalFromAccuracy
+  pieceValue
 } from "../../shared/chess.js";
-import type { AnnotatedMove, ArchiveGame, DashboardSnapshot, EngineLine, HistoryGameSummary, PlayerColor } from "../../shared/types.js";
-import { noteForCategory } from "../../shared/notes.js";
+import type { ArchiveGame, EngineLine, HistoryGameSummary, OpeningsSnapshot, PlayerColor } from "../../shared/types.js";
 import { config } from "../config.js";
-import { parseGame, pieceValue, playerColorForGame } from "./gameParser.js";
+import { parseGame, playerColorForGame } from "./gameParser.js";
 import { StockfishSession } from "./stockfish.js";
-import { buildHighlights, buildMetricCards, buildOpeningReport, buildTrainingPlan } from "./openingReport.js";
+import { buildOpeningReport } from "./openingReport.js";
 import { fetchRecentGamesWithCacheStatus } from "./chessCom.js";
 import { readJsonFile, safeKey, writeJsonFile } from "../store/fileStore.js";
 
@@ -30,10 +27,6 @@ interface CachedScan {
 
 function scanCachePath(username: string, gameId: string): string {
   return path.join(config.cacheDir, "scans", safeKey(username), `${safeKey(gameId)}.json`);
-}
-
-function snapshotCachePath(username: string, limit: number): string {
-  return path.join(config.cacheDir, "snapshots", `${safeKey(username)}-${limit}.json`);
 }
 
 function formatCacheTimestamp(timestamp: string): string {
@@ -66,8 +59,7 @@ async function buildGameSummary(
   const parsed = parseGame(game);
   const playerMoves = parsed.moves.filter((move) => move.color === playerColor);
   const categories = emptyCategoryCounts();
-  const lossesByPhase = emptyPhaseMap<number[]>([]);
-  const swings: number[] = [];
+  const losses: number[] = [];
 
   let firstMajorErrorPly: number | null = null;
 
@@ -106,21 +98,14 @@ async function buildGameSummary(
     });
 
     categories[category] += 1;
-    lossesByPhase[move.phase].push(lossCp);
-    swings.push(Math.abs(scoreToWinProbability(beforeScore) - scoreToWinProbability(afterScore)) * 100);
+    losses.push(lossCp);
 
     if (firstMajorErrorPly === null && ["mistake", "miss", "blunder"].includes(category)) {
       firstMajorErrorPly = move.ply;
     }
   }
 
-  const avgCentipawnLoss = average(Object.values(lossesByPhase).flat());
-
-  const phaseAccuracy = {
-    opening: calculateAccuracy(average(lossesByPhase.opening)),
-    middlegame: calculateAccuracy(average(lossesByPhase.middlegame)),
-    endgame: calculateAccuracy(average(lossesByPhase.endgame))
-  };
+  const avgCentipawnLoss = average(losses);
 
   const player = playerColor === "white" ? game.white : game.black;
   const opponent = playerColor === "white" ? game.black : game.white;
@@ -142,34 +127,8 @@ async function buildGameSummary(
     accuracy: calculateAccuracy(avgCentipawnLoss),
     avgCentipawnLoss,
     categories,
-    phaseAccuracy,
-    phaseSignals: {
-      opening: signalFromAccuracy(phaseAccuracy.opening),
-      middlegame: signalFromAccuracy(phaseAccuracy.middlegame),
-      endgame: signalFromAccuracy(phaseAccuracy.endgame)
-    },
-    criticalMoments: categories.blunder + categories.miss + categories.mistake,
-    firstMajorErrorPly,
-    winProbabilitySwing: average(swings)
+    firstMajorErrorPly
   };
-}
-
-async function scanOrLoadGameSummary(
-  session: StockfishSession,
-  username: string,
-  game: ArchiveGame
-): Promise<HistoryGameSummary> {
-  const cached = await loadCachedGameSummary(username, game.id);
-  if (cached) {
-    return {
-      ...cached,
-      timeControl: cached.timeControl ?? game.timeControl
-    };
-  }
-
-  const summary = await buildGameSummary(session, username, game);
-  await writeCachedGameSummary(username, game.id, summary);
-  return summary;
 }
 
 async function loadCachedGameSummary(username: string, gameId: string): Promise<HistoryGameSummary | null> {
@@ -187,47 +146,27 @@ async function writeCachedGameSummary(
   await writeJsonFile(cachePath, { summary });
 }
 
-function buildDashboardSnapshot(
+function buildOpeningsSnapshot(
   username: string,
   limit: number,
   summaries: HistoryGameSummary[]
-): DashboardSnapshot {
+): OpeningsSnapshot {
   const sortedSummaries = [...summaries].sort((left, right) => right.endTime - left.endTime);
-  const metrics = buildMetricCards(sortedSummaries);
-  const topOpenings = buildOpeningReport(sortedSummaries);
-  const snapshot: DashboardSnapshot = {
+
+  return {
     username,
     analyzedAt: new Date().toISOString(),
     limit,
     games: sortedSummaries,
-    metrics,
-    trends: sortedSummaries
-      .slice(0, 12)
-      .map((game) => ({
-        label: new Date(game.endTime * 1000).toLocaleDateString("en-GB", {
-          month: "short",
-          day: "numeric"
-        }),
-        winRate: game.result === "win" ? 100 : game.result === "draw" ? 50 : 0,
-        accuracy: game.accuracy,
-        blunders: game.categories.blunder
-      }))
-      .reverse(),
-    topOpenings,
-    trainingPlan: buildTrainingPlan(username, sortedSummaries, topOpenings),
-    highlights: []
+    topOpenings: buildOpeningReport(sortedSummaries)
   };
-  snapshot.highlights = buildHighlights(snapshot);
-
-  return snapshot;
 }
 
 export async function runBulkAnalysis(
   username: string,
   limit: number,
   onProgress?: (progress: BatchProgress) => void
-): Promise<DashboardSnapshot> {
-  const cachePath = snapshotCachePath(username, limit);
+): Promise<OpeningsSnapshot> {
   const recentGames = await fetchRecentGamesWithCacheStatus(username, limit, { refresh: true });
   const { games } = recentGames;
 
@@ -299,66 +238,8 @@ export async function runBulkAnalysis(
       });
     }
 
-    const snapshot = buildDashboardSnapshot(username, limit, summaries);
-
-    await writeJsonFile(cachePath, snapshot);
-    return snapshot;
+    return buildOpeningsSnapshot(username, limit, summaries);
   } finally {
     session?.close();
   }
 }
-
-function buildSideSummary(moves: AnnotatedMove[], side: PlayerColor) {
-  const sideMoves = moves.filter((move) => move.color === side);
-  const categories = emptyCategoryCounts();
-  const losses = sideMoves.map((move) => move.lossCp);
-  const phaseLosses = emptyPhaseMap<number[]>([]);
-
-  for (const move of sideMoves) {
-    categories[move.category] += 1;
-    phaseLosses[move.phase].push(move.lossCp);
-  }
-
-  const avgCentipawnLoss = average(losses) ?? 0;
-  return {
-    accuracy: calculateAccuracy(avgCentipawnLoss),
-    avgCentipawnLoss,
-    categories,
-    phaseAccuracy: {
-      opening: calculateAccuracy(average(phaseLosses.opening)),
-      middlegame: calculateAccuracy(average(phaseLosses.middlegame)),
-      endgame: calculateAccuracy(average(phaseLosses.endgame))
-    }
-  };
-}
-
-function buildKeyThemes(game: HistoryGameSummary, reviewMoves: AnnotatedMove[]): string[] {
-  const themes: string[] = [];
-  const playerMoves = reviewMoves.filter((move) => move.isPlayerMove);
-  const playerCriticals = playerMoves.filter((move) =>
-    ["mistake", "miss", "blunder"].includes(move.category)
-  );
-  const openingMistakes = playerCriticals.filter((move) => move.phase === "opening").length;
-  const missedChances = playerMoves.filter((move) => move.category === "miss").length;
-
-  if (openingMistakes >= 2) {
-    themes.push("Opening discipline slipped early, so your first repair step should be move-order clarity and structure awareness.");
-  }
-
-  if (missedChances >= 2) {
-    themes.push("There were multiple missed tactical chances. Candidate-move comparison should become part of your routine.");
-  }
-
-  if (game.categories.blunder > 0) {
-    themes.push("The biggest rating swing came from a single tactical collapse, which means a blunder-check ritual is high leverage.");
-  }
-
-  if (!themes.length) {
-    themes.push("This was comparatively stable. The next upgrade comes from converting small edges more cleanly.");
-  }
-
-  return themes;
-}
-
-export { buildSideSummary, buildKeyThemes, noteForCategory };
-export { buildGameSummary };

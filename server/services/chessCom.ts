@@ -17,7 +17,6 @@ const gameSchema = z.object({
   end_time: z.number(),
   rated: z.boolean().optional().default(false),
   eco: z.string().optional().nullable(),
-  opening: z.string().optional().nullable(),
   white: z.object({
     username: z.string(),
     rating: z.number().or(z.string().transform((value) => Number(value))).optional().default(0),
@@ -56,11 +55,6 @@ export interface RecentGamesResult {
 
 const defaultStoredGameCount = BULK_ANALYSIS_LIMITS[BULK_ANALYSIS_LIMITS.length - 1];
 
-function openingFromPgn(pgn: string): string | null {
-  const match = pgn.match(/\[Opening "(.+)"\]/);
-  return match?.[1] ?? null;
-}
-
 function openingFromEcoUrl(ecoUrl: string | null | undefined): string | null {
   if (!ecoUrl) {
     return null;
@@ -79,8 +73,8 @@ function openingFromEcoUrl(ecoUrl: string | null | undefined): string | null {
   }
 }
 
-function normalizeOpeningName(rawOpening: string | null | undefined, ecoUrl: string | null | undefined, pgn: string): string {
-  return rawOpening ?? openingFromPgn(pgn) ?? openingFromEcoUrl(ecoUrl) ?? "Unknown opening";
+function normalizeOpeningName(ecoUrl: string | null | undefined): string {
+  return openingFromEcoUrl(ecoUrl) ?? "Unknown opening";
 }
 
 function resolvePlayerColor(username: string, whiteUsername: string, blackUsername: string): PlayerColor | null {
@@ -107,7 +101,7 @@ function toArchiveGame(username: string, rawGame: z.infer<typeof gameSchema>): A
     return null;
   }
 
-  const openingName = normalizeOpeningName(rawGame.opening, rawGame.eco, rawGame.pgn);
+  const openingName = normalizeOpeningName(rawGame.eco);
   const id = rawGame.url.split("/").filter(Boolean).at(-1) ?? `${rawGame.end_time}`;
 
   return {
@@ -248,11 +242,6 @@ export async function fetchRecentGamesWithCacheStatus(
   };
 }
 
-export async function fetchRecentGames(username: string, limit: number): Promise<ArchiveGame[]> {
-  const result = await fetchRecentGamesWithCacheStatus(username, limit);
-  return result.games;
-}
-
 export async function findGameForUser(username: string, gameId: string): Promise<ArchiveGame | null> {
   const cachePath = rawGamesCachePath(username);
   const cached = await readJsonFile<{ createdAt: string; games: ArchiveGame[] }>(cachePath);
@@ -262,6 +251,6 @@ export async function findGameForUser(username: string, gameId: string): Promise
     return cachedGame;
   }
 
-  const freshGames = await fetchRecentGames(username, defaultStoredGameCount);
+  const { games: freshGames } = await fetchRecentGamesWithCacheStatus(username, defaultStoredGameCount);
   return freshGames.find((game) => game.id === gameId) ?? null;
 }

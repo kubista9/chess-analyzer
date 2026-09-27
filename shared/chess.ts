@@ -1,4 +1,4 @@
-import { CHESS_PHASES, MOVE_CATEGORIES } from "./constants.js";
+import { MOVE_CATEGORIES } from "./constants.js";
 import type {
   ChessPhase,
   GameResult,
@@ -15,17 +15,14 @@ const PIECE_VALUES: Record<string, number> = {
   k: 0
 };
 
+export function pieceValue(piece?: string): number {
+  return piece ? PIECE_VALUES[piece] ?? 0 : 0;
+}
+
 export function emptyCategoryCounts(): Record<MoveCategory, number> {
   return Object.fromEntries(MOVE_CATEGORIES.map((category) => [category, 0])) as Record<
     MoveCategory,
     number
-  >;
-}
-
-export function emptyPhaseMap<T>(value: T): Record<ChessPhase, T> {
-  return Object.fromEntries(CHESS_PHASES.map((phase) => [phase, value])) as Record<
-    ChessPhase,
-    T
   >;
 }
 
@@ -40,14 +37,6 @@ export function average(values: Array<number | null | undefined>): number | null
 
 export function clamp(value: number, min: number, max: number): number {
   return Math.min(max, Math.max(min, value));
-}
-
-export function formatPercentage(value: number | null, digits = 1): string {
-  if (value === null || Number.isNaN(value)) {
-    return "—";
-  }
-
-  return `${value.toFixed(digits)}%`;
 }
 
 export function calculateAccuracy(avgCentipawnLoss: number | null): number {
@@ -88,22 +77,6 @@ export function classifyPhase(fen: string, ply: number): ChessPhase {
   }
 
   return "middlegame";
-}
-
-export function signalFromAccuracy(accuracy: number | null): "strong" | "solid" | "needs-work" {
-  if (accuracy === null) {
-    return "needs-work";
-  }
-
-  if (accuracy >= 86) {
-    return "strong";
-  }
-
-  if (accuracy >= 76) {
-    return "solid";
-  }
-
-  return "needs-work";
 }
 
 export function normalizeResult(playerColor: PlayerColor, whiteResult: string, blackResult: string): GameResult {
@@ -177,8 +150,4 @@ export function familyFromOpening(openingName: string): string {
 
   const cleaned = openingName.replace(/(?:Opening|Defense|Attack|Game|System|Variation).*$/i, "").trim();
   return cleaned || openingName;
-}
-
-export function scoreToWinProbability(scoreCp: number): number {
-  return 1 / (1 + Math.exp(-scoreCp / 180));
 }

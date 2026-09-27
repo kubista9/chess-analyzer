@@ -44,26 +44,7 @@ export interface HistoryGameSummary {
   accuracy: number | null;
   avgCentipawnLoss: number | null;
   categories: Record<MoveCategory, number>;
-  phaseAccuracy: Record<ChessPhase, number | null>;
-  phaseSignals: Record<ChessPhase, "strong" | "solid" | "needs-work">;
-  criticalMoments: number;
   firstMajorErrorPly: number | null;
-  winProbabilitySwing: number | null;
-}
-
-export interface MetricCard {
-  key: string;
-  label: string;
-  value: string;
-  tone?: "neutral" | "positive" | "warning" | "danger";
-  helper: string;
-}
-
-export interface TrendPoint {
-  label: string;
-  winRate: number;
-  accuracy: number | null;
-  blunders: number;
 }
 
 export interface OpeningReportItem {
@@ -76,59 +57,12 @@ export interface OpeningReportItem {
   recommendation: string;
 }
 
-export interface TrainingFocusArea {
-  title: string;
-  reason: string;
-  targetMetric: string;
-  actions: string[];
-}
-
-export interface TrainingSession {
-  day: string;
-  title: string;
-  duration: string;
-  details: string;
-}
-
-export interface PracticeGameRecommendation {
-  title: string;
-  games: string;
-  timeControl: string;
-  focus: string;
-  instructions: string[];
-  reviewPrompt: string;
-  successMetric: string;
-  drills?: PracticeDrill[];
-}
-
-export interface PracticeDrill {
-  title: string;
-  gameId: string;
-  opponent: string;
-  result: GameResult;
-  openingName: string;
-  ply: number | null;
-  prompt: string;
-}
-
-export interface TrainingPlan {
-  headline: string;
-  summary: string;
-  focusAreas: TrainingFocusArea[];
-  practiceGames?: PracticeGameRecommendation[];
-  weeklySchedule: TrainingSession[];
-}
-
-export interface DashboardSnapshot {
+export interface OpeningsSnapshot {
   username: string;
   analyzedAt: string;
   limit: number;
   games: HistoryGameSummary[];
-  metrics: MetricCard[];
-  trends: TrendPoint[];
   topOpenings: OpeningReportItem[];
-  trainingPlan: TrainingPlan;
-  highlights: string[];
 }
 
 export interface JobState<T> {
@@ -160,24 +94,13 @@ export interface AnnotatedMove {
   scoreAfterCp: number;
   lossCp: number;
   bestLine: EngineLine;
-  alternativeLines: EngineLine[];
   fenBefore: string;
   fenAfter: string;
   note: string;
   isPlayerMove: boolean;
 }
 
-export interface ReviewSideSummary {
-  accuracy: number;
-  avgCentipawnLoss: number;
-  categories: Record<MoveCategory, number>;
-  phaseAccuracy: Record<ChessPhase, number | null>;
-}
-
 export interface ReviewSummary {
   game: HistoryGameSummary;
-  white: ReviewSideSummary;
-  black: ReviewSideSummary;
   moves: AnnotatedMove[];
-  keyThemes: string[];
 }

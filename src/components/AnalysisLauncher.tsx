@@ -4,7 +4,7 @@ import {
   DEFAULT_BULK_ANALYSIS_LIMIT,
   type BulkAnalysisLimit
 } from "../../shared/constants";
-import type { DashboardSnapshot, JobState } from "../../shared/types";
+import type { OpeningsSnapshot, JobState } from "../../shared/types";
 import { startBulkAnalysis } from "../api/client";
 import { useJobPolling } from "../hooks/useJobPolling";
 import { useWorkspace } from "../hooks/useWorkspace";
@@ -22,7 +22,7 @@ export function AnalysisLauncher() {
   const [error, setError] = useState<string | null>(null);
 
   const handleJobUpdate = useCallback(
-    (job: JobState<DashboardSnapshot>) => {
+    (job: JobState<OpeningsSnapshot>) => {
       setBulkJob(job);
       if (job?.status === "completed" && job.result) {
         setSnapshot(job.result);

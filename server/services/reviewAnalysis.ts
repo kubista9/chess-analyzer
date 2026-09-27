@@ -3,7 +3,9 @@ import {
   average,
   calculateAccuracy,
   categorizeMove,
-  normalizeResult
+  emptyCategoryCounts,
+  normalizeResult,
+  pieceValue
 } from "../../shared/chess.js";
 import type {
   AnnotatedMove,
@@ -13,8 +15,8 @@ import type {
 import { config } from "../config.js";
 import { readJsonFile, safeKey, writeJsonFile } from "../store/fileStore.js";
 import { findGameForUser } from "./chessCom.js";
-import { parseGame, pieceValue, playerColorForGame } from "./gameParser.js";
-import { buildKeyThemes, buildSideSummary, noteForCategory } from "./batchAnalysis.js";
+import { noteForCategory } from "../../shared/notes.js";
+import { parseGame, playerColorForGame } from "./gameParser.js";
 import { StockfishSession } from "./stockfish.js";
 
 function reviewCachePath(username: string, gameId: string): string {
@@ -93,7 +95,6 @@ export async function runGameReview(
         scoreAfterCp,
         lossCp,
         bestLine,
-        alternativeLines: bestLines.slice(1),
         fenBefore: move.fenBefore,
         fenAfter: move.fenAfter,
         note: noteForCategory(category, lossCp),
@@ -103,28 +104,11 @@ export async function runGameReview(
 
     let gameSummary = fallbackGameSummary;
     if (!gameSummary) {
-      const whiteMoves = annotatedMoves.filter((move) => move.color === "white");
       const playerMoves = annotatedMoves.filter((move) => move.color === playerColor);
-      const phaseLosses = {
-        opening: playerMoves.filter((move) => move.phase === "opening").map((move) => move.lossCp),
-        middlegame: playerMoves.filter((move) => move.phase === "middlegame").map((move) => move.lossCp),
-        endgame: playerMoves.filter((move) => move.phase === "endgame").map((move) => move.lossCp)
-      };
-      const categories = playerMoves.reduce(
-        (accumulator, move) => {
-          accumulator[move.category] += 1;
-          return accumulator;
-        },
-        {
-          brilliant: 0,
-          great: 0,
-          best: 0,
-          good: 0,
-          mistake: 0,
-          miss: 0,
-          blunder: 0
-        }
-      );
+      const categories = emptyCategoryCounts();
+      for (const move of playerMoves) {
+        categories[move.category] += 1;
+      }
 
       const player = playerColor === "white" ? game.white : game.black;
       const opponent = playerColor === "white" ? game.black : game.white;
@@ -146,29 +130,14 @@ export async function runGameReview(
         accuracy: calculateAccuracy(avgCentipawnLoss),
         avgCentipawnLoss,
         categories,
-        phaseAccuracy: {
-          opening: calculateAccuracy(average(phaseLosses.opening)),
-          middlegame: calculateAccuracy(average(phaseLosses.middlegame)),
-          endgame: calculateAccuracy(average(phaseLosses.endgame))
-        },
-        phaseSignals: {
-          opening: "solid",
-          middlegame: "solid",
-          endgame: "solid"
-        },
-        criticalMoments: categories.blunder + categories.mistake + categories.miss,
         firstMajorErrorPly:
-          playerMoves.find((move) => ["mistake", "miss", "blunder"].includes(move.category))?.ply ?? null,
-        winProbabilitySwing: average(playerMoves.map((move) => move.lossCp / 10))
+          playerMoves.find((move) => ["mistake", "miss", "blunder"].includes(move.category))?.ply ?? null
       };
     }
 
     const review: ReviewSummary = {
       game: gameSummary,
-      white: buildSideSummary(annotatedMoves, "white"),
-      black: buildSideSummary(annotatedMoves, "black"),
-      moves: annotatedMoves,
-      keyThemes: buildKeyThemes(gameSummary, annotatedMoves)
+      moves: annotatedMoves
     };
 
     await writeJsonFile(cachePath, review);

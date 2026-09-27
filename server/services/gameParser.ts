@@ -53,19 +53,3 @@ export function parseGame(game: ArchiveGame): ParsedGame {
 export function playerColorForGame(game: ArchiveGame, username: string): PlayerColor {
   return game.white.username.toLowerCase() === username.toLowerCase() ? "white" : "black";
 }
-
-export function pieceValue(piece?: PieceSymbol): number {
-  switch (piece) {
-    case "p":
-      return 1;
-    case "n":
-    case "b":
-      return 3;
-    case "r":
-      return 5;
-    case "q":
-      return 9;
-    default:
-      return 0;
-  }
-}

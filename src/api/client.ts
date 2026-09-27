@@ -1,4 +1,4 @@
-import type { DashboardSnapshot, JobState, ReviewSummary } from "../../shared/types";
+import type { OpeningsSnapshot, JobState, ReviewSummary } from "../../shared/types";
 import type { BulkAnalysisLimit } from "../../shared/constants";
 
 async function request<T>(input: RequestInfo, init?: RequestInit): Promise<T> {
@@ -17,8 +17,8 @@ async function request<T>(input: RequestInfo, init?: RequestInit): Promise<T> {
   return response.json() as Promise<T>;
 }
 
-export async function startBulkAnalysis(username: string, limit: BulkAnalysisLimit): Promise<JobState<DashboardSnapshot>> {
-  return request<JobState<DashboardSnapshot>>("/api/bulk-analysis", {
+export async function startBulkAnalysis(username: string, limit: BulkAnalysisLimit): Promise<JobState<OpeningsSnapshot>> {
+  return request<JobState<OpeningsSnapshot>>("/api/bulk-analysis", {
     method: "POST",
     body: JSON.stringify({ username, limit })
   });
@@ -27,7 +27,7 @@ export async function startBulkAnalysis(username: string, limit: BulkAnalysisLim
 export async function startGameReview(params: {
   username: string;
   gameId: string;
-  gameSummary?: DashboardSnapshot["games"][number];
+  gameSummary?: OpeningsSnapshot["games"][number];
 }): Promise<JobState<ReviewSummary>> {
   return request<JobState<ReviewSummary>>("/api/game-review", {
     method: "POST",

@@ -15,13 +15,3 @@ export const MOVE_CATEGORIES = [
 export const SUPPORTED_TIME_CLASSES = ["bullet", "blitz", "rapid", "daily"] as const;
 
 export const CHESS_PHASES = ["opening", "middlegame", "endgame"] as const;
-
-export const CATEGORY_COLORS: Record<(typeof MOVE_CATEGORIES)[number], string> = {
-  brilliant: "#14d1b1",
-  great: "#63a2ff",
-  best: "#9dd94e",
-  good: "#f5f7fa",
-  mistake: "#ffaf54",
-  miss: "#ff6b6b",
-  blunder: "#ff3c5c"
-};

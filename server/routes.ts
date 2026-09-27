@@ -1,13 +1,14 @@
 import express from "express";
 import { z } from "zod";
-import type { DashboardSnapshot, ReviewSummary } from "../shared/types.js";
+import { BULK_ANALYSIS_LIMITS } from "../shared/constants.js";
+import type { OpeningsSnapshot, ReviewSummary } from "../shared/types.js";
 import { jobStore } from "./store/jobStore.js";
 import { runBulkAnalysis } from "./services/batchAnalysis.js";
 import { readCachedGameReview, runGameReview } from "./services/reviewAnalysis.js";
 
 const bulkSchema = z.object({
   username: z.string().min(1),
-  limit: z.union([z.literal(1), z.literal(5), z.literal(10), z.literal(25)])
+  limit: z.literal(BULK_ANALYSIS_LIMITS)
 });
 
 const reviewSchema = z.object({
@@ -25,7 +26,7 @@ apiRouter.get("/health", (_request, response) => {
 apiRouter.post("/bulk-analysis", async (request, response, next) => {
   try {
     const payload = bulkSchema.parse(request.body);
-    const job = jobStore.create<DashboardSnapshot>("bulk-analysis", `Queued analysis for ${payload.username}`);
+    const job = jobStore.create<OpeningsSnapshot>("bulk-analysis", `Queued analysis for ${payload.username}`);
 
     void (async () => {
       try {
@@ -96,7 +97,7 @@ apiRouter.post("/game-review", async (request, response, next) => {
         const result = await runGameReview(
           payload.username,
           payload.gameId,
-          (payload.gameSummary as DashboardSnapshot["games"][number] | undefined) ?? null
+          (payload.gameSummary as OpeningsSnapshot["games"][number] | undefined) ?? null
         );
 
         jobStore.update(job.id, {

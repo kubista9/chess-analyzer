@@ -5,13 +5,13 @@ import {
   useState,
   type ReactNode
 } from "react";
-import type { DashboardSnapshot, JobState, ReviewSummary } from "../../shared/types";
+import type { OpeningsSnapshot, JobState, ReviewSummary } from "../../shared/types";
 
 interface WorkspaceContextValue {
-  snapshot: DashboardSnapshot | null;
-  setSnapshot: (snapshot: DashboardSnapshot | null) => void;
-  bulkJob: JobState<DashboardSnapshot> | null;
-  setBulkJob: (job: JobState<DashboardSnapshot> | null) => void;
+  snapshot: OpeningsSnapshot | null;
+  setSnapshot: (snapshot: OpeningsSnapshot | null) => void;
+  bulkJob: JobState<OpeningsSnapshot> | null;
+  setBulkJob: (job: JobState<OpeningsSnapshot> | null) => void;
   reviewCache: Record<string, ReviewSummary>;
   setReview: (gameId: string, review: ReviewSummary) => void;
   reviewJobs: Record<string, JobState<ReviewSummary> | null>;
@@ -22,14 +22,14 @@ const STORAGE_KEY = "chess-analyst-workspace-v1";
 const REVIEW_STORAGE_KEY = "chess-analyst-reviews-v1";
 const WorkspaceContext = createContext<WorkspaceContextValue | null>(null);
 
-function loadStoredSnapshot(): DashboardSnapshot | null {
+function loadStoredSnapshot(): OpeningsSnapshot | null {
   try {
     const raw = window.localStorage.getItem(STORAGE_KEY);
     if (!raw) {
       return null;
     }
 
-    return JSON.parse(raw) as DashboardSnapshot;
+    return JSON.parse(raw) as OpeningsSnapshot;
   } catch {
     return null;
   }
@@ -57,16 +57,16 @@ function storeReviews(reviews: Record<string, ReviewSummary>): void {
 }
 
 export function WorkspaceProvider({ children }: { children: ReactNode }) {
-  const [snapshot, setSnapshotState] = useState<DashboardSnapshot | null>(() =>
+  const [snapshot, setSnapshotState] = useState<OpeningsSnapshot | null>(() =>
     typeof window === "undefined" ? null : loadStoredSnapshot()
   );
-  const [bulkJob, setBulkJob] = useState<JobState<DashboardSnapshot> | null>(null);
+  const [bulkJob, setBulkJob] = useState<JobState<OpeningsSnapshot> | null>(null);
   const [reviewCache, setReviewCache] = useState<Record<string, ReviewSummary>>(() =>
     typeof window === "undefined" ? {} : loadStoredReviews()
   );
   const [reviewJobs, setReviewJobs] = useState<Record<string, JobState<ReviewSummary> | null>>({});
 
-  const setSnapshot = (nextSnapshot: DashboardSnapshot | null) => {
+  const setSnapshot = (nextSnapshot: OpeningsSnapshot | null) => {
     setSnapshotState(nextSnapshot);
 
     if (!nextSnapshot) {
