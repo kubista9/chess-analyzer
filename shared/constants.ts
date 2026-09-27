@@ -18,3 +18,7 @@ export const CP_CLAMP = 1000;
 export const MOVE_CATEGORIES = ["best", "good", "inaccuracy", "mistake", "blunder"] as const;
 
 export const SUPPORTED_TIME_CLASSES = ["bullet", "blitz", "rapid", "daily"] as const;
+
+// The importer (P2a) keeps only these standard time classes. SUPPORTED_TIME_CLASSES above
+// still drives the legacy bulk run and its pages until P2b moves them onto the game store.
+export const IMPORTED_TIME_CLASSES = ["blitz", "rapid"] as const;
