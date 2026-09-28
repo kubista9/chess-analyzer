@@ -257,12 +257,11 @@ function HoleCard({ item, rank }: { item: EngineHoleItem; rank?: number }) {
       <ul className="fix-notes">
         <li>
           {item.reply
-            ? `${moveLabel(ply + 1, item.reply.san)} is the refutation: ${pawns({ cp: item.reply.cpForThem, mate: item.reply.mate })} for ${item.color === "white" ? "Black" : "White"}.`
+            ? `${item.color === "white" ? "Black" : "White"}'s best reply is ${moveLabel(ply + 1, item.reply.san)}: ${pawns({ cp: item.reply.cpForThem, mate: item.reply.mate })} for ${item.color === "white" ? "Black" : "White"}.`
             : "The reply is not engine-checked yet."}
         </li>
         <li>
-          You score {pct(item.score)} with it (expected {pct(item.expected)}), so the results alone do not show it: opponents have
-          not found {item.reply ? moveLabel(ply + 1, item.reply.san) : "the refutation"} often yet.
+          You score {pct(item.score)} with it (expected {pct(item.expected)}): the engine flags the move whatever the results.
         </li>
       </ul>
 
