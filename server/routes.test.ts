@@ -10,6 +10,7 @@ import type {
   FixListResponse,
   JobState,
   PowerState,
+  RepertoireCoverageResponse,
   RepertoireResponse,
   SeedResponse,
   SnapshotResponse,
@@ -498,6 +499,17 @@ describe("alternatives API", () => {
     expect(again.body).toMatchObject({ status: "complete", job: null });
     expect(log.length).toBe(searches);
     expect(JSON.stringify(again.body.result)).toBe(JSON.stringify(result.result));
+  });
+
+  it("answers Home's coverage line per colour", async () => {
+    const { call } = await startApi();
+    const empty = await call<RepertoireCoverageResponse>("/repertoire/coverage");
+    expect(empty.status).toBe(200);
+    expect(empty.body.white).toMatchObject({ entries: 0, needsReview: 0 });
+    await call("/repertoire/seed", { method: "POST", body: JSON.stringify({ apply: true }) });
+    const seeded = await call<RepertoireCoverageResponse>("/repertoire/coverage");
+    expect(seeded.body.white.entries + seeded.body.black.entries).toBeGreaterThan(0);
+    expect(seeded.body.white.coverage.map((stat) => stat.ply)).toEqual([8, 12]);
   });
 
   it("refuses an opponent-to-move position and an illegal move", async () => {

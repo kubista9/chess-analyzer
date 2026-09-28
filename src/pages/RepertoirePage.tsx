@@ -212,7 +212,7 @@ function NodePanel({
             <Link className="secondary-button" to={alternativesHref(color, node.moves, entry.uci)}>
               <Lightbulb size={15} aria-hidden="true" /> See alternatives
             </Link>
-            <button type="button" className="secondary-button" disabled={busy} onClick={onRemove} title="Remove this move from the repertoire (a re-seed may add a move here again)">
+            <button type="button" className="secondary-button" disabled={busy} onClick={onRemove}>
               <Trash2 size={15} aria-hidden="true" /> Unset
             </button>
           </div>
