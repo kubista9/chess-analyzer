@@ -35,6 +35,14 @@ export interface JobState<T> {
 export type EngineTier = "owner" | "opponent";
 
 /**
+ * A stored search tier: the protocol's two tiers, plus the lazy "deep" tier of the alternatives
+ * panel (MultiPV 4, higher depth). "deep" is stored under the same engine config but is not part
+ * of ENGINE_PROTOCOL (which would create a new config and re-queue every game), and no owner or
+ * opponent lookup ever answers from it.
+ */
+export type SearchTier = EngineTier | "deep";
+
+/**
  * One engine line, as Stockfish reports it: UCI moves, score from the side to move (exactly
  * one of cp / mate is set; mate <= 0 means the side to move is mated). winPct is the side to
  * move's lichess win% for the score.
@@ -52,7 +60,7 @@ export interface EngineLine {
 /** The engine's verdict on one position under one engine config and tier. */
 export interface PositionEval {
   epd: string;
-  tier: EngineTier;
+  tier: SearchTier;
   /** Depth of the MultiPV iteration the lines come from (0 for a terminal position). */
   depth: number;
   /** Nodes searched for this position (main search plus searchmoves follow-ups). */

@@ -10,7 +10,8 @@ import { openDatabase, type Db } from "./connection.js";
 import { getOrCreateEngineConfig, listEngineConfigs } from "./engineConfigs.js";
 import { countAnalysisQueue, getGameAnalysis, listAnalysisQueue, recordGameAnalysis, type AnalysisQueueQuery } from "./gameAnalysis.js";
 import { listGames, replaceMonthGames } from "./games.js";
-import { countPositions, getPositionEval, putPositionEval } from "./positions.js";
+import { averageNodes, countPositions, getDeepEval, getPositionEval, listPositionEvals, positionsStamp, putPositionEval } from "./positions.js";
+import { DEEP_TIER, canonicalJson } from "../engine/protocol.js";
 
 const OWNER = "kubista9";
 const opened: Db[] = [];
@@ -105,6 +106,24 @@ describe("positions", () => {
     putPositionEval(db, config.id, owner);
     expect(getPositionEval(db, config.id, epd, "opponent")?.tier).toBe("owner");
     expect(countPositions(db, config.id)).toEqual({ owner: 1, opponent: 1 });
+  });
+
+  it("keeps the deep tier apart: same config, only getDeepEval reads it, and no count, stamp or listing sees it", () => {
+    const db = memoryDb();
+    const config = currentEngineConfig(db, "Stockfish 18");
+    putPositionEval(db, config.id, owner, 1000);
+    const stamp = positionsStamp(db, config.id);
+    const deep: PositionEval = { ...owner, tier: "deep", depth: DEEP_TIER.depth, nodes: 1_600_000, lines: [...owner.lines, line("d7d5", -106)] };
+    putPositionEval(db, config.id, deep, 2000);
+    expect(getDeepEval(db, config.id, epd)).toEqual(deep);
+    expect(getPositionEval(db, config.id, epd, "owner")).toEqual(owner);
+    expect(countPositions(db, config.id)).toEqual({ owner: 1, opponent: 0 });
+    expect(positionsStamp(db, config.id)).toEqual(stamp);
+    expect(listPositionEvals(db, config.id).map((row) => row.tier)).toEqual(["owner"]);
+    expect(averageNodes(db, config.id).owner.mean).toBe(owner.nodes);
+    // The deep tier is not part of the protocol, so the config key (and every game's queue) is unchanged.
+    expect(canonicalJson(ENGINE_PROTOCOL)).not.toContain("deep");
+    expect(currentEngineConfig(db, "Stockfish 18").id).toBe(config.id);
   });
 
   it("upgrades a row in place when more moves are scored, and keeps configs apart", () => {
