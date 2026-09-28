@@ -88,6 +88,16 @@ The Explorer colours a row only when it has at least 8 raw games and an effectiv
 - `GET /api/snapshot?<the same filters>`: per colour, the opponent's main moves at his first decision and the owner's answers with score, n, trend and a usage hint.
 - `npx tsx scripts/verify/verify-fixlist.ts --asof 2026-09-26 [--sims 200]` checks the items against the tree and re-runs the null simulation (every result redrawn at its Elo expectation): the plan's gate emits about 11-13 lines on no-leak data, the fix list about 0.15.
 
+## Repertoire
+
+`/repertoire` holds your written repertoire: per colour, one move for each position where it is your turn (keyed by EPD, so transposed positions share one entry), up to ply 16. It lives in `storage/chess.db` (`repertoire_entries`).
+
+- **Seeding** (`shared/repertoireSeed.ts`, deterministic): from the start, at every position of yours reached by 3+ games, your most-played move (recency-weighted) that Stockfish accepts (loss < 5 win%). A move losing 5 or more (an engine hole such as 2...Bc5) is replaced by a sound move you also play (2...Nc6), else by the engine's move. A sibling that scores clearly better (z ≥ 1.64) or that you play in at least half as many games (1...e5 next to 1...d5) is flagged for review. A flagged results leak or watch-tier line with 15+ games (the Albin 2...e5) is replaced by an engine-sound sibling (2...e6). Without engine data the choice is on results alone and needs review. Opponent replies with 2+ games (or a 5% share) are followed. Locked and edited entries are never changed.
+- Every move is tagged "from your games", "suggested (replaces your 2...Bc5)" or "edited". Accept marks a suggestion reviewed and locks it; "Set as my move" (on the page and in the Explorer's rows) makes an edited, locked entry.
+- Read-time maths (`shared/repertoire.ts`): where each game leaves the repertoire (your move differs: the deviation, marked in the review) or runs out of it (an opponent move with no answer: unprepared), coverage through moves 4 and 6, and the two tables. Unprepared replies with 3+ games that lose points join the fix list.
+- `GET /api/repertoire?<fix-list filters>`: both colours' lines, coverage and tables. `POST /api/repertoire/seed {apply?}`: the diff (a dry run unless `apply: true`). `GET|PUT|DELETE /api/repertoire/entry` with `{color, epd, uci | san, locked, status, note, ply}` in the body (PUT) or `?color=&epd=` (GET, DELETE): the EPD never travels in a path segment. `GET /api/repertoire/export?color=` downloads PGN with variations.
+- `npx tsx scripts/verify/verify-repertoire.ts --asof 2026-09-26` seeds in memory (nothing is written), prints the lines to ply 10 per colour, the review queue and the coverage, and checks determinism and the golden lines.
+
 ## Production build
 
 ```bash
@@ -105,7 +115,7 @@ npm run check       # typecheck, then test, then build:web
 
 `npm run build` also runs the typecheck first, because `vite build` does not type-check `src/`.
 
-Verify scripts live in `scripts/verify/` and are read-only (except `verify-analysis.ts`, which may store the evals of two targeted lines). They take `--asof YYYY-MM-DD`, meaning the end of that UTC day, inclusive (see `scripts/verify/_lib.ts`). `verify-import.ts` recounts the stored months, `verify-tree.ts` checks the opening tree's golden numbers and path counts, and `verify-fixlist.ts` checks the fix list and its null simulation, and `verify-analysis.ts` the engine insights. `engine-smoke.ts` and `verify-evals.ts` (below) are the opt-in real-engine checks.
+Verify scripts live in `scripts/verify/` and are read-only (except `verify-analysis.ts`, which may store the evals of two targeted lines). They take `--asof YYYY-MM-DD`, meaning the end of that UTC day, inclusive (see `scripts/verify/_lib.ts`). `verify-import.ts` recounts the stored months, `verify-tree.ts` checks the opening tree's golden numbers and path counts, and `verify-fixlist.ts` checks the fix list and its null simulation, `verify-analysis.ts` the engine insights, and `verify-repertoire.ts` the repertoire seed. `engine-smoke.ts` and `verify-evals.ts` (below) are the opt-in real-engine checks.
 
 ## Jobs
 
