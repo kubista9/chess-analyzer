@@ -37,10 +37,13 @@ import {
   type FixList
 } from "../shared/fixList.js";
 import { ENGINE_MIN_COVERAGE, ENGINE_MIN_GAMES, coverageOk, firstErrorShares } from "../shared/openingAnalysis.js";
-import { nodeView, walkMoves, type OpeningTree, type TreeNode } from "../shared/openingTree.js";
+import { nodeView, principalPaths, walkMoves, type OpeningTree, type TreeNode } from "../shared/openingTree.js";
+import type { AlternativesResponse } from "../shared/alternatives.js";
+import { seedFlags } from "../shared/repertoireSeed.js";
+import { alternativesState, completeAlternatives, type AltSource } from "./services/alternatives.js";
 import { edgeEngine, nodeEngine } from "../shared/treeEngine.js";
 import { buildSnapshot } from "../shared/repertoireSnapshot.js";
-import { REPERTOIRE_MAX_PLY, repertoireStats, walkRepertoire } from "../shared/repertoire.js";
+import { REPERTOIRE_MAX_PLY, legalMove, repertoireStats, walkRepertoire } from "../shared/repertoire.js";
 import { repertoireStamp, deleteRepEntry, getRepEntry } from "./db/repertoire.js";
 import { RepertoireInputError, colorView, editEntry, loadRepertoire, repertoirePgn, seedRepertoire } from "./services/repertoireService.js";
 import { GAME_WINDOWS, parseGameWindow, windowBounds } from "../shared/window.js";
@@ -90,7 +93,14 @@ const repEntrySchema = z.object({
   locked: z.boolean().optional(),
   status: z.enum(["active", "needs-review"]).optional(),
   note: z.string().max(500).nullable().optional(),
-  ply: z.number().int().min(1).max(REPERTOIRE_MAX_PLY).optional()
+  ply: z.number().int().min(1).max(REPERTOIRE_MAX_PLY).optional(),
+  replaces: z
+    .object({
+      uci: z.string().regex(UCI_PATTERN, "a UCI move"),
+      loss: z.number().min(0).max(100).nullable().optional(),
+      reason: z.string().max(300).optional()
+    })
+    .optional()
 });
 
 const repEntryKeySchema = z.object({ color: colorSchema, epd: epdSchema });
@@ -134,6 +144,11 @@ const treeQuerySchema = z.object({
   hl: halfLifeSchema
 });
 
+const alternativesQuerySchema = treeQuerySchema.extend({
+  // The move to question (an Explorer row, a fix card); default: the repertoire's, else the most played.
+  uci: z.string().regex(UCI_PATTERN, "a UCI move").optional()
+});
+
 const seedSchema = z.object({
   apply: z.boolean().optional(),
   window: z.string().optional(),
@@ -161,6 +176,10 @@ export class HttpError extends Error {
   ) {
     super(message);
   }
+}
+
+function legalUci(epd: string, uci: string): boolean {
+  return legalMove(epd, { uci }) !== null;
 }
 
 /** Runs a review step, turning its input errors into HTTP errors. */
@@ -582,6 +601,72 @@ export function createApiRouter(deps: ApiDeps): express.Router {
     response.setHeader("Content-Type", "application/x-chess-pgn; charset=utf-8");
     response.setHeader("Content-Disposition", `attachment; filename="${deps.owner}-repertoire-${color}.pgn"`);
     response.send(pgn);
+  });
+
+  // Offline alternatives at an owner-to-move position (by moves= or epd=), with ?uci= the move to
+  // question. Answered at once (200) when the deep row and the only-move checks are cached;
+  // otherwise 202 with a preliminary ranking on the owner-tier cache and the job
+  // ("alternatives:<color>:<epd>:<uci>", interactive priority) whose result is the complete answer.
+  router.get("/alternatives", async (request, response) => {
+    const query = alternativesQuerySchema.parse(request.query);
+    const { built, node, path } = findTreeNode(trees, query, deps.now());
+    if (!node.ownerToMove) {
+      throw new HttpError(400, "Alternatives are for positions where you are to move.");
+    }
+    const treePath = query.moves
+      ? { moves: path.map((step) => step.uci), sans: path.map((step) => step.san) }
+      : principalPaths(built.tree).get(node.epd) ?? { moves: [], sans: [] };
+    if (query.uci && !node.edges.some((edge) => edge.uci === query.uci) && !legalUci(node.epd, query.uci)) {
+      throw new HttpError(400, `${query.uci} is not a legal move here.`);
+    }
+    const engine = await engineView();
+    const { built: both } = bothTrees(query);
+    const fix = fixList(both, engine);
+    const db = deps.db();
+    const source: AltSource = {
+      tree: built.tree,
+      games: built.games,
+      book: deps.book(),
+      epd: node.epd,
+      path: treePath,
+      lookup: engine?.lookup ?? null,
+      flags: seedFlags([...fix.items, ...fix.watch], query.color),
+      entries: loadRepertoire(db, deps.owner)[query.color],
+      current: query.uci ?? null
+    };
+    if (!engine) {
+      const state = alternativesState(source, null);
+      response.json({
+        status: "no-engine",
+        result: state.ready ? state.result : state.preliminary,
+        job: null,
+        engineError: "Stockfish is not available, so no move can pass the engine gate.",
+        cost: null
+      } satisfies AlternativesResponse);
+      return;
+    }
+    const state = alternativesState(source, { db, configId: engine.configId });
+    if (state.ready) {
+      response.json({ status: "complete", result: state.result, job: null, engineError: null, cost: null } satisfies AlternativesResponse);
+      return;
+    }
+    const configId = engine.configId;
+    const { job } = deps.jobs.startOrReuse<AlternativesResponse>(
+      `alternatives:${query.color}:${node.epd}:${query.uci ?? ""}`,
+      "alternatives",
+      "Deep engine check",
+      async (reporter) => {
+        reporter.progress(3, "Starting Stockfish");
+        const { result, cost } = await completeAlternatives(
+          { db: deps.db(), pool: deps.pool(), configId },
+          source,
+          () => analysis.view(deps.db(), configId).lookup,
+          (done, total, message) => reporter.progress(5 + (total ? (done / total) * 90 : 0), message)
+        );
+        return { status: "complete", result, job: null, engineError: null, cost };
+      }
+    );
+    response.status(202).json({ status: "preliminary", result: state.preliminary, job, engineError: null, cost: null } satisfies AlternativesResponse);
   });
 
   // Before /jobs/:jobId, which would otherwise match "active".

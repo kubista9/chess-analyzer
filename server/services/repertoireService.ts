@@ -184,6 +184,22 @@ export interface EntryEdit {
   note?: string | null;
   /** The move's ply on the path it was set from; required for a new entry. */
   ply?: number;
+  /**
+   * The move this edit replaces and why (e.g. "Set from the alternatives: …"), recorded in
+   * `replaced` when the move changes. Without it the current entry's move is recorded.
+   */
+  replaces?: { uci: string; loss?: number | null; reason?: string };
+}
+
+function replacedBy(edit: EntryEdit, current: RepEntry | undefined, newUci: string): RepEntry["replaced"] {
+  const given = edit.replaces && edit.replaces.uci !== newUci ? legalMove(edit.epd, { uci: edit.replaces.uci }) : null;
+  if (edit.replaces && edit.replaces.uci !== newUci && !given) {
+    throw new RepertoireInputError(400, `${edit.replaces.uci} is not a legal move in ${edit.epd}.`);
+  }
+  if (given) {
+    return { uci: given.uci, san: given.san, loss: edit.replaces!.loss ?? null, reason: edit.replaces!.reason?.trim() || "Changed by you." };
+  }
+  return current ? { uci: current.uci, san: current.san, loss: null, reason: "Changed by you." } : null;
 }
 
 /**
@@ -216,7 +232,7 @@ export function editEntry(db: Db, owner: string, edit: EntryEdit, now: number): 
         source: "edited",
         status: "active",
         locked: true,
-        replaced: current ? { uci: current.uci, san: current.san, loss: null, reason: "Changed by you." } : null,
+        replaced: replacedBy(edit, current, move.uci),
         reason: null,
         note: current?.note ?? null,
         ply,

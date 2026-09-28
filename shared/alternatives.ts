@@ -7,7 +7,7 @@ import type { SeedFlag } from "./repertoireSeed.js";
 import { LOW_SAMPLE_N, ageDays, eloExpected, recencyWeight } from "./stats.js";
 import { gamesThrough } from "./treeEngine.js";
 import { START_EPD } from "./epd.js";
-import type { EngineLine, PlayerColor, PositionEval } from "./types.js";
+import type { EngineLine, JobState, PlayerColor, PositionEval } from "./types.js";
 
 // Offline alternatives at one owner-to-move position: which moves could replace the owner's move
 // there, ranked by how well they fit his play. Pure and deterministic (every sort has a total
@@ -232,6 +232,30 @@ export interface AlternativesResult {
   pointsLost: PointsLost | null;
   ancestors: AncestorSuggestion[];
   honesty: string[];
+}
+
+/** What one open of the panel cost the engine (the per-open cost of the deep tier). */
+export interface AltCost {
+  ms: number;
+  /** Nodes searched now: the deep root with its follow-ups, and the only-move positions. */
+  nodes: { deep: number; onlyMoves: number };
+  /** Positions searched now (the deep root counts once). */
+  searched: number;
+}
+
+/** GET /api/alternatives. */
+export interface AlternativesResponse {
+  /**
+   * complete: ranked on the deep row with every only-move check done; preliminary: ranked on the
+   * owner-tier cache while `job` runs the deep search (its result is the complete response);
+   * no-engine: Stockfish is not available, so nothing passes the gate.
+   */
+  status: "complete" | "preliminary" | "no-engine";
+  result: AlternativesResult;
+  job: JobState<AlternativesResponse> | null;
+  engineError: string | null;
+  /** Set on the job's result: what the engine searched for this open. */
+  cost: AltCost | null;
 }
 
 export interface AltInput {

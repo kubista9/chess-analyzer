@@ -20,6 +20,8 @@ import type {
 import { Chess } from "chess.js";
 import type { GameAnalysisResponse, OpeningReview, RetryResult } from "../shared/review.js";
 import type { RepEntry } from "../shared/repertoire.js";
+import type { AlternativesResponse } from "../shared/alternatives.js";
+import { getDeepEval } from "./db/positions.js";
 import { legalFakePool } from "../test/fakeEngine.js";
 import { loadOwnerGames } from "../test/loadFixtures.js";
 import { createApp } from "./app.js";
@@ -459,6 +461,63 @@ describe("engine check API", () => {
     const reopened = await call<GameAnalysisResponse>(`/games/${id}/analysis`);
     expect(reopened.status).toBe(200);
     expect(reopened.body.job).toBeNull();
+  });
+});
+
+describe("alternatives API", () => {
+  it("runs the deep search once as an interactive job, then answers from the cache; never a new engine config", async () => {
+    const { call, db, jobs, log } = await startApi();
+    const first = await call<AlternativesResponse>("/alternatives?color=white");
+    expect(first.status).toBe(202);
+    expect(first.body.status).toBe("preliminary");
+    expect(first.body.result.honesty.length).toBeGreaterThan(0);
+    const job = first.body.job!;
+    expect(job).toMatchObject({ key: "alternatives:white:" + START_EPD + ":", type: "alternatives" });
+    for (let tries = 0; tries < 100 && jobs.get(job.id)?.status !== "completed"; tries += 1) {
+      await new Promise((resolve) => setTimeout(resolve, 20));
+    }
+    const done = jobs.get<AlternativesResponse>(job.id)!;
+    expect(done.status).toBe("completed");
+    const result = done.result!;
+    expect(result).toMatchObject({ status: "complete", cost: { searched: 1 } });
+    expect(result.cost!.nodes.deep).toBeGreaterThan(0);
+    expect(result.result.engine).toMatchObject({ tier: "deep", multipv: 4 });
+    // The deep row is stored under the one config; the protocol tiers are untouched.
+    const configs = db.prepare("SELECT id FROM engine_configs").all() as { id: number }[];
+    expect(configs).toHaveLength(1);
+    expect(getDeepEval(db, configs[0].id, START_EPD)?.lines).toHaveLength(4);
+    expect(log.some((search) => search.multipv === 4 && search.searchmoves === null)).toBe(true);
+    const gated = [...result.result.alternatives, ...result.result.others];
+    expect(gated.length).toBeGreaterThan(0);
+    for (const alternative of gated) {
+      expect(alternative.eval.gap).toBeLessThanOrEqual(result.result.gate);
+    }
+    const searches = log.length;
+    const again = await call<AlternativesResponse>("/alternatives?color=white");
+    expect(again.status).toBe(200);
+    expect(again.body).toMatchObject({ status: "complete", job: null });
+    expect(log.length).toBe(searches);
+    expect(JSON.stringify(again.body.result)).toBe(JSON.stringify(result.result));
+  });
+
+  it("refuses an opponent-to-move position and an illegal move", async () => {
+    const { call } = await startApi();
+    const tree = await call<TreeResponse>("/tree?color=black");
+    expect((await call<{ error: string }>("/alternatives?color=black")).status).toBe(400);
+    const reply = tree.body.node.edges[0];
+    expect((await call<AlternativesResponse>(`/alternatives?color=black&moves=${reply.uci}&uci=e1e8`)).status).toBe(400);
+  });
+
+  it("sets an alternative as the repertoire move with the replaced move and its reason", async () => {
+    const { call } = await startApi();
+    const put = await call<{ entry: RepEntry }>("/repertoire/entry", {
+      method: "PUT",
+      body: JSON.stringify({ color: "white", epd: START_EPD, uci: "d2d4", ply: 1, replaces: { uci: "e2e4", loss: 1.5, reason: "Set from the alternatives." } })
+    });
+    expect(put.status).toBe(200);
+    expect(put.body.entry).toMatchObject({ san: "d4", source: "edited", locked: true, replaced: { san: "e4", loss: 1.5, reason: "Set from the alternatives." } });
+    const bad = await call("/repertoire/entry", { method: "PUT", body: JSON.stringify({ color: "white", epd: START_EPD, uci: "c2c4", replaces: { uci: "e7e5" } }) });
+    expect(bad.status).toBe(400);
   });
 });
 
