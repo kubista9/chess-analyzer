@@ -72,16 +72,19 @@ The Explorer colours a row only when it has at least 8 raw games and an effectiv
 - `GET /api/tree/games?<the same filters>&uci=<move>&page=N&size=20`: the games that played `uci` from that node, newest first, 20 per page, with opponent, ratings, result, date, time control, the Chess.com URL and the ply of the move (the drawer links to `/review/:id?ply=N`).
 - `npx tsx scripts/verify/verify-tree.ts --asof 2026-09-26` checks the golden lines, names, effective n, book exit and the counts along every path (read-only).
 
-## Fix list (results only)
+## Fix list
 
-`shared/fixList.ts` lists the owner's moves that lose points against his Elo expectation, from results only (no engine yet):
+`shared/fixList.ts` lists the owner's moves that lose points against his Elo expectation, from results (the leaks), and the moves the engine refutes (theory holes):
 
 - Candidates are the owner's own moves in both colours' trees (the first 20 plies) with at least 8 raw games and an effective n of 8.
 - A candidate is a leak when z >= 1.64 and it is a Benjamini-Hochberg discovery at q = 0.2 across the whole candidate set (one-sided p). Nominally significant lines that fail BH are a separate "watch" list; on simulated no-leak results about as many lines land there as on the real games.
 - Blame attribution runs bottom-up: a game counted for an emitted deeper move no longer counts for the moves before it, so a line and its continuation are never listed for the same points. A shorter line is still listed when its residual has 8 games, loses at least 1 weighted point and has z >= 1.
 - Items are ranked by those recency-weighted points lost and carry the CI, the expectation and delta, the 90-day trend, the share of games lost by move 20 and up to 3 recent losing games.
 
-- `GET /api/fixlist?window=6m|3m&tc=blitz|rapid&hl=<days>|off`: `{tested, significant, items, watch, thresholds, games, ...}`.
+- **Theory holes** (`kind: "engine-hole"`): an owner move played at least 3 times that loses at least 7 win% against the engine's best at its root, or at least 5 when the opponent's best reply is then +100 cp or more for him. They are listed whatever the results (2...Bc5 after 1.e4 e5 2.Nf3 scores 47% but loses about 12 win% to 3.Nxe5) and sit outside the BH family. Impact = recency-weighted games x loss / 100, the points the move itself gives away.
+- Leaks and holes are merged by impact (a leak's impact is its points lost); /leaks shows the first 10 and "Show all". Leak cards also carry engine facts about their games (the mean eval at move 10, the share with a first mistake by move 10, the most common first mistake and the engine's move there), shown only with enough coverage.
+
+- `GET /api/fixlist?window=6m|3m&tc=blitz|rapid&hl=<days>|off`: `{tested, significant, items (leaks and holes by impact), holes, watch, engine (coverage and first-mistake shares per colour), cap, thresholds, games, ...}`.
 - `GET /api/snapshot?<the same filters>`: per colour, the opponent's main moves at his first decision and the owner's answers with score, n, trend and a usage hint.
 - `npx tsx scripts/verify/verify-fixlist.ts --asof 2026-09-26 [--sims 200]` checks the items against the tree and re-runs the null simulation (every result redrawn at its Elo expectation): the plan's gate emits about 11-13 lines on no-leak data, the fix list about 0.15.
 
@@ -102,7 +105,7 @@ npm run check       # typecheck, then test, then build:web
 
 `npm run build` also runs the typecheck first, because `vite build` does not type-check `src/`.
 
-Verify scripts live in `scripts/verify/` and are read-only. They take `--asof YYYY-MM-DD`, meaning the end of that UTC day, inclusive (see `scripts/verify/_lib.ts`). `verify-import.ts` recounts the stored months, `verify-tree.ts` checks the opening tree's golden numbers and path counts, and `verify-fixlist.ts` checks the fix list and its null simulation. `engine-smoke.ts` and `verify-evals.ts` (below) are the opt-in real-engine checks.
+Verify scripts live in `scripts/verify/` and are read-only (except `verify-analysis.ts`, which may store the evals of two targeted lines). They take `--asof YYYY-MM-DD`, meaning the end of that UTC day, inclusive (see `scripts/verify/_lib.ts`). `verify-import.ts` recounts the stored months, `verify-tree.ts` checks the opening tree's golden numbers and path counts, and `verify-fixlist.ts` checks the fix list and its null simulation, and `verify-analysis.ts` the engine insights. `engine-smoke.ts` and `verify-evals.ts` (below) are the opt-in real-engine checks.
 
 ## Jobs
 
@@ -154,6 +157,15 @@ The review reads every position from the cache first and only sends the rest to 
 `npx tsx scripts/verify/verify-evals.ts [--games N]` reports coverage and the measured throughput, checks every analysed game against the store, and on a temporary copy of the database checks cache hits (a sample redone with an engine that may not search), the incremental rule (a second run analyses 0 games), a cached review and the re-queueing under a new engine config.
 
 `npx tsx scripts/verify/engine-smoke.ts [--store]` runs the real engine on a few opening positions, prints timings, checks the evals, runs them through the pool and kills an engine mid-search. With `--store` it also creates the current engine config in `storage/chess.db` and prints the work-queue size. It never runs the backfill.
+
+### Engine insights (from the position cache)
+
+Nothing new is stored: `shared/openingAnalysis.ts` derives each game's opening analysis from the cached positions and its plies (the owner's moves with best move, loss and class, the first mistake, opponent errors and missed punishments, the owner's eval after plies 10/16/20, the book exit, think time). A position the cache cannot answer is `pending`, never a number. `server/services/analysisIndex.ts` keeps the current config's positions in memory, reloading only rows written since the last load, and memoises the analyses by the cache generation, so the numbers follow a running backfill.
+
+- `GET /api/tree` rows carry `engine`: the eval after the move from White's side (M# for mates), and for the owner's moves the win% loss, the class and the engine-best star (loss < 1). The node carries its eval, the engine's move (a blue arrow on the board at the owner's positions), the owner's first-mistake hotspot over his next 3 moves ("your first mistake comes within 3 moves in 41% of games · usually 6...Bc5 (best 6...Nf6)"), the mean eval at move 10, and `engine: {complete, games}` for "engine data for X of Y games".
+- Claims about a set of games (hotspots, mistake rates, mean evals) need at least 5 games and half of them known (`ENGINE_MIN_GAMES`, `ENGINE_MIN_COVERAGE`); a rate only counts games where every owner move of its span is scored.
+- `npm run backfill -- --line e2e4,e7e5,g1f3,f8c5 --color black` checks one line only: every position along it, with every move the colour's window games played there. No game is marked analysed.
+- `npx tsx scripts/verify/verify-analysis.ts --asof 2026-09-26` prints coverage, the class distribution, the most frequent mistakes and the first-mistake shares per colour, and asserts 2...Bc5 (loss >= 8, best Nc6/Nf6/d6, reply 3.Nxe5) and the Albin. When those two lines are not cached it checks just them with one engine (seconds, stored in the cache). `verify-fixlist.ts` then prints the ranked v1 list with the gates each item passed.
 
 ## Notes on move labels
 
