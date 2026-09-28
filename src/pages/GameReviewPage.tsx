@@ -157,7 +157,8 @@ function calculateReviewBoardSize(columnWidth = 0): number {
   const availableWidth = (columnWidth > 0 ? columnWidth : window.innerWidth - (isCompactLayout ? 72 : 0)) - barSpace;
 
   if (isCompactLayout) {
-    const minimumSize = Math.min(240, availableWidth);
+    // Never below 160px, even mid-resize (react-chessboard draws negative sizes otherwise).
+    const minimumSize = Math.max(160, Math.min(240, availableWidth));
     return Math.round(Math.max(minimumSize, Math.min(560, availableWidth, availableHeight)));
   }
 
@@ -229,6 +230,7 @@ export function GameReviewPage() {
   useEffect(() => {
     setReview(null);
     setJob(null);
+    setFlipped(false);
     landedRef.current = null;
     const controller = new AbortController();
     load(controller.signal);

@@ -29,7 +29,7 @@ function MoveCell({ ply, selected, onSelect }: { ply: ReviewPly; selected: boole
   const mark = cls ? CLASS_LABELS[cls].mark : "";
   const title = ply.owner
     ? ply.cls
-      ? `${CLASS_LABELS[ply.cls].label}${ply.loss !== null ? `, ${ply.loss.toFixed(1)}% win chance lost` : ""}`
+      ? `${CLASS_LABELS[ply.cls].label}${ply.loss !== null && ply.cls !== "best" ? `, ${ply.loss.toFixed(1)}% win chance lost` : ""}`
       : "Engine data pending"
     : ply.loss !== null
       ? `Your opponent's move (about ${ply.loss.toFixed(1)}% win chance lost)`

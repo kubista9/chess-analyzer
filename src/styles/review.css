@@ -101,7 +101,7 @@
   gap: 8px;
 }
 
-.review-callout-book {
+.review-callout-badge.review-callout-book {
   background: rgba(238, 238, 210, 0.16);
   color: var(--paper);
 }
