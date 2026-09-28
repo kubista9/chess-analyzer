@@ -1,8 +1,8 @@
 import { Link } from "react-router-dom";
 import type { FixListResponse } from "../../shared/types";
-import { formatCount } from "../utils/formatters";
-import { isLeak } from "./FixCard";
+import { formatCount, pct } from "../utils/formatters";
 import { FixCard, explainedLinesOf } from "./FixCard";
+import { coverageText } from "./NodeEngine";
 
 /** Home shows this many leaks; /leaks shows them all. */
 export const HOME_LEAKS = 3;
@@ -30,22 +30,49 @@ export function EmptyLeaks({ data }: { data: FixListResponse }) {
   );
 }
 
-/** Home: the top leaks from the results-only fix list, with a link to the full list. */
+/**
+ * Per colour: the share of games with a first mistake by moves 5 / 8 / 10 (plies 10 / 16 / 20),
+ * or how much engine data there is when it is too little to say.
+ */
+export function EngineShares({ data }: { data: FixListResponse }) {
+  if (!data.engine) {
+    return <p className="leaks-engine-line">No engine data (Stockfish not found): the list is results only.</p>;
+  }
+  return (
+    <>
+      {(["white", "black"] as const).map((color) => {
+        const summary = data.engine![color];
+        const shown = summary.firstErrorShares.filter((share) => share.shown && share.rate !== null);
+        return (
+          <p key={color} className="leaks-engine-line">
+            <span className={`mover-dot mover-dot-${color}`} aria-hidden="true" /> As {color === "white" ? "White" : "Black"}:{" "}
+            {shown.length
+              ? `a first mistake by move ${shown.map((share) => share.ply / 2).join(" / ")} in ${shown.map((share) => pct(share.rate!)).join(" / ")} of games · `
+              : "too few games engine-checked for mistake rates · "}
+            {coverageText(summary)}
+          </p>
+        );
+      })}
+    </>
+  );
+}
+
+/** Home: the top items of the fix list (results leaks and theory holes, by impact), with a link to the full list. */
 export function LeaksCard({ data, error }: { data: FixListResponse | null; error: string | null }) {
   const weighted = Boolean(data?.halfLifeDays);
-  const top = data?.items.filter(isLeak).slice(0, HOME_LEAKS) ?? [];
+  const top = data?.items.slice(0, HOME_LEAKS) ?? [];
   const more = data ? data.items.length - top.length : 0;
 
   return (
     <section className="panel home-card" aria-label="Biggest leaks">
       <div className="home-card-head">
         <div>
-          <span className="eyebrow">Results only · no engine yet</span>
+          <span className="eyebrow">Results leaks and theory holes</span>
           <h2>Biggest leaks</h2>
         </div>
         {data ? (
           <Link className="text-link" to="/leaks">
-            {more > 0 ? `All ${data.items.length} leaks` : "Full list"}
+            {more > 0 ? `All ${data.items.length} items` : "Full list"}
             {data.watch.length ? ` + ${data.watch.length} to watch` : ""} →
           </Link>
         ) : null}
@@ -57,16 +84,17 @@ export function LeaksCard({ data, error }: { data: FixListResponse | null; error
       ) : top.length ? (
         <div className="fix-list">
           {top.map((item, index) => (
-            <FixCard key={item.id} item={item} rank={index + 1} weighted={weighted} explainedLines={explainedLinesOf(item, data.items.filter(isLeak))} />
+            <FixCard key={item.id} item={item} rank={index + 1} weighted={weighted} explainedLines={explainedLinesOf(item, data.items)} />
           ))}
         </div>
       ) : (
         <EmptyLeaks data={data} />
       )}
+      {data ? <EngineShares data={data} /> : null}
       {data && top.length ? (
         <p className="home-card-foot">
-          Your moves that score below your Elo expectation by more than noise, ranked by the points they cost. Each game's
-          loss is counted once, at the deepest listed move.
+          Results leaks: your moves that score below your Elo expectation by more than noise. Theory holes: your moves the
+          engine refutes, whatever the results. Ranked together by the points they cost.
         </p>
       ) : null}
     </section>

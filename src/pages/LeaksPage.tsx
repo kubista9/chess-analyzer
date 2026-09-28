@@ -1,14 +1,13 @@
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import { OPENING_PLY_LIMIT } from "../../shared/constants";
 import { fetchFixList, type RepertoireQuery } from "../api/client";
 import { FilterBar } from "../components/FilterBar";
-import { EmptyLeaks } from "../components/LeaksCard";
+import { EmptyLeaks, EngineShares } from "../components/LeaksCard";
 import { FixCard, explainedLinesOf, scopeText } from "../components/FixCard";
 import { useFilters } from "../hooks/useFilters";
 import { useStoreQuery } from "../hooks/useStoreQuery";
 import { useWorkspace } from "../hooks/useWorkspace";
-import { formatCount } from "../utils/formatters";
-import { isLeak } from "../components/FixCard";
+import { formatCount, pct } from "../utils/formatters";
 import "../styles/leaks.css";
 
 /** /leaks: the whole fix list, the watch list, and how the list is made. */
@@ -21,17 +20,19 @@ export function LeaksPage() {
   );
   const { data, error, loading } = useStoreQuery((signal) => fetchFixList(query, signal), [query, dataVersion]);
   const weighted = Boolean(data?.halfLifeDays);
-  const all = data ? [...data.items.filter(isLeak), ...data.watch] : [];
+  const all = data ? [...data.items, ...data.watch] : [];
+  const [showAll, setShowAll] = useState(false);
+  const visible = data ? (showAll ? data.items : data.items.slice(0, data.cap)) : [];
 
   return (
     <div className="page-content leaks-page">
       <section className="page-header">
         <div>
-          <span className="eyebrow">Fix list · results only</span>
+          <span className="eyebrow">Fix list · results and engine</span>
           <h1>Leaks</h1>
           <p>
-            Your own moves in the first {OPENING_PLY_LIMIT / 2} moves that score below your Elo expectation by more than
-            chance explains. The engine is not involved yet, so a leak says where you lose points, not why.
+            Your own moves in the first {OPENING_PLY_LIMIT / 2} moves that cost points: results leaks score below your Elo
+            expectation by more than chance explains; theory holes are moves Stockfish refutes, even when the results look fine.
           </p>
         </div>
       </section>
@@ -41,17 +42,27 @@ export function LeaksPage() {
 
       <section className={`panel home-card${loading && data ? " is-stale" : ""}`} aria-label="Leaks" aria-busy={loading}>
         <div className="home-card-head">
-          <h2>{data ? `${data.items.length} leak${data.items.length === 1 ? "" : "s"}` : "Leaks"}</h2>
+          <h2>
+            {data
+              ? `${data.items.length - data.holes} leak${data.items.length - data.holes === 1 ? "" : "s"} · ${data.holes} theory hole${data.holes === 1 ? "" : "s"}`
+              : "Leaks"}
+          </h2>
         </div>
+        {data ? <EngineShares data={data} /> : null}
         {error ? (
           <p className="error-text">Could not load the fix list: {error}</p>
         ) : !data ? (
           <p className="home-empty">Loading…</p>
         ) : data.items.length ? (
           <div className="fix-list">
-            {data.items.filter(isLeak).map((item, index) => (
+            {visible.map((item, index) => (
               <FixCard key={item.id} item={item} rank={index + 1} weighted={weighted} explainedLines={explainedLinesOf(item, all)} />
             ))}
+            {data.items.length > data.cap ? (
+              <button type="button" className="secondary-button show-all" onClick={() => setShowAll((value) => !value)}>
+                {showAll ? `Show the top ${data.cap}` : `Show all ${data.items.length}`}
+              </button>
+            ) : null}
           </div>
         ) : (
           <EmptyLeaks data={data} />
@@ -98,8 +109,19 @@ export function LeaksPage() {
               left loses at least {data.thresholds.minPoints} point.
             </li>
             <li>
-              The ranking is the recency-weighted points lost against expectation. "Lost by move {data.thresholds.earlyLossPly / 2}"
+              A leak's rank is its recency-weighted points lost against expectation. "Lost by move {data.thresholds.earlyLossPly / 2}"
               counts losses that ended within {data.thresholds.earlyLossPly} half-moves.
+            </li>
+            <li>
+              A theory hole is a move you played at least {data.thresholds.hole.minN} times that loses at least{" "}
+              {data.thresholds.hole.minLoss} win% against Stockfish's best move, or at least {data.thresholds.hole.replyLoss} win% when
+              the opponent's best reply is then +{(data.thresholds.hole.replyCp / 100).toFixed(2)} or more for him. Its rank is the
+              points the move gives away: recency-weighted games × the win% loss. It is not a statistical test, so it sits outside
+              the false-discovery control.
+            </li>
+            <li>
+              Engine facts about a set of games (mistake rates, the eval at move 10) are shown only when at least{" "}
+              {data.thresholds.engine.minGames} games and {pct(data.thresholds.engine.minCoverage)} of them are engine-checked.
             </li>
           </ul>
         </section>

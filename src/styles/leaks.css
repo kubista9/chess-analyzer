@@ -54,7 +54,37 @@
 }
 
 .fix-card-watch {
-  border-color: rgba(240, 180, 93, 0.26);
+  border-color: rgba(238, 238, 210, 0.16);
+}
+
+/* Theory holes (engine) are amber; results leaks rose. */
+.fix-card-hole {
+  border-color: rgba(240, 180, 93, 0.42);
+  background: linear-gradient(180deg, rgba(240, 180, 93, 0.06), transparent 60%);
+}
+
+.move-tag-hole {
+  background: rgba(240, 180, 93, 0.22);
+  color: var(--amber);
+}
+
+.fix-card-hole .fix-stats dd {
+  color: var(--text);
+}
+
+.fix-engine {
+  color: var(--muted);
+}
+
+.leaks-engine-line {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.88rem;
+  line-height: 1.5;
+}
+
+.show-all {
+  justify-self: start;
 }
 
 .fix-card-head {

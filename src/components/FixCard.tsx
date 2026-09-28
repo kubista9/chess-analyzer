@@ -1,12 +1,11 @@
 import { Link } from "react-router-dom";
 import { ArrowDownRight, ArrowRight, ArrowUpRight, Compass } from "lucide-react";
-import type { FixItem as AnyFixItem, ResultsLeakItem as FixItem } from "../../shared/fixList";
-
-export const isLeak = (item: AnyFixItem): item is FixItem => item.kind === "results-leak";
+import type { EngineHoleItem, FixItem as AnyFixItem, ResultsLeakItem as FixItem, LeakEngineStats } from "../../shared/fixList";
 import type { PlayerColor } from "../../shared/types";
 import type { ExplorerFilters } from "../hooks/useFilters";
 import { formatCount, formatDay, formatDelta, formatPoints, pct, pctOne } from "../utils/formatters";
-import { ScoreWhisker } from "./MoveTable";
+import { ScoreWhisker, moveLabel } from "./MoveTable";
+import { coverageText } from "./NodeEngine";
 
 /** The Explorer at `moves`, with the row of `select` (a UCI move from there) highlighted. */
 export function explorerHref(color: PlayerColor, moves: readonly string[], select?: string): string {
@@ -50,7 +49,7 @@ function TrendNote({ item }: { item: FixItem }) {
  * the difference, the points it is blamed for, trend, early losses, and links to the Explorer
  * and to recent losing games.
  */
-export function FixCard({
+function LeakCard({
   item,
   rank,
   explainedLines = [],
@@ -80,7 +79,7 @@ export function FixCard({
           className={`move-tag ${item.tier === "leak" ? "move-tag-leak" : "move-tag-low-sample"}`}
           title={`z ${item.z.toFixed(2)}, one-sided p ${item.p.toFixed(4)}, Benjamini-Hochberg q ${item.q.toFixed(3)}`}
         >
-          {item.tier === "leak" ? `Leak · ${item.confidence} confidence` : "Watch · may be noise"}
+          {item.tier === "leak" ? `Results leak · ${item.confidence} confidence` : "Watch · may be noise"}
         </span>
       </header>
 
@@ -135,6 +134,7 @@ export function FixCard({
         <li>
           {formatCount(item.earlyLoss.n)} of {formatCount(item.n)} games ({pct(item.earlyLoss.rate)}) lost by move {item.earlyLoss.ply / 2}
         </li>
+        {item.engine ? <LeakEngineNote stats={item.engine} /> : null}
         {shared ? (
           <li className="fix-blame">
             Ranked on {item.pointsLost.toFixed(1)} points lost in the {formatCount(item.residualN)} games not covered by{" "}
@@ -168,7 +168,149 @@ export function FixCard({
   );
 }
 
+/** A signed eval in pawns from a cp / mate pair: "-0.45", "+1.87", "M3", "-M2". */
+function pawns(score: { cp: number; mate: number | null }): string {
+  if (score.mate !== null && score.mate !== 0) {
+    return score.mate > 0 ? `M${score.mate}` : `-M${-score.mate}`;
+  }
+  const value = score.cp / 100;
+  return `${value > 0 ? "+" : ""}${value.toFixed(2)}`;
+}
+
+/** The engine facts on a results leak, or how much engine data there is when too little to claim anything. */
+function LeakEngineNote({ stats }: { stats: LeakEngineStats }) {
+  const parts: string[] = [];
+  if (stats.evalAt20?.shown) {
+    parts.push(`average eval at move 10: ${pawns({ cp: stats.evalAt20.cp, mate: null })} for you`);
+  }
+  if (stats.firstError.shown && stats.firstError.rate !== null) {
+    parts.push(`a first mistake by move 10 in ${pct(stats.firstError.rate)} of ${formatCount(stats.firstError.known)} checked games`);
+  }
+  const top = stats.topFirstMistake;
+  if (top && stats.firstError.shown) {
+    parts.push(`most common first mistake ${moveLabel(top.ply, top.san)} (${top.count}×; engine: ${moveLabel(top.ply, top.bestSan)})`);
+  }
+  return (
+    <li className="fix-engine" title="From Stockfish's check of these games' openings">
+      {parts.length ? `Engine: ${parts.join(" · ")}. ` : "Engine: too few of these games are checked for engine claims yet. "}
+      <span className="cell-sub">({coverageText(stats)})</span>
+    </li>
+  );
+}
+
+/** A theory hole: an owner move the engine refutes, whatever its results. */
+function HoleCard({ item, rank }: { item: EngineHoleItem; rank?: number }) {
+  const colorLabel = item.color === "white" ? "As White" : "As Black";
+  const ply = item.moves.length;
+  const move = moveLabel(ply, item.sans[ply - 1]);
+  const best = moveLabel(ply, item.bestSan);
+  const gates = [item.gates.loss ? "loses 7+ win%" : "", item.gates.reply ? "the reply is +1.00 or more for the opponent" : ""].filter(Boolean).join("; ");
+  return (
+    <article className="fix-card fix-card-hole">
+      <header className="fix-card-head">
+        {rank ? <span className="fix-rank">#{rank}</span> : null}
+        <span className="fix-color">
+          <span className={`mover-dot mover-dot-${item.color}`} aria-hidden="true" />
+          {colorLabel}
+        </span>
+        <span className="move-tag move-tag-hole" title={`Listed because the move ${gates}. Engine facts, not a results test.`}>
+          Theory hole · {item.cls}
+        </span>
+      </header>
+
+      <h3 className="fix-line">Theory hole: {move}</h3>
+      <p className="fix-name">
+        after {item.before || "the start"}
+        {item.name ? (
+          <>
+            {" "}
+            · <span className="eco-badge">{item.eco}</span> {item.name}
+          </>
+        ) : null}
+      </p>
+
+      <dl className="fix-stats">
+        <div title="Win% your move gives away against the engine's best move, at the same depth">
+          <dt>Loss</dt>
+          <dd>
+            {item.loss.toFixed(1)} <span className="cell-sub">win%</span>
+          </dd>
+        </div>
+        <div title="The engine's eval for you (your side's view) with its move and with yours">
+          <dt>Eval for you</dt>
+          <dd>
+            {pawns(item.ownerEval.best)} <span className="cell-sub">vs</span> {pawns(item.ownerEval.played)}
+          </dd>
+        </div>
+        <div title="The engine's move here">
+          <dt>Engine</dt>
+          <dd>{best}</dd>
+        </div>
+        <div title={`Raw score with ${move}; expected ${pct(item.expected)} from the ratings`}>
+          <dt>Games</dt>
+          <dd>
+            {formatCount(item.n)} <span className="cell-sub">· {pct(item.score)}</span>
+          </dd>
+        </div>
+      </dl>
+
+      <ul className="fix-notes">
+        <li>
+          {item.reply
+            ? `${moveLabel(ply + 1, item.reply.san)} is the refutation: ${pawns({ cp: item.reply.cpForThem, mate: item.reply.mate })} for ${item.color === "white" ? "Black" : "White"}.`
+            : "The reply is not engine-checked yet."}
+        </li>
+        <li>
+          You score {pct(item.score)} with it (expected {pct(item.expected)}), so the results alone do not show it: opponents have
+          not found {item.reply ? moveLabel(ply + 1, item.reply.san) : "the refutation"} often yet.
+        </li>
+      </ul>
+
+      <footer className="fix-actions">
+        <Link className="secondary-button fix-explore" to={explorerHref(item.color, item.moves.slice(0, -1), item.moves[ply - 1])}>
+          <Compass size={16} aria-hidden="true" /> Open in Explorer
+        </Link>
+        {item.examples.length ? (
+          <div className="fix-examples">
+            <span className="cell-sub">Recent games</span>
+            {item.examples.map((example) => (
+              <Link
+                key={example.id}
+                className={`fix-example fix-example-${resultLetter(example.score)}`}
+                to={`/review/${example.id}?ply=${example.ply}`}
+                title={`Review this game from move ${Math.ceil(example.ply / 2)}`}
+              >
+                <span className="fix-example-result">{resultLetter(example.score)}</span>
+                {formatDay(example.endTime)}
+              </Link>
+            ))}
+          </div>
+        ) : null}
+      </footer>
+    </article>
+  );
+}
+
+/** One fix-list item: a results leak (or watch line) or a theory hole. */
+export function FixCard({
+  item,
+  rank,
+  explainedLines,
+  weighted
+}: {
+  item: AnyFixItem;
+  rank?: number;
+  explainedLines?: string[];
+  weighted: boolean;
+}) {
+  return item.kind === "engine-hole" ? (
+    <HoleCard item={item} rank={rank} />
+  ) : (
+    <LeakCard item={item} rank={rank} explainedLines={explainedLines} weighted={weighted} />
+  );
+}
+
 /** item id -> line, to name the deeper items an item's blame excludes. */
-export function explainedLinesOf(item: FixItem, all: readonly FixItem[]): string[] {
-  return item.explainedBy.flatMap((id) => all.find((other) => other.id === id)?.line ?? []);
+export function explainedLinesOf(item: AnyFixItem, all: readonly AnyFixItem[]): string[] {
+  return item.kind === "results-leak" ? item.explainedBy.flatMap((id) => all.find((other) => other.id === id)?.line ?? []) : [];
 }
