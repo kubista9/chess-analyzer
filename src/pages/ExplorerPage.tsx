@@ -11,6 +11,7 @@ import { boardColors, boardTheme } from "../components/boardTheme";
 import { FilterBar } from "../components/FilterBar";
 import { GamesDrawer, type DrawerMove } from "../components/GamesDrawer";
 import { MoveTable, moveLabel } from "../components/MoveTable";
+import { NodeEngine } from "../components/NodeEngine";
 import { useFilters } from "../hooks/useFilters";
 import { useStoreQuery } from "../hooks/useStoreQuery";
 import { useWorkspace } from "../hooks/useWorkspace";
@@ -257,6 +258,11 @@ export function ExplorerPage() {
 
   const selectedEdge = edges[Math.min(selected, edges.length - 1)];
   const arrows: Arrow[] = selectedEdge ? [[selectedEdge.uci.slice(0, 2) as Square, selectedEdge.uci.slice(2, 4) as Square, boardColors.arrow]] : [];
+  // The engine's move at the owner's own positions (unless it is the selected row's arrow already).
+  const bestUci = fresh && node?.ownerToMove ? node.engine?.bestUci : null;
+  if (bestUci && bestUci !== selectedEdge?.uci) {
+    arrows.push([bestUci.slice(0, 2) as Square, bestUci.slice(2, 4) as Square, boardColors.best]);
+  }
   const squareStyles: CustomSquareStyles = {};
   if (pendingSquare) {
     squareStyles[pendingSquare] = { background: boardColors.selected };
@@ -381,6 +387,7 @@ export function ExplorerPage() {
                   </div>
                 ) : null}
               </dl>
+              <NodeEngine node={node} coverage={data?.engine ?? null} color={color} />
             </div>
           ) : null}
 

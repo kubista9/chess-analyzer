@@ -1,5 +1,7 @@
-import { ArrowDownRight, ArrowRight, ArrowUpRight, ListVideo } from "lucide-react";
+import { ArrowDownRight, ArrowRight, ArrowUpRight, ListVideo, Star } from "lucide-react";
+import { formatEval } from "../../shared/eval";
 import { moveSignals, trendDirection, type MoveSignal } from "../../shared/moveSignals";
+import type { WhiteEvalPoint } from "../../shared/openingAnalysis";
 import type { PlayerColor, TreeEdgeView, TreeNodeView } from "../../shared/types";
 import { formatCount, formatDelta, formatPoints, pct, pctOne } from "../utils/formatters";
 
@@ -52,6 +54,59 @@ function TrendCell({ edge }: { edge: TreeEdgeView }) {
   );
 }
 
+/** "+0.45", "-M3" (White's view), or "pending" for a position the engine has not seen yet. */
+export function EvalText({ point }: { point: WhiteEvalPoint | "pending" | null | undefined }) {
+  if (!point || point === "pending") {
+    return <span className="eval-pending" title="Not engine-checked yet">pending</span>;
+  }
+  return <span className={`eval-text${point.cp > 0 ? " eval-white" : point.cp < 0 ? " eval-black" : ""}`}>{formatEval(point)}</span>;
+}
+
+const CLASS_LABEL = { best: "Best", good: "Good", inaccuracy: "Inaccuracy", mistake: "Mistake", blunder: "Blunder" } as const;
+
+/** Eval after the move (White's side) and, for the owner's moves, the win% it gives away with its class. */
+function EngineCells({ edge }: { edge: TreeEdgeView }) {
+  const engine = edge.engine;
+  if (!engine || engine.status === "pending") {
+    return (
+      <>
+        <td>
+          <EvalText point="pending" />
+        </td>
+        <td>
+          <span className="cell-sub">–</span>
+        </td>
+      </>
+    );
+  }
+  return (
+    <>
+      <td title={`Eval after the move, from White's side${engine.approx ? " (opponent's move: a shallower search)" : ""}`}>
+        <span className="cell-main">
+          <EvalText point={engine.eval} />
+        </span>
+      </td>
+      <td
+        title={
+          engine.approx
+            ? `Opponent's move: ${engine.loss.toFixed(1)} win% below the engine's best (approximate)`
+            : `${CLASS_LABEL[engine.cls]}: ${engine.loss.toFixed(1)} win% below the engine's best at this position`
+        }
+      >
+        {engine.approx ? (
+          <span className="cell-sub">{engine.loss.toFixed(1)}</span>
+        ) : (
+          <span className={`loss-cell loss-${engine.cls}`}>
+            <span className={`class-dot class-dot-${engine.cls}`} aria-hidden="true" />
+            <span className="cell-main">{engine.loss.toFixed(1)}</span>
+            <span className="cell-sub">{CLASS_LABEL[engine.cls].toLowerCase()}</span>
+          </span>
+        )}
+      </td>
+    </>
+  );
+}
+
 function BookName({ edge }: { edge: TreeEdgeView }) {
   if (!edge.inBook) {
     return (
@@ -94,6 +149,7 @@ export function MoveTable({ node, color, ply, selected, onSelect, onFollow, onSh
   const mover: PlayerColor = node.ownerToMove ? color : color === "white" ? "black" : "white";
   const played = node.edges.reduce((sum, edge) => sum + edge.n, 0);
   const scoreNote = weighted ? "recency-weighted" : "unweighted";
+  const engine = node.engine !== null;
 
   if (!node.edges.length) {
     return (
@@ -115,6 +171,16 @@ export function MoveTable({ node, color, ply, selected, onSelect, onFollow, onSh
         <thead>
           <tr>
             <th scope="col">Move</th>
+            {engine ? (
+              <>
+                <th scope="col" title="Stockfish's eval after the move, from White's side (M# = mate); pending = not engine-checked yet">
+                  Eval
+                </th>
+                <th scope="col" title="Win% the move gives away against the engine's best move here, and its class (your moves)">
+                  Loss
+                </th>
+              </>
+            ) : null}
             <th scope="col" title="Raw games that played the move here, their share, and the effective n under recency weights">
               Games
             </th>
@@ -162,10 +228,14 @@ export function MoveTable({ node, color, ply, selected, onSelect, onFollow, onSh
                     >
                       {moveLabel(ply, edge.san)}
                     </button>
+                    {edge.engine?.status === "scored" && edge.engine.isEngineBest ? (
+                      <Star className="engine-star" size={14} aria-label="The engine's best move (within 1 win%)" />
+                    ) : null}
                     {tag ? <span className={`move-tag move-tag-${signal}`}>{tag}</span> : null}
                   </div>
                   <BookName edge={edge} />
                 </th>
+                {engine ? <EngineCells edge={edge} /> : null}
                 <td>
                   <div className="freq-bar" aria-hidden="true">
                     <span style={{ width: `${Math.max(2, share * 100)}%` }} />

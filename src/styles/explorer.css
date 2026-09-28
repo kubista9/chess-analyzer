@@ -745,3 +745,95 @@
     padding: 8px 10px;
   }
 }
+
+/* Engine fields (P5): eval, loss and class, the engine-best star, and the position's hotspots. */
+.eval-text {
+  font-variant-numeric: tabular-nums;
+  font-weight: 800;
+}
+
+.eval-white {
+  color: var(--paper);
+}
+
+.eval-black {
+  color: #cfc9bb;
+}
+
+.eval-pending {
+  color: var(--muted);
+  font-size: 0.78rem;
+  font-style: italic;
+}
+
+.loss-cell {
+  display: inline-grid;
+  grid-template-columns: auto auto;
+  align-items: center;
+  column-gap: 6px;
+}
+
+.loss-cell .cell-sub {
+  grid-column: 2;
+}
+
+.class-dot {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: transparent;
+}
+
+.class-dot-best,
+.class-dot-good {
+  background: rgba(238, 238, 210, 0.18);
+}
+
+.class-dot-inaccuracy {
+  background: var(--amber);
+}
+
+.class-dot-mistake {
+  background: #ec8a3f;
+}
+
+.class-dot-blunder {
+  background: var(--rose);
+}
+
+.engine-star {
+  flex: 0 0 auto;
+  color: #5caaf0;
+  fill: #5caaf0;
+}
+
+.node-engine {
+  display: grid;
+  gap: 8px;
+}
+
+.node-engine-note {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.84rem;
+  line-height: 1.45;
+}
+
+.hotspot-badge {
+  display: flex;
+  gap: 8px;
+  align-items: flex-start;
+  margin: 0;
+  padding: 8px 12px;
+  border-radius: 12px;
+  background: rgba(236, 138, 63, 0.14);
+  color: #f5b98a;
+  font-size: 0.9rem;
+  font-weight: 700;
+  line-height: 1.4;
+}
+
+.hotspot-badge svg {
+  flex: 0 0 auto;
+  margin-top: 2px;
+}

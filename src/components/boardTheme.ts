@@ -12,6 +12,8 @@ export const boardTheme = {
 /** Arrow and highlight colours. */
 export const boardColors = {
   arrow: "rgba(163, 209, 96, 0.85)",
+  /** The engine's best move. */
+  best: "rgba(92, 170, 240, 0.8)",
   selected: "rgba(247, 201, 72, 0.45)",
   target: "radial-gradient(circle, rgba(31, 30, 28, 0.35) 24%, transparent 26%)"
 };
