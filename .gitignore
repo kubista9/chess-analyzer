@@ -7,3 +7,6 @@ storage/cache
 storage/engines
 storage/tmp
 !storage/.gitkeep
+storage/chess.db
+storage/chess.db-*
+storage/backfill.lock*

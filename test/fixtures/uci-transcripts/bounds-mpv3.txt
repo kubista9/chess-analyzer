@@ -1,0 +1,13 @@
+# 1.d4 d5 2.c4 e5 (Albin), White to move, MultiPV 3. Depth 13 has aspiration fail-high and
+# fail-low lines (lowerbound / upperbound) that repeat moves across ranks; only the exact
+# lines count, so depth 13 is dxe5 / Nc3 / cxd5.
+info depth 12 seldepth 16 multipv 1 score cp 70 nodes 120000 nps 600000 hashfull 30 tbhits 0 time 200 pv d4e5 d5d4 g1f3
+info depth 12 seldepth 15 multipv 2 score cp 41 nodes 120000 nps 600000 hashfull 30 tbhits 0 time 200 pv c4d5 e5d4 g1f3
+info depth 12 seldepth 16 multipv 3 score cp 35 nodes 120000 nps 600000 hashfull 30 tbhits 0 time 200 pv b1c3 e5d4 d1d4
+info depth 13 seldepth 17 multipv 1 score cp 95 lowerbound nodes 150000 nps 600000 hashfull 40 tbhits 0 time 250 pv d4e5
+info depth 13 seldepth 17 multipv 2 score cp 90 lowerbound nodes 160000 nps 600000 hashfull 40 tbhits 0 time 266 pv d4e5
+info depth 13 seldepth 17 multipv 3 score cp 10 upperbound nodes 170000 nps 600000 hashfull 40 tbhits 0 time 283 pv c4d5
+info depth 13 seldepth 18 multipv 1 score cp 81 nodes 190000 nps 600000 hashfull 44 tbhits 0 time 316 pv d4e5 d5d4 g1f3 b8c6 a2a3
+info depth 13 seldepth 17 multipv 2 score cp 44 nodes 190000 nps 600000 hashfull 44 tbhits 0 time 316 pv b1c3 e5d4 d1d4 g8f6
+info depth 13 seldepth 18 multipv 3 score cp 38 nodes 190000 nps 600000 hashfull 44 tbhits 0 time 316 pv c4d5 e5d4 g1f3 c7c5
+bestmove d4e5 ponder d5d4

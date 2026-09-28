@@ -1,0 +1,4 @@
+# The engine dies in the middle of a search.
+info depth 1 seldepth 1 multipv 1 score cp 20 nodes 30 nps 30000 hashfull 0 tbhits 0 time 1 pv e2e4
+info depth 2 seldepth 2 multipv 1 score cp 25 nodes 90 nps 45000 hashfull 0 tbhits 0 time 2 pv e2e4 e7e5
+#crash 9

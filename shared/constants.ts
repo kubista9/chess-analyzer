@@ -1,27 +1,20 @@
-export const BULK_ANALYSIS_LIMITS = [1, 5, 10, 25] as const;
-export type BulkAnalysisLimit = (typeof BULK_ANALYSIS_LIMITS)[number];
-export const DEFAULT_BULK_ANALYSIS_LIMIT: BulkAnalysisLimit = 10;
+// The one Chess.com account this app analyses. The server reads it through config.owner
+// (CHESS_OWNER overrides it, for tests only); the client uses this constant directly.
+export const OWNER_USERNAME = "kubista9";
 
-export const MOVE_CATEGORIES = [
-  "brilliant",
-  "great",
-  "best",
-  "good",
-  "mistake",
-  "miss",
-  "blunder"
-] as const;
+// Review covers the opening only: the first 20 plies (10 moves each). Shared by the server
+// and the client, so the two cannot drift; there is deliberately no env override.
+export const OPENING_PLY_LIMIT = 20;
 
-export const SUPPORTED_TIME_CLASSES = ["bullet", "blitz", "rapid", "daily"] as const;
+// Centipawn evals are clamped to +/-CP_CLAMP before any win% maths. Mates are kept in a
+// separate field and count as a clamped eval of the mating side.
+export const CP_CLAMP = 1000;
 
-export const CHESS_PHASES = ["opening", "middlegame", "endgame"] as const;
+// Ordered from best to worst. Thresholds (the mover's win% loss at one root) live in shared/eval.ts.
+export const MOVE_CATEGORIES = ["best", "good", "inaccuracy", "mistake", "blunder"] as const;
 
-export const CATEGORY_COLORS: Record<(typeof MOVE_CATEGORIES)[number], string> = {
-  brilliant: "#14d1b1",
-  great: "#63a2ff",
-  best: "#9dd94e",
-  good: "#f5f7fa",
-  mistake: "#ffaf54",
-  miss: "#ff6b6b",
-  blunder: "#ff3c5c"
-};
+// The importer keeps only these standard time classes; bullet and daily are never stored.
+export const IMPORTED_TIME_CLASSES = ["blitz", "rapid"] as const;
+
+// Why the importer skipped an archive entry. Per month, kept + the sum of these = archive length.
+export const SKIP_REASONS = ["variant", "custom-start", "time-class", "not-owner", "duplicate", "malformed"] as const;

@@ -1,104 +1,260 @@
 import {
   createContext,
+  useCallback,
   useContext,
+  useEffect,
   useMemo,
+  useRef,
   useState,
   type ReactNode
 } from "react";
-import type { DashboardSnapshot, JobState, ReviewSummary } from "../../shared/types";
+import { JOB_LOST_MESSAGE, isJobActive } from "../../shared/jobPolling";
+import type { AnalysisStatus, ImportStatus, JobState, SyncJobResult } from "../../shared/types";
+import {
+  ApiError,
+  fetchActiveJobs,
+  fetchAnalysisStatus,
+  fetchJob,
+  fetchStatus,
+  pauseBackfill as postPause,
+  startBackfill as postBackfill,
+  startSync as postSync
+} from "../api/client";
+import { useJobPolling } from "./useJobPolling";
+
+// The pages read everything from the server's game store; nothing is cached in the browser
+// except the id of a running sync job, so a reload can resume (or report a lost job).
 
 interface WorkspaceContextValue {
-  snapshot: DashboardSnapshot | null;
-  setSnapshot: (snapshot: DashboardSnapshot | null) => void;
-  bulkJob: JobState<DashboardSnapshot> | null;
-  setBulkJob: (job: JobState<DashboardSnapshot> | null) => void;
-  reviewCache: Record<string, ReviewSummary>;
-  setReview: (gameId: string, review: ReviewSummary) => void;
-  reviewJobs: Record<string, JobState<ReviewSummary> | null>;
-  setReviewJob: (gameId: string, job: JobState<ReviewSummary> | null) => void;
+  /** GET /api/status, refreshed on load and after every sync. */
+  status: ImportStatus | null;
+  statusError: string | null;
+  refreshStatus: () => void;
+  syncJob: JobState<SyncJobResult> | null;
+  startSync: (full?: boolean) => Promise<void>;
+  /** Bumped when a sync completes, so pages refetch their store queries. */
+  dataVersion: number;
+  /** GET /api/analysis/status: polled every 2 s while the engine check runs (here or in the CLI), else every 20 s. */
+  analysis: AnalysisStatus | null;
+  analysisError: string | null;
+  /** Starts or resumes the engine check; rejects with ApiError code "on-battery" unless allowBattery. */
+  startBackfill: (allowBattery?: boolean) => Promise<void>;
+  pauseBackfill: () => Promise<void>;
 }
 
-const STORAGE_KEY = "chess-analyst-workspace-v1";
-const REVIEW_STORAGE_KEY = "chess-analyst-reviews-v1";
+const SYNC_JOB_KEY = "chess-analyst-sync-job";
+// How often the engine check status is read while it runs, and otherwise (a CLI run may start).
+const ANALYSIS_ACTIVE_POLL_MS = 2_000;
+const ANALYSIS_IDLE_POLL_MS = 20_000;
+// A stored job id older than the server's finished-job TTL can no longer be looked up.
+const SYNC_JOB_MAX_AGE_MS = 30 * 60 * 1000;
+// Keys of earlier workspaces: the v1 snapshot and review cache, and the v2 results snapshot
+// that the store-driven pages no longer need.
+const LEGACY_STORAGE_KEYS = ["chess-analyst-workspace-v1", "chess-analyst-reviews-v1", "chess-analyst-workspace-v2"];
 const WorkspaceContext = createContext<WorkspaceContextValue | null>(null);
 
-function loadStoredSnapshot(): DashboardSnapshot | null {
+function removeLegacyKeys(): void {
   try {
-    const raw = window.localStorage.getItem(STORAGE_KEY);
-    if (!raw) {
-      return null;
+    for (const key of LEGACY_STORAGE_KEYS) {
+      window.localStorage.removeItem(key);
     }
+  } catch {
+    // Storage may be unavailable; nothing to clean up then.
+  }
+}
 
-    return JSON.parse(raw) as DashboardSnapshot;
+function readStoredSyncJobId(): string | null {
+  try {
+    const raw = window.localStorage.getItem(SYNC_JOB_KEY);
+    const stored = raw ? (JSON.parse(raw) as { id?: unknown; at?: unknown }) : null;
+    if (typeof stored?.id === "string" && typeof stored.at === "number" && Date.now() - stored.at < SYNC_JOB_MAX_AGE_MS) {
+      return stored.id;
+    }
+    return null;
   } catch {
     return null;
   }
 }
 
-function loadStoredReviews(): Record<string, ReviewSummary> {
+function storeSyncJobId(id: string | null): void {
   try {
-    const raw = window.localStorage.getItem(REVIEW_STORAGE_KEY);
-    if (!raw) {
-      return {};
+    if (id) {
+      window.localStorage.setItem(SYNC_JOB_KEY, JSON.stringify({ id, at: Date.now() }));
+    } else {
+      window.localStorage.removeItem(SYNC_JOB_KEY);
     }
-
-    return JSON.parse(raw) as Record<string, ReviewSummary>;
   } catch {
-    return {};
+    // Without storage a reload simply does not resume the job.
   }
 }
 
-function storeReviews(reviews: Record<string, ReviewSummary>): void {
-  try {
-    window.localStorage.setItem(REVIEW_STORAGE_KEY, JSON.stringify(reviews));
-  } catch {
-    // Keep the in-memory cache even if local storage is full or unavailable.
-  }
+/** A failed sync job made on the client: a lost job id, or a start request that failed. */
+function failedSyncJob(id: string, error: string): JobState<SyncJobResult> {
+  const at = Date.now();
+  return { id, key: "sync", type: "sync", status: "failed", progress: 100, message: "Sync", error, createdAt: at, updatedAt: at };
+}
+
+function errorText(error: unknown, fallback: string): string {
+  return error instanceof Error ? error.message : fallback;
 }
 
 export function WorkspaceProvider({ children }: { children: ReactNode }) {
-  const [snapshot, setSnapshotState] = useState<DashboardSnapshot | null>(() =>
-    typeof window === "undefined" ? null : loadStoredSnapshot()
-  );
-  const [bulkJob, setBulkJob] = useState<JobState<DashboardSnapshot> | null>(null);
-  const [reviewCache, setReviewCache] = useState<Record<string, ReviewSummary>>(() =>
-    typeof window === "undefined" ? {} : loadStoredReviews()
-  );
-  const [reviewJobs, setReviewJobs] = useState<Record<string, JobState<ReviewSummary> | null>>({});
+  const [status, setStatus] = useState<ImportStatus | null>(null);
+  const [statusError, setStatusError] = useState<string | null>(null);
+  const [syncJob, setSyncJob] = useState<JobState<SyncJobResult> | null>(null);
+  const [dataVersion, setDataVersion] = useState(0);
+  const startingSync = useRef(false);
+  const [analysis, setAnalysis] = useState<AnalysisStatus | null>(null);
+  const [analysisError, setAnalysisError] = useState<string | null>(null);
+  // Bumped after a start/pause so the status loop re-reads at once (and picks its interval).
+  const [analysisNudge, setAnalysisNudge] = useState(0);
 
-  const setSnapshot = (nextSnapshot: DashboardSnapshot | null) => {
-    setSnapshotState(nextSnapshot);
+  const refreshStatus = useCallback(() => {
+    fetchStatus()
+      .then((next) => {
+        setStatus(next);
+        setStatusError(null);
+      })
+      .catch((error: unknown) => setStatusError(errorText(error, "Could not load the sync status.")));
+  }, []);
 
-    if (!nextSnapshot) {
-      window.localStorage.removeItem(STORAGE_KEY);
-      window.localStorage.removeItem(REVIEW_STORAGE_KEY);
-      setReviewCache({});
+  const handleSyncUpdate = useCallback(
+    (job: JobState<SyncJobResult>) => {
+      setSyncJob(job);
+      if (isJobActive(job)) {
+        return;
+      }
+      storeSyncJobId(null);
+      if (job.status === "completed" && job.result) {
+        setStatus(job.result.status);
+        setStatusError(null);
+        setDataVersion((version) => version + 1);
+      } else {
+        refreshStatus();
+      }
+    },
+    [refreshStatus]
+  );
+
+  useJobPolling(syncJob, handleSyncUpdate);
+
+  // On load: drop old keys, read the status, and resume a sync this browser started (or
+  // one that is running on the server). A stored id the server no longer knows is a lost job.
+  useEffect(() => {
+    removeLegacyKeys();
+    refreshStatus();
+
+    const controller = new AbortController();
+    const storedId = readStoredSyncJobId();
+    const resume = storedId
+      ? fetchJob<SyncJobResult>(storedId, controller.signal).catch((error: unknown) => {
+          if (error instanceof ApiError && error.status === 404) {
+            storeSyncJobId(null);
+            return failedSyncJob(storedId, JOB_LOST_MESSAGE);
+          }
+          return null;
+        })
+      : fetchActiveJobs(controller.signal)
+          .then((jobs) => (jobs.find((job) => job.type === "sync") as JobState<SyncJobResult> | undefined) ?? null)
+          .catch(() => null);
+
+    void resume.then((job) => {
+      if (controller.signal.aborted || !job) {
+        return;
+      }
+      if (isJobActive(job) || job.error === JOB_LOST_MESSAGE) {
+        setSyncJob(job);
+      } else {
+        storeSyncJobId(null);
+      }
+    });
+
+    return () => controller.abort();
+  }, [refreshStatus]);
+
+  const startSync = useCallback(async (full = false) => {
+    // One click, one request; the server also joins a running sync (two tabs).
+    if (startingSync.current) {
       return;
     }
+    startingSync.current = true;
+    try {
+      const job = await postSync(full);
+      storeSyncJobId(job.id);
+      setSyncJob(job);
+    } catch (error) {
+      setSyncJob(failedSyncJob("", errorText(error, "Could not start the sync.")));
+    } finally {
+      startingSync.current = false;
+    }
+  }, []);
 
-    window.localStorage.setItem(STORAGE_KEY, JSON.stringify(nextSnapshot));
-  };
+  // The engine check status: one request at a time, faster while a backfill runs. A sync
+  // (dataVersion) or an action (analysisNudge) restarts the loop with an immediate read.
+  useEffect(() => {
+    const controller = new AbortController();
+    let timer: number | undefined;
+    const tick = async () => {
+      let active = false;
+      try {
+        const next = await fetchAnalysisStatus(controller.signal);
+        setAnalysis(next);
+        setAnalysisError(null);
+        active = next.state === "running" || next.state === "pausing";
+      } catch (error) {
+        if (controller.signal.aborted) {
+          return;
+        }
+        setAnalysisError(errorText(error, "Could not read the engine status."));
+      }
+      if (!controller.signal.aborted) {
+        timer = window.setTimeout(() => void tick(), active ? ANALYSIS_ACTIVE_POLL_MS : ANALYSIS_IDLE_POLL_MS);
+      }
+    };
+    void tick();
+    return () => {
+      controller.abort();
+      window.clearTimeout(timer);
+    };
+  }, [dataVersion, analysisNudge]);
+
+  const startBackfill = useCallback(async (allowBattery = false) => {
+    const next = await postBackfill(allowBattery);
+    setAnalysis(next);
+    setAnalysisNudge((nudge) => nudge + 1);
+  }, []);
+
+  const pauseBackfill = useCallback(async () => {
+    const next = await postPause();
+    setAnalysis(next);
+    setAnalysisNudge((nudge) => nudge + 1);
+  }, []);
 
   const value = useMemo<WorkspaceContextValue>(
     () => ({
-      snapshot,
-      setSnapshot,
-      bulkJob,
-      setBulkJob,
-      reviewCache,
-      setReview: (gameId, review) => {
-        setReviewCache((current) => {
-          const next = { ...current, [gameId]: review };
-          storeReviews(next);
-          return next;
-        });
-      },
-      reviewJobs,
-      setReviewJob: (gameId, job) => {
-        setReviewJobs((current) => ({ ...current, [gameId]: job }));
-      }
+      status,
+      statusError,
+      refreshStatus,
+      syncJob,
+      startSync,
+      dataVersion,
+      analysis,
+      analysisError,
+      startBackfill,
+      pauseBackfill
     }),
-    [snapshot, bulkJob, reviewCache, reviewJobs]
+    [
+      status,
+      statusError,
+      refreshStatus,
+      syncJob,
+      startSync,
+      dataVersion,
+      analysis,
+      analysisError,
+      startBackfill,
+      pauseBackfill
+    ]
   );
 
   return <WorkspaceContext.Provider value={value}>{children}</WorkspaceContext.Provider>;

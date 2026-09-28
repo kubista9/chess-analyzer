@@ -1,0 +1,10 @@
+# 1.d4 d5 2.Bf4, Black to move, MultiPV 3. Depth 14 completes with three distinct moves;
+# the depth 15 print repeats e7e6 on ranks 2 and 3 and never completes cleanly, so the parser
+# must fall back to depth 14 rather than report e7e6 twice.
+info depth 14 seldepth 19 multipv 1 score cp 21 nodes 260000 nps 580000 hashfull 70 tbhits 0 time 448 pv c7c5 e2e3 b8c6
+info depth 14 seldepth 18 multipv 2 score cp 14 nodes 260000 nps 580000 hashfull 70 tbhits 0 time 448 pv e7e6 e2e3 c7c5
+info depth 14 seldepth 18 multipv 3 score cp 12 nodes 260000 nps 580000 hashfull 70 tbhits 0 time 448 pv c8f5 e2e3 e7e6
+info depth 15 seldepth 20 multipv 1 score cp 19 nodes 330000 nps 580000 hashfull 81 tbhits 0 time 569 pv c7c5 e2e3 b8c6 c2c3
+info depth 15 seldepth 20 multipv 2 score cp 16 nodes 330000 nps 580000 hashfull 81 tbhits 0 time 569 pv e7e6 e2e3 c7c5
+info depth 15 seldepth 19 multipv 3 score cp 16 nodes 330000 nps 580000 hashfull 81 tbhits 0 time 569 pv e7e6 e2e3 c7c5
+bestmove e7e6 ponder e2e3
