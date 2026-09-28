@@ -5,13 +5,13 @@ import type {
   ImportStatus,
   JobState,
   PlayerColor,
-  ReviewSummary,
   SnapshotResponse,
   SyncJobResult,
   TimeClass,
   TreeGamesResponse,
   TreeResponse
 } from "../../shared/types";
+import type { GameAnalysisResponse, RetryRequest, RetryResult } from "../../shared/review";
 import type { GameWindow } from "../../shared/window";
 
 /** A non-2xx API answer. `status` lets the polling loop tell a lost job (404) from a blip. */
@@ -117,11 +117,14 @@ export function fetchSnapshot(filters: RepertoireQuery, signal?: AbortSignal): P
   return request<SnapshotResponse>(`/api/snapshot${query(repertoireParams(filters))}`, { signal });
 }
 
-export function startGameReview(gameId: string): Promise<JobState<ReviewSummary>> {
-  return request<JobState<ReviewSummary>>("/api/game-review", {
-    method: "POST",
-    body: JSON.stringify({ gameId })
-  });
+/** The opening review from the cache; a partial one comes with the job that completes it. */
+export function fetchGameAnalysis(gameId: string, signal?: AbortSignal): Promise<GameAnalysisResponse> {
+  return request<GameAnalysisResponse>(`/api/games/${encodeURIComponent(gameId)}/analysis`, { signal });
+}
+
+/** Judges a Retry move (scored on demand when the cache does not have it). */
+export function postRetry(gameId: string, retry: RetryRequest, signal?: AbortSignal): Promise<RetryResult> {
+  return request<RetryResult>(`/api/games/${encodeURIComponent(gameId)}/retry`, { method: "POST", body: JSON.stringify(retry), signal });
 }
 
 export function fetchJob<T>(jobId: string, signal?: AbortSignal): Promise<JobState<T>> {

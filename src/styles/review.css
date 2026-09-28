@@ -1,0 +1,396 @@
+/* Opening review: the eval bar, the board row, the move list, engine lines and Retry. */
+
+.review-board-row {
+  display: flex;
+  align-items: stretch;
+  gap: 10px;
+  min-width: 0;
+}
+
+/* Vertical beside the board: White's share grows from White's end (the bottom when the board is
+   oriented to White, the top when it is oriented to Black). */
+.eval-bar {
+  position: relative;
+  flex: 0 0 22px;
+  width: 22px;
+  border-radius: 6px;
+  overflow: hidden;
+  background: #403d39;
+  box-shadow: inset 0 0 0 1px rgba(238, 238, 210, 0.08);
+}
+
+.eval-bar-fill {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: var(--white-share, 50%);
+  background: #eeeed2;
+  transition: height 200ms ease, width 200ms ease;
+}
+
+.eval-bar-oriented-black .eval-bar-fill {
+  top: 0;
+  bottom: auto;
+}
+
+.eval-bar-label {
+  position: absolute;
+  left: 0;
+  right: 0;
+  font-size: 0.62rem;
+  font-weight: 800;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.02em;
+}
+
+/* The label sits at the leading side's end of the bar. */
+.eval-bar-label-white {
+  color: var(--ink);
+}
+
+.eval-bar-label-black {
+  color: var(--paper);
+}
+
+.eval-bar-oriented-white .eval-bar-label-white {
+  bottom: 4px;
+}
+
+.eval-bar-oriented-white .eval-bar-label-black {
+  top: 4px;
+}
+
+.eval-bar-oriented-black .eval-bar-label-white {
+  top: 4px;
+}
+
+.eval-bar-oriented-black .eval-bar-label-black {
+  bottom: 4px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .eval-bar-fill {
+    transition: none;
+  }
+}
+
+.review-clean,
+.review-partial {
+  margin: 0;
+  padding: 12px 14px;
+  border-radius: 12px;
+  font-weight: 700;
+}
+
+.review-clean {
+  background: rgba(129, 182, 76, 0.16);
+  color: var(--lime);
+}
+
+.review-partial {
+  background: rgba(240, 180, 93, 0.12);
+  color: var(--amber);
+  font-weight: 600;
+}
+
+.review-callout-badges {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.review-callout-book {
+  background: rgba(238, 238, 210, 0.16);
+  color: var(--paper);
+}
+
+/* Engine lines as chips. */
+.review-lines {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.pv-line {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px 14px;
+  border-radius: 14px;
+  background: rgba(238, 238, 210, 0.06);
+}
+
+.pv-line-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  font-size: 0.88rem;
+}
+
+.pv-line-head strong {
+  color: var(--lime);
+}
+
+.pv-line-eval {
+  color: var(--paper);
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+.pv-line-moves {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.pv-chip {
+  min-height: 32px;
+  padding: 5px 9px;
+  border: 1px solid rgba(238, 238, 210, 0.1);
+  border-radius: 8px;
+  background: rgba(47, 44, 41, 0.72);
+  color: var(--text);
+  font: inherit;
+  font-size: 0.9rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.pv-chip:hover {
+  border-color: rgba(238, 238, 210, 0.28);
+}
+
+.pv-chip-active {
+  border-color: rgba(92, 170, 240, 0.7);
+  background: rgba(92, 170, 240, 0.2);
+}
+
+/* The move list: pairs, class colours, Book tags and the out-of-book divider. */
+.move-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.move-list-rows {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.move-list-row {
+  display: grid;
+  grid-template-columns: 30px minmax(0, 1fr) minmax(0, 1fr);
+  gap: 4px;
+  align-items: center;
+}
+
+.move-list-number {
+  color: var(--muted);
+  font-size: 0.85rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.move-cell {
+  min-width: 0;
+  min-height: 34px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 8px;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  font-size: 0.92rem;
+  text-align: left;
+  cursor: pointer;
+}
+
+.move-cell:hover {
+  background: rgba(238, 238, 210, 0.06);
+}
+
+.move-cell-active {
+  border-color: rgba(129, 182, 76, 0.5);
+  background: rgba(129, 182, 76, 0.16);
+}
+
+.move-cell-san {
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.move-cell:not(.move-cell-owner) .move-cell-san {
+  font-weight: 500;
+  color: var(--muted);
+}
+
+.move-cell-inaccuracy .move-cell-san {
+  color: var(--amber);
+}
+
+.move-cell-mistake .move-cell-san {
+  color: #ec8a3f;
+}
+
+.move-cell-blunder .move-cell-san {
+  color: var(--rose);
+}
+
+.move-cell-book {
+  margin-left: auto;
+  padding: 1px 6px;
+  border-radius: 999px;
+  background: rgba(238, 238, 210, 0.1);
+  color: var(--muted);
+  font-size: 0.66rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.move-list-divider {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 6px 0;
+  color: var(--amber);
+  font-size: 0.82rem;
+  font-weight: 700;
+}
+
+.move-list-divider::before,
+.move-list-divider::after {
+  content: "";
+  flex: 1 1 16px;
+  height: 1px;
+  background: rgba(240, 180, 93, 0.4);
+}
+
+.move-list-divider span {
+  flex: 0 1 auto;
+  text-align: center;
+}
+
+.move-list-later {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 12px;
+  margin: 4px 0 0;
+  color: rgba(184, 179, 167, 0.55);
+  font-size: 0.85rem;
+}
+
+.move-list-later-moves {
+  overflow-wrap: anywhere;
+}
+
+.move-list-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+/* Retry. */
+.review-retry-checking {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.review-retry-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.review-retry-actions .review-action-chip {
+  flex: 0 1 auto;
+  padding: 10px 14px;
+}
+
+.spin {
+  animation: review-spin 900ms linear infinite;
+}
+
+@keyframes review-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .spin {
+    animation: none;
+  }
+}
+
+.review-keys {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.8rem;
+}
+
+/* Below 760px the eval bar is a thin strip above the board, White's end on White's side (left
+   when the board is oriented to White). */
+@media (max-width: 760px) {
+  .review-board-row {
+    flex-direction: column;
+    gap: 6px;
+  }
+
+  .eval-bar {
+    flex: 0 0 14px;
+    width: 100%;
+    height: 14px;
+    border-radius: 4px;
+  }
+
+  .eval-bar-fill {
+    top: 0;
+    bottom: 0;
+    left: 0;
+    right: auto;
+    height: auto;
+    width: var(--white-share, 50%);
+  }
+
+  .eval-bar-oriented-black .eval-bar-fill {
+    left: auto;
+    right: 0;
+  }
+
+  .eval-bar-label {
+    top: 0;
+    bottom: 0;
+    left: auto;
+    right: auto;
+    line-height: 14px;
+    font-size: 0.6rem;
+  }
+
+  .eval-bar-oriented-white .eval-bar-label-white,
+  .eval-bar-oriented-black .eval-bar-label-black {
+    top: 0;
+    bottom: 0;
+    left: 6px;
+  }
+
+  .eval-bar-oriented-white .eval-bar-label-black,
+  .eval-bar-oriented-black .eval-bar-label-white {
+    top: 0;
+    bottom: 0;
+    right: 6px;
+  }
+
+  .review-keys {
+    display: none;
+  }
+}

@@ -9,7 +9,7 @@ import {
   type ReactNode
 } from "react";
 import { JOB_LOST_MESSAGE, isJobActive } from "../../shared/jobPolling";
-import type { AnalysisStatus, ImportStatus, JobState, ReviewSummary, SyncJobResult } from "../../shared/types";
+import type { AnalysisStatus, ImportStatus, JobState, SyncJobResult } from "../../shared/types";
 import {
   ApiError,
   fetchActiveJobs,
@@ -40,11 +40,6 @@ interface WorkspaceContextValue {
   /** Starts or resumes the engine check; rejects with ApiError code "on-battery" unless allowBattery. */
   startBackfill: (allowBattery?: boolean) => Promise<void>;
   pauseBackfill: () => Promise<void>;
-  // Reviews live in memory for this session only; the server caches them on disk.
-  reviewCache: Record<string, ReviewSummary>;
-  setReview: (gameId: string, review: ReviewSummary) => void;
-  reviewJobs: Record<string, JobState<ReviewSummary> | null>;
-  setReviewJob: (gameId: string, job: JobState<ReviewSummary> | null) => void;
 }
 
 const SYNC_JOB_KEY = "chess-analyst-sync-job";
@@ -108,8 +103,6 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
   const [statusError, setStatusError] = useState<string | null>(null);
   const [syncJob, setSyncJob] = useState<JobState<SyncJobResult> | null>(null);
   const [dataVersion, setDataVersion] = useState(0);
-  const [reviewCache, setReviewCache] = useState<Record<string, ReviewSummary>>({});
-  const [reviewJobs, setReviewJobs] = useState<Record<string, JobState<ReviewSummary> | null>>({});
   const startingSync = useRef(false);
   const [analysis, setAnalysis] = useState<AnalysisStatus | null>(null);
   const [analysisError, setAnalysisError] = useState<string | null>(null);
@@ -237,14 +230,6 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
     setAnalysisNudge((nudge) => nudge + 1);
   }, []);
 
-  const setReview = useCallback((gameId: string, review: ReviewSummary) => {
-    setReviewCache((current) => ({ ...current, [gameId]: review }));
-  }, []);
-
-  const setReviewJob = useCallback((gameId: string, job: JobState<ReviewSummary> | null) => {
-    setReviewJobs((current) => ({ ...current, [gameId]: job }));
-  }, []);
-
   const value = useMemo<WorkspaceContextValue>(
     () => ({
       status,
@@ -256,11 +241,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
       analysis,
       analysisError,
       startBackfill,
-      pauseBackfill,
-      reviewCache,
-      setReview,
-      reviewJobs,
-      setReviewJob
+      pauseBackfill
     }),
     [
       status,
@@ -272,11 +253,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
       analysis,
       analysisError,
       startBackfill,
-      pauseBackfill,
-      reviewCache,
-      setReview,
-      reviewJobs,
-      setReviewJob
+      pauseBackfill
     ]
   );
 
