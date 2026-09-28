@@ -59,6 +59,7 @@ function OwnerMove({ node, selected, onSelect }: { node: RepNodeView; selected: 
   return (
     <button
       type="button"
+      data-epd={node.epd}
       className={`rep-own${selected === node.epd ? " is-selected" : ""}${entry ? "" : " rep-own-missing"}`}
       onClick={() => onSelect(node.epd)}
       aria-current={selected === node.epd ? "true" : undefined}
@@ -392,6 +393,14 @@ export function RepertoirePage() {
           return { ...current, [color]: next };
         });
       }
+      // Bring the position into view: the panel on narrow screens (it sits above the lines), else the row.
+      window.requestAnimationFrame(() => {
+        const target =
+          window.innerWidth <= 1000
+            ? document.querySelector(".rep-side")
+            : [...document.querySelectorAll<HTMLElement>(".rep-own")].find((element) => element.dataset.epd === epd);
+        target?.scrollIntoView({ block: window.innerWidth <= 1000 ? "start" : "center", behavior: "smooth" });
+      });
     },
     [byEpd, color, open, view]
   );

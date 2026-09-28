@@ -213,7 +213,6 @@
 
 .rep-row {
   display: flex;
-  flex-wrap: wrap;
   align-items: center;
   gap: 6px;
   min-height: 34px;
@@ -243,12 +242,15 @@
 }
 
 .rep-opp {
+  flex: 0 0 auto;
   color: var(--muted);
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
 }
 
 .rep-own {
+  flex: 0 1 auto;
+  min-width: 0;
   display: inline-flex;
   flex-wrap: wrap;
   align-items: center;

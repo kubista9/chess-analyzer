@@ -419,7 +419,7 @@ export function ExplorerPage() {
                 <p className="rep-node-note">
                   {repEntry ? (
                     <>
-                      Repertoire: <strong>{moveLabel(ply, repEntry.san)}</strong> ({tagText(repTag(repEntry))}
+                      Repertoire: <strong>{moveLabel(ply, repEntry.san)}</strong> ({tagText(repTag(repEntry), repEntry.ply)}
                       {repEntry.status === "needs-review" ? ", needs review" : ""}).{" "}
                     </>
                   ) : (

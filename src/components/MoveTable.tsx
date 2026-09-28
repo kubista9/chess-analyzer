@@ -244,7 +244,7 @@ export function MoveTable({ node, color, ply, selected, onSelect, onFollow, onSh
                           type="button"
                           className="rep-set"
                           disabled={repertoire.busy}
-                          title={`Make ${moveLabel(ply, edge.san)} your repertoire move here`}
+                          aria-label={`Set as my move: ${moveLabel(ply, edge.san)}`}
                           onClick={(event) => {
                             event.stopPropagation();
                             repertoire.onSet(edge);
