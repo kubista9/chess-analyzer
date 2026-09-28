@@ -504,3 +504,36 @@
   background: rgba(129, 182, 76, 0.08);
   color: var(--muted);
 }
+
+/* P7b: the owner's note on an entry. */
+.rep-note {
+  display: grid;
+  gap: 6px;
+  margin-top: 10px;
+}
+
+.rep-note label {
+  color: var(--muted);
+  font-size: 0.8rem;
+  font-weight: 700;
+}
+
+.rep-note textarea {
+  width: 100%;
+  min-height: 52px;
+  padding: 8px 10px;
+  border: 1px solid var(--panel-line);
+  border-radius: 10px;
+  background: var(--surface);
+  color: var(--text);
+  font: inherit;
+  resize: vertical;
+}
+
+.rep-note button {
+  justify-self: start;
+}
+
+.rep-alt-link {
+  text-decoration: none;
+}

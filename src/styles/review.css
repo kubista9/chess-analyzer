@@ -403,3 +403,11 @@
 .move-cell-rep-unprepared {
   box-shadow: inset 0 -2px 0 #a78bfa;
 }
+
+/* P7b: the callout's link to the alternatives panel. */
+.review-alt-link {
+  color: var(--lime);
+  font-weight: 700;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}

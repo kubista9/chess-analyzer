@@ -1,4 +1,5 @@
-import { ArrowDownRight, ArrowRight, ArrowUpRight, BookmarkCheck, BookmarkPlus, ListVideo, Star } from "lucide-react";
+import { Link } from "react-router-dom";
+import { ArrowDownRight, ArrowRight, ArrowUpRight, BookmarkCheck, BookmarkPlus, Lightbulb, ListVideo, Star } from "lucide-react";
 import { formatEval } from "../../shared/eval";
 import { moveSignals, trendDirection, type MoveSignal } from "../../shared/moveSignals";
 import type { WhiteEvalPoint } from "../../shared/openingAnalysis";
@@ -142,7 +143,7 @@ export interface MoveTableProps {
   /** Plies per game in the tree. */
   maxPly: number;
   /** At the owner's positions: the repertoire's move here (null = none yet), and how to set one. */
-  repertoire?: { uci: string | null; busy: boolean; onSet: (edge: TreeEdgeView) => void };
+  repertoire?: { uci: string | null; busy: boolean; onSet: (edge: TreeEdgeView) => void; alternativesHref: (edge: TreeEdgeView) => string };
 }
 
 /** The moves played from one position: frequency, results, score vs Elo, trend, think time, book. */
@@ -253,6 +254,17 @@ export function MoveTable({ node, color, ply, selected, onSelect, onFollow, onSh
                           <BookmarkPlus size={14} aria-hidden="true" /> Set as my move
                         </button>
                       )
+                    ) : null}
+                    {repertoire && node.ownerToMove ? (
+                      <Link
+                        className="rep-set rep-alt-link"
+                        to={repertoire.alternativesHref(edge)}
+                        aria-label={`See alternatives to ${moveLabel(ply, edge.san)}`}
+                        title="What else to play here, and why"
+                        onClick={(event) => event.stopPropagation()}
+                      >
+                        <Lightbulb size={14} aria-hidden="true" /> Alternatives
+                      </Link>
                     ) : null}
                   </div>
                   <BookName edge={edge} />

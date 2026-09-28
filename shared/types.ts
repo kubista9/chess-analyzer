@@ -1,7 +1,7 @@
 import type { IMPORTED_TIME_CLASSES, MOVE_CATEGORIES, SKIP_REASONS } from "./constants.js";
 import type { FixItem, ResultsLeakItem } from "./fixList.js";
 import type { TreeEdge, TreeNode } from "./openingTree.js";
-import type { ColorRepertoireView, RepEntry } from "./repertoire.js";
+import type { ColorRepertoireView, CoverageStat, RepEntry } from "./repertoire.js";
 import type { SeedDiff } from "./repertoireSeed.js";
 import type { ColorSnapshot } from "./repertoireSnapshot.js";
 import type { EdgeEngine, NodeEngine } from "./treeEngine.js";
@@ -506,6 +506,12 @@ export interface RepertoireResponse extends RepertoireScope {
   black: ColorRepertoireView;
   /** False without an engine config: losses are unknown. */
   engine: boolean;
+}
+
+/** GET /api/repertoire/coverage: Home's repertoire-coverage line. */
+export interface RepertoireCoverageResponse extends RepertoireScope {
+  white: { entries: number; needsReview: number; coverage: CoverageStat[] };
+  black: { entries: number; needsReview: number; coverage: CoverageStat[] };
 }
 
 /** POST /api/repertoire/seed: what a (re-)seed changes; `applied` when it was written. */

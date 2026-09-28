@@ -1,5 +1,6 @@
 import { Link } from "react-router-dom";
-import { ArrowDownRight, ArrowRight, ArrowUpRight, Compass } from "lucide-react";
+import { ArrowDownRight, ArrowRight, ArrowUpRight, Compass, Lightbulb } from "lucide-react";
+import { alternativesHref, explorerHref } from "../utils/links";
 import type { EngineHoleItem, FixItem as AnyFixItem, ResultsLeakItem as FixItem, LeakEngineStats, UnpreparedItem } from "../../shared/fixList";
 import type { PlayerColor } from "../../shared/types";
 import type { ExplorerFilters } from "../hooks/useFilters";
@@ -7,17 +8,7 @@ import { formatCount, formatDay, formatDelta, formatPoints, pct, pctOne } from "
 import { ScoreWhisker, moveLabel } from "./MoveTable";
 import { coverageText } from "./NodeEngine";
 
-/** The Explorer at `moves`, with the row of `select` (a UCI move from there) highlighted. */
-export function explorerHref(color: PlayerColor, moves: readonly string[], select?: string): string {
-  const params = new URLSearchParams({ color });
-  if (moves.length) {
-    params.set("moves", moves.join(","));
-  }
-  if (select) {
-    params.set("select", select);
-  }
-  return `/explorer?${params}`;
-}
+export { explorerHref } from "../utils/links";
 
 /** "As Black · last 6 months · blitz + rapid · recent games count more". */
 export function scopeText(filters: ExplorerFilters, halfLifeDays: number | null | undefined): string {
@@ -144,6 +135,9 @@ function LeakCard({
       </ul>
 
       <footer className="fix-actions">
+        <Link className="primary-button fix-explore" to={alternativesHref(item.color, parentMoves, lastUci)}>
+          <Lightbulb size={16} aria-hidden="true" /> Try this instead
+        </Link>
         <Link className="secondary-button fix-explore" to={explorerHref(item.color, parentMoves, lastUci)}>
           <Compass size={16} aria-hidden="true" /> Open in Explorer
         </Link>
@@ -266,6 +260,9 @@ function HoleCard({ item, rank }: { item: EngineHoleItem; rank?: number }) {
       </ul>
 
       <footer className="fix-actions">
+        <Link className="primary-button fix-explore" to={alternativesHref(item.color, item.moves.slice(0, -1), item.moves[ply - 1])}>
+          <Lightbulb size={16} aria-hidden="true" /> Try this instead
+        </Link>
         <Link className="secondary-button fix-explore" to={explorerHref(item.color, item.moves.slice(0, -1), item.moves[ply - 1])}>
           <Compass size={16} aria-hidden="true" /> Open in Explorer
         </Link>
@@ -335,10 +332,13 @@ function UnpreparedCard({ item, rank }: { item: UnpreparedItem; rank?: number })
       </dl>
 
       <ul className="fix-notes">
-        <li>Your repertoire has no move after {reply}. Pick one in the Explorer with “Set as my move”.</li>
+        <li>Your repertoire has no move after {reply}. See the suggestions, or pick one in the Explorer with “Set as my move”.</li>
       </ul>
 
       <footer className="fix-actions">
+        <Link className="primary-button fix-explore" to={alternativesHref(item.color, item.moves)}>
+          <Lightbulb size={16} aria-hidden="true" /> See suggestions
+        </Link>
         <Link className="secondary-button fix-explore" to={explorerHref(item.color, item.moves)}>
           <Compass size={16} aria-hidden="true" /> Open in Explorer
         </Link>

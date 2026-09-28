@@ -12,6 +12,7 @@ import type {
   RepertoireScope,
   SnapshotResponse,
   QueryWindow,
+  RepertoireCoverageResponse,
   RepertoireResponse,
   SeedResponse,
   TreeBreadcrumb,
@@ -547,6 +548,19 @@ export function createApiRouter(deps: ApiDeps): express.Router {
   router.get("/repertoire", async (request, response) => {
     const { scope, engine, white, black } = await repertoireViews(repertoireQuerySchema.parse(request.query));
     response.json({ ...scope, white, black, engine: engine !== null } satisfies RepertoireResponse);
+  });
+
+  // Home's coverage line: per colour, the entries and the share of games still in the repertoire.
+  router.get("/repertoire/coverage", (request, response) => {
+    const { built, scope } = bothTrees(repertoireQuerySchema.parse(request.query));
+    const entries = loadRepertoire(deps.db(), deps.owner);
+    const side = (colorBuilt: BuiltTree) => {
+      const color = colorBuilt.tree.color;
+      const stats = repertoireStats(color, colorBuilt.games, entries[color], { now: colorBuilt.tree.now, halfLifeDays: colorBuilt.tree.halfLifeDays });
+      const all = [...entries[color].values()];
+      return { entries: all.length, needsReview: all.filter((entry) => entry.status === "needs-review").length, coverage: stats.coverage };
+    };
+    response.json({ ...scope, white: side(built.white), black: side(built.black) } satisfies RepertoireCoverageResponse);
   });
 
   // Seeds (or re-seeds) the repertoire from the games: a dry-run diff, written with {apply: true}.

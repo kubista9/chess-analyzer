@@ -1,13 +1,15 @@
-import { Fragment, useCallback, useMemo, useState } from "react";
+import { Fragment, useCallback, useEffect, useMemo, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import { Chessboard } from "react-chessboard";
 import type { Arrow } from "react-chessboard/dist/chessboard/types";
-import { ChevronDown, ChevronRight, Compass, Download, Lock, LockOpen, RefreshCw, Star } from "lucide-react";
+import { ChevronDown, ChevronRight, Compass, Download, Lightbulb, Lock, LockOpen, RefreshCw, Star, Trash2 } from "lucide-react";
 import type { ColorRepertoireView, RepNodeView } from "../../shared/repertoire";
 import type { SeedChange } from "../../shared/repertoireSeed";
 import { formatLine } from "../../shared/openingTree";
 import type { PlayerColor, SeedResponse } from "../../shared/types";
-import { fetchRepertoire, putRepEntry, repertoireExportHref, seedRepertoire, type RepEntryEdit, type RepertoireQuery } from "../api/client";
+import { deleteRepEntry, fetchRepertoire, putRepEntry, repertoireExportHref, seedRepertoire, type RepEntryEdit, type RepertoireQuery } from "../api/client";
+import { alternativesHref } from "../utils/links";
+import type { RepEntry } from "../../shared/repertoire";
 import { boardColors, boardTheme } from "../components/boardTheme";
 import { FilterBar } from "../components/FilterBar";
 import { explorerHref, scopeText } from "../components/FixCard";
@@ -149,14 +151,18 @@ function NodePanel({
   node,
   color,
   busy,
-  onEdit
+  onEdit,
+  onRemove
 }: {
   node: RepNodeView;
   color: PlayerColor;
   busy: boolean;
   onEdit: (edit: Omit<RepEntryEdit, "color" | "epd">) => void;
+  onRemove: () => void;
 }) {
   const entry = node.entry;
+  const [note, setNote] = useState(entry?.note ?? "");
+  useEffect(() => setNote(entry?.note ?? ""), [entry?.note, node.epd]);
   const ply = node.ply + 1;
   const arrows: Arrow[] = entry ? [[entry.uci.slice(0, 2), entry.uci.slice(2, 4), boardColors.arrow] as Arrow] : [];
   return (
@@ -203,12 +209,38 @@ function NodePanel({
             <Link className="secondary-button" to={explorerHref(color, node.moves)}>
               <Compass size={15} aria-hidden="true" /> Explorer
             </Link>
+            <Link className="secondary-button" to={alternativesHref(color, node.moves, entry.uci)}>
+              <Lightbulb size={15} aria-hidden="true" /> See alternatives
+            </Link>
+            <button type="button" className="secondary-button" disabled={busy} onClick={onRemove} title="Remove this move from the repertoire (a re-seed may add a move here again)">
+              <Trash2 size={15} aria-hidden="true" /> Unset
+            </button>
           </div>
+          <form
+            className="rep-note"
+            onSubmit={(event) => {
+              event.preventDefault();
+              onEdit({ note: note.trim() ? note.trim() : null });
+            }}
+          >
+            <label htmlFor="rep-note-input">Your note</label>
+            <textarea id="rep-note-input" rows={2} maxLength={500} value={note} placeholder="e.g. the plan after 3.Nc3" onChange={(event) => setNote(event.target.value)} />
+            <button type="submit" className="secondary-button" disabled={busy || note.trim() === (entry.note ?? "")}>
+              Save note
+            </button>
+          </form>
         </div>
       ) : (
-        <p className="rep-why">
-          No repertoire move here yet ({formatCount(node.n)} game{node.n === 1 ? "" : "s"} reached it). Pick one below.
-        </p>
+        <>
+          <p className="rep-why">
+            No repertoire move here yet ({formatCount(node.n)} game{node.n === 1 ? "" : "s"} reached it). Pick one below.
+          </p>
+          <div className="rep-actions">
+            <Link className="secondary-button" to={alternativesHref(color, node.moves)}>
+              <Lightbulb size={15} aria-hidden="true" /> See suggestions
+            </Link>
+          </div>
+        </>
       )}
 
       {node.options.length ? (
@@ -427,7 +459,9 @@ export function RepertoirePage() {
         setNotice(
           change.uci
             ? `${moveLabel(node.ply + 1, entry.san)} is now your move here (locked).`
-            : change.status === "active"
+            : change.note !== undefined
+              ? "Note saved."
+              : change.status === "active"
               ? `${moveLabel(node.ply + 1, entry.san)} accepted and locked.`
               : entry.locked
                 ? "Locked: a re-seed will not change it."
@@ -436,6 +470,25 @@ export function RepertoirePage() {
         setVersion((value) => value + 1);
       } catch (caught) {
         setNotice(`Could not save: ${caught instanceof Error ? caught.message : String(caught)}`);
+      } finally {
+        setBusy(false);
+      }
+    },
+    [color]
+  );
+
+  const remove = useCallback(
+    async (entry: Pick<RepEntry, "epd" | "san" | "ply">) => {
+      if (!window.confirm(`Remove ${moveLabel(entry.ply, entry.san)} from your repertoire?`)) {
+        return;
+      }
+      setBusy(true);
+      try {
+        await deleteRepEntry(color, entry.epd);
+        setNotice(`${moveLabel(entry.ply, entry.san)} removed. A re-seed may suggest a move here again.`);
+        setVersion((value) => value + 1);
+      } catch (caught) {
+        setNotice(`Could not remove it: ${caught instanceof Error ? caught.message : String(caught)}`);
       } finally {
         setBusy(false);
       }
@@ -552,7 +605,13 @@ export function RepertoirePage() {
 
           <section className="panel home-card rep-side" aria-label="Position">
             {selectedNode ? (
-              <NodePanel node={selectedNode} color={color} busy={busy} onEdit={(change) => edit(selectedNode, change)} />
+              <NodePanel
+                node={selectedNode}
+                color={color}
+                busy={busy}
+                onEdit={(change) => edit(selectedNode, change)}
+                onRemove={() => selectedNode.entry && remove(selectedNode.entry)}
+              />
             ) : (
               <p className="home-empty">Select a move.</p>
             )}
@@ -566,6 +625,46 @@ export function RepertoirePage() {
             <h2>Needs review · {formatCount(view.needsReview)}</h2>
           </div>
           <ReviewQueue view={view} onSelect={select} />
+        </section>
+      ) : null}
+
+      {view && view.offTree.length ? (
+        <section className="panel home-card" aria-label="Unreachable moves">
+          <div className="home-card-head">
+            <h2>Not reached by the lines · {formatCount(view.offTree.length)}</h2>
+          </div>
+          <p className="cell-sub">
+            Moves kept in your repertoire at positions the lines above no longer reach (for example after you changed an earlier
+            move). They still count if a game transposes there.
+          </p>
+          <table className="rep-table">
+            <thead>
+              <tr>
+                <th scope="col">Move</th>
+                <th scope="col">Source</th>
+                <th scope="col">Note</th>
+                <th scope="col">
+                  <span className="visually-hidden">Action</span>
+                </th>
+              </tr>
+            </thead>
+            <tbody>
+              {view.offTree.map((entry) => (
+                <tr key={entry.epd}>
+                  <td>
+                    {moveLabel(entry.ply, entry.san)} <RepChips entry={entry} compact />
+                  </td>
+                  <td className="cell-sub">{entry.source === "edited" ? "edited" : entry.source === "seed-engine" ? "suggested" : "from your games"}</td>
+                  <td className="cell-sub">{entry.note ?? "–"}</td>
+                  <td>
+                    <button type="button" className="rep-set" disabled={busy} onClick={() => remove(entry)}>
+                      <Trash2 size={13} aria-hidden="true" /> Remove
+                    </button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
         </section>
       ) : null}
 

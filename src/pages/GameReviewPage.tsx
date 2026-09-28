@@ -28,7 +28,7 @@ import { PvLine } from "../components/PvLine";
 import { ReviewBoard } from "../components/ReviewBoard";
 import { useJobPolling } from "../hooks/useJobPolling";
 import { useStoreQuery } from "../hooks/useStoreQuery";
-import { explorerHref } from "../components/FixCard";
+import { alternativesHref, explorerHref } from "../utils/links";
 import "../styles/review.css";
 import "../styles/repertoire.css";
 
@@ -556,6 +556,13 @@ export function GameReviewPage() {
                     </div>
                     <h2>{callout.headline}</h2>
                     {callout.detail ? <p>{callout.detail}</p> : null}
+                    {ply.owner ? (
+                      <p>
+                        <Link className="review-alt-link" to={alternativesHref(review.color, plies.slice(0, ply.ply - 1).map((item) => item.uci), ply.uci)}>
+                          See alternatives to {moveLabel(ply.ply, ply.san)}
+                        </Link>
+                      </p>
+                    ) : null}
                     {mode === "best" && alternatives.length ? (
                       <p>
                         Other engine moves:{" "}
@@ -715,7 +722,10 @@ function RepertoireNote({
         played <strong>{moveLabel(deviation.ply, deviation.played.san)}</strong>, repertoire says{" "}
         <strong>{moveLabel(deviation.ply, deviation.expected.san)}</strong>.{" "}
         {here ? (
-          <Link to={`/repertoire?color=${color}`}>Open the repertoire</Link>
+          <>
+            <Link to={`/repertoire?color=${color}`}>Open the repertoire</Link> ·{" "}
+            <Link to={alternativesHref(color, ucis.slice(0, deviation.ply - 1), deviation.played.uci)}>See alternatives</Link>
+          </>
         ) : (
           <button type="button" onClick={() => onSelect(deviation.ply)}>
             Go there
@@ -731,7 +741,10 @@ function RepertoireNote({
         Opponent move you have not prepared: <strong>{moveLabel(unprepared.ply, unprepared.opp.san)}</strong>. Your repertoire has no
         answer to it yet.{" "}
         {here ? (
-          <Link to={explorerHref(color, ucis.slice(0, unprepared.ply))}>Pick one in the Explorer</Link>
+          <>
+            <Link to={alternativesHref(color, ucis.slice(0, unprepared.ply))}>See suggestions</Link> ·{" "}
+            <Link to={explorerHref(color, ucis.slice(0, unprepared.ply))}>Pick one in the Explorer</Link>
+          </>
         ) : (
           <button type="button" onClick={() => onSelect(unprepared.ply)}>
             Go there

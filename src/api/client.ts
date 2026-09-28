@@ -5,6 +5,7 @@ import type {
   ImportStatus,
   JobState,
   PlayerColor,
+  RepertoireCoverageResponse,
   RepertoireResponse,
   SeedResponse,
   SnapshotResponse,
@@ -15,6 +16,7 @@ import type {
 } from "../../shared/types";
 import type { GameAnalysisResponse, RetryRequest, RetryResult } from "../../shared/review";
 import type { RepEntry, RepStatus } from "../../shared/repertoire";
+import type { AlternativesResponse } from "../../shared/alternatives";
 import type { GameWindow } from "../../shared/window";
 
 /** A non-2xx API answer. `status` lets the polling loop tell a lost job (404) from a blip. */
@@ -141,6 +143,8 @@ export interface RepEntryEdit {
   note?: string | null;
   /** Required when the entry is new. */
   ply?: number;
+  /** The move this replaces and why (recorded in `replaced` when the move changes). */
+  replaces?: { uci: string; loss?: number | null; reason?: string };
 }
 
 /** Sets the owner's move at a position (edited, locked) or changes an entry's lock, status or note. */
@@ -150,6 +154,16 @@ export function putRepEntry(edit: RepEntryEdit): Promise<{ entry: RepEntry }> {
 
 export function deleteRepEntry(color: PlayerColor, epd: string): Promise<void> {
   return request<void>(`/api/repertoire/entry${query({ color, epd })}`, { method: "DELETE" });
+}
+
+/** The ranked alternatives at an owner position; a 202 carries a preliminary ranking and the deep-search job. */
+export function fetchAlternatives(tree: TreeQuery, moves: readonly string[], uci: string | null, signal?: AbortSignal): Promise<AlternativesResponse> {
+  return request<AlternativesResponse>(`/api/alternatives${query({ ...treeParams(tree, moves), uci: uci ?? undefined })}`, { signal });
+}
+
+/** Coverage of the repertoire per colour (Home's line). */
+export function fetchRepertoireCoverage(filters: RepertoireQuery, signal?: AbortSignal): Promise<RepertoireCoverageResponse> {
+  return request<RepertoireCoverageResponse>(`/api/repertoire/coverage${query(repertoireParams(filters))}`, { signal });
 }
 
 /** The PGN download of one colour's repertoire. */

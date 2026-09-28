@@ -14,6 +14,7 @@ import { FilterBar } from "../components/FilterBar";
 import { GamesDrawer, type DrawerMove } from "../components/GamesDrawer";
 import { MoveTable, moveLabel } from "../components/MoveTable";
 import { NodeEngine } from "../components/NodeEngine";
+import { alternativesHref } from "../components/AlternativesPanel";
 import { useFilters } from "../hooks/useFilters";
 import { useStoreQuery } from "../hooks/useStoreQuery";
 import { useWorkspace } from "../hooks/useWorkspace";
@@ -425,7 +426,8 @@ export function ExplorerPage() {
                   ) : (
                     "No repertoire move here yet. "
                   )}
-                  <Link to={`/repertoire?color=${color}`}>Open the repertoire</Link>
+                  <Link to={`/repertoire?color=${color}`}>Open the repertoire</Link> ·{" "}
+                  <Link to={alternativesHref(color, line.moves, repEntry?.uci ?? null)}>See alternatives</Link>
                 </p>
               ) : null}
             </div>
@@ -474,7 +476,9 @@ export function ExplorerPage() {
             weighted={weighted}
             maxPly={data?.maxPly ?? OPENING_PLY_LIMIT}
             repertoire={
-              node.ownerToMove && ply <= REPERTOIRE_MAX_PLY ? { uci: repEntry?.uci ?? null, busy: repBusy || !fresh, onSet: setAsMyMove } : undefined
+              node.ownerToMove && ply <= REPERTOIRE_MAX_PLY
+                ? { uci: repEntry?.uci ?? null, busy: repBusy || !fresh, onSet: setAsMyMove, alternativesHref: (edge) => alternativesHref(color, line.moves, edge.uci) }
+                : undefined
             }
           />
         ) : (

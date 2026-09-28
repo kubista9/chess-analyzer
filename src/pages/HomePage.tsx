@@ -1,5 +1,6 @@
 import { useMemo } from "react";
-import { fetchFixList, fetchSnapshot, type RepertoireQuery } from "../api/client";
+import { fetchFixList, fetchRepertoireCoverage, fetchSnapshot, type RepertoireQuery } from "../api/client";
+import { CoverageLine } from "../components/CoverageLine";
 import { scopeText } from "../components/FixCard";
 import { EngineCard } from "../components/EngineCard";
 import { LeaksCard } from "../components/LeaksCard";
@@ -20,6 +21,7 @@ export function HomePage() {
   );
   const fixList = useStoreQuery((signal) => fetchFixList(query, signal), [query, dataVersion]);
   const snapshot = useStoreQuery((signal) => fetchSnapshot(query, signal), [query, dataVersion]);
+  const coverage = useStoreQuery((signal) => fetchRepertoireCoverage(query, signal), [query, dataVersion]);
   const leakIds = useMemo(() => new Set(fixList.data?.items.map((item) => item.id) ?? []), [fixList.data]);
   const halfLife = fixList.data?.halfLifeDays ?? snapshot.data?.halfLifeDays;
 
@@ -33,6 +35,7 @@ export function HomePage() {
         </p>
       ) : null}
       <LeaksCard data={fixList.data} error={fixList.error} />
+      <CoverageLine data={coverage.data} error={coverage.error} />
       <RepertoireCard data={snapshot.data} error={snapshot.error} leakIds={leakIds} />
     </div>
   );
