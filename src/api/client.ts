@@ -5,6 +5,8 @@ import type {
   ImportStatus,
   JobState,
   PlayerColor,
+  RepertoireResponse,
+  SeedResponse,
   SnapshotResponse,
   SyncJobResult,
   TimeClass,
@@ -12,6 +14,7 @@ import type {
   TreeResponse
 } from "../../shared/types";
 import type { GameAnalysisResponse, RetryRequest, RetryResult } from "../../shared/review";
+import type { RepEntry, RepStatus } from "../../shared/repertoire";
 import type { GameWindow } from "../../shared/window";
 
 /** A non-2xx API answer. `status` lets the polling loop tell a lost job (404) from a blip. */
@@ -39,7 +42,8 @@ async function request<T>(input: string, init?: RequestInit): Promise<T> {
     throw new ApiError(response.status, payload?.error ?? `Request failed (${response.status})`, payload?.code);
   }
 
-  return response.json() as Promise<T>;
+  // 204 No Content (e.g. DELETE) has no body.
+  return (response.status === 204 ? undefined : response.json()) as Promise<T>;
 }
 
 function query(params: Record<string, string | undefined>): string {
@@ -115,6 +119,42 @@ export function fetchFixList(filters: RepertoireQuery, signal?: AbortSignal): Pr
 /** The opponent's main moves and the owner's answers, per colour. */
 export function fetchSnapshot(filters: RepertoireQuery, signal?: AbortSignal): Promise<SnapshotResponse> {
   return request<SnapshotResponse>(`/api/snapshot${query(repertoireParams(filters))}`, { signal });
+}
+
+/** Both colours' repertoire lines, coverage and tables. */
+export function fetchRepertoire(filters: RepertoireQuery, signal?: AbortSignal): Promise<RepertoireResponse> {
+  return request<RepertoireResponse>(`/api/repertoire${query(repertoireParams(filters))}`, { signal });
+}
+
+/** A (re-)seed of the repertoire from the games: a dry-run diff, written when `apply`. */
+export function seedRepertoire(filters: RepertoireQuery, apply: boolean): Promise<SeedResponse> {
+  const { window, tc, hl } = repertoireParams(filters);
+  return request<SeedResponse>("/api/repertoire/seed", { method: "POST", body: JSON.stringify({ apply, window, tc, hl }) });
+}
+
+export interface RepEntryEdit {
+  color: PlayerColor;
+  epd: string;
+  uci?: string;
+  locked?: boolean;
+  status?: RepStatus;
+  note?: string | null;
+  /** Required when the entry is new. */
+  ply?: number;
+}
+
+/** Sets the owner's move at a position (edited, locked) or changes an entry's lock, status or note. */
+export function putRepEntry(edit: RepEntryEdit): Promise<{ entry: RepEntry }> {
+  return request<{ entry: RepEntry }>("/api/repertoire/entry", { method: "PUT", body: JSON.stringify(edit) });
+}
+
+export function deleteRepEntry(color: PlayerColor, epd: string): Promise<void> {
+  return request<void>(`/api/repertoire/entry${query({ color, epd })}`, { method: "DELETE" });
+}
+
+/** The PGN download of one colour's repertoire. */
+export function repertoireExportHref(color: PlayerColor, filters: RepertoireQuery): string {
+  return `/api/repertoire/export${query({ color, ...repertoireParams(filters) })}`;
 }
 
 /** The opening review from the cache; a partial one comes with the job that completes it. */

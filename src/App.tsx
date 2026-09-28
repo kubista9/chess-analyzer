@@ -5,6 +5,7 @@ import { ExplorerPage } from "./pages/ExplorerPage";
 import { GameReviewPage } from "./pages/GameReviewPage";
 import { HomePage } from "./pages/HomePage";
 import { LeaksPage } from "./pages/LeaksPage";
+import { RepertoirePage } from "./pages/RepertoirePage";
 
 // Routes of removed pages (the Opening Report, Game History and older ones) lead to the Explorer.
 const LEGACY_ROUTES = ["/openings", "/history", "/dashboard", "/training", "/review"];
@@ -18,6 +19,7 @@ export default function App() {
             <Route path="/" element={<HomePage />} />
             <Route path="/explorer" element={<ExplorerPage />} />
             <Route path="/leaks" element={<LeaksPage />} />
+            <Route path="/repertoire" element={<RepertoirePage />} />
             <Route path="/review/:gameId" element={<GameReviewPage />} />
             {LEGACY_ROUTES.map((path) => (
               <Route key={path} path={path} element={<Navigate to="/explorer" replace />} />

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { useParams, useSearchParams } from "react-router-dom";
+import { Link, useParams, useSearchParams } from "react-router-dom";
 import { Chess, type Square } from "chess.js";
 import type { Arrow } from "react-chessboard/dist/chessboard/types";
 import { ChevronLeft, ChevronRight, Eye, FlipVertical2, LoaderCircle, RotateCcw, Sparkles } from "lucide-react";
@@ -15,7 +15,8 @@ import {
   openingPly,
   type OpeningReview,
   type RetryResult,
-  type ReviewPly
+  type ReviewPly,
+  type ReviewRepertoire
 } from "../../shared/review";
 import type { GameRecord, JobState, PlayerColor, ReviewLine } from "../../shared/types";
 import { fetchGame, fetchGameAnalysis, postRetry } from "../api/client";
@@ -27,7 +28,9 @@ import { PvLine } from "../components/PvLine";
 import { ReviewBoard } from "../components/ReviewBoard";
 import { useJobPolling } from "../hooks/useJobPolling";
 import { useStoreQuery } from "../hooks/useStoreQuery";
+import { explorerHref } from "../components/FixCard";
 import "../styles/review.css";
+import "../styles/repertoire.css";
 
 type ReviewMode = "show" | "best" | "retry";
 type LineKind = "best" | "played";
@@ -189,6 +192,7 @@ export function GameReviewPage() {
   const [review, setReview] = useState<OpeningReview | null>(null);
   const [job, setJob] = useState<JobState<OpeningReview> | null>(null);
   const [engineError, setEngineError] = useState<string | null>(null);
+  const [repertoire, setRepertoire] = useState<ReviewRepertoire | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [selectedPly, setSelectedPly] = useState(0);
   const [mode, setMode] = useState<ReviewMode>("show");
@@ -217,6 +221,7 @@ export function GameReviewPage() {
           setReview(response.review);
           setJob(response.job);
           setEngineError(response.engineError);
+          setRepertoire(response.repertoire);
         })
         .catch((loadError: unknown) => {
           if (!signal?.aborted) {
@@ -230,6 +235,7 @@ export function GameReviewPage() {
   useEffect(() => {
     setReview(null);
     setJob(null);
+    setRepertoire(null);
     setFlipped(false);
     landedRef.current = null;
     const controller = new AbortController();
@@ -529,6 +535,7 @@ export function GameReviewPage() {
                   {cleanOpeningCopy(plies.length)}
                 </p>
               ) : null}
+              <RepertoireNote repertoire={repertoire} color={review.color} selectedPly={selectedPly} onSelect={select} ucis={plies.map((item) => item.uci)} />
               {review.status === "partial" ? (
                 <p className="review-partial" role="status">
                   Engine data for {review.coverage.pliesScored} of {review.coverage.plies} moves.{" "}
@@ -626,6 +633,13 @@ export function GameReviewPage() {
                 divider={divider && review.bookExit ? { afterPly: review.bookExit.lastBookPly, text: divider } : null}
                 later={review.later}
                 gameUrl={game?.url ?? null}
+                repMark={
+                  repertoire?.deviation
+                    ? { ply: repertoire.deviation.ply, kind: "deviation" }
+                    : repertoire?.unprepared
+                      ? { ply: repertoire.unprepared.ply, kind: "unprepared" }
+                      : null
+                }
               />
               <p className="review-keys">← → moves · Home End · ↑ ↓ your mistakes · S B R modes · F flip · Esc back</p>
             </aside>
@@ -673,6 +687,65 @@ const VERDICT_COPY = {
   playable: { badge: "Good enough", tone: CLASS_TONES.good },
   "try-again": { badge: "Try again", tone: CLASS_TONES.mistake }
 } as const;
+
+/** Where the game left the owner's repertoire: the deviation, the unprepared reply, or how far it followed it. */
+function RepertoireNote({
+  repertoire,
+  color,
+  selectedPly,
+  onSelect,
+  ucis
+}: {
+  repertoire: ReviewRepertoire | null;
+  color: PlayerColor;
+  selectedPly: number;
+  onSelect: (ply: number) => void;
+  /** The game's moves, for the Explorer link. */
+  ucis: readonly string[];
+}) {
+  if (!repertoire || !repertoire.entries) {
+    return null;
+  }
+  const { deviation, unprepared } = repertoire;
+  if (deviation) {
+    const here = selectedPly === deviation.ply;
+    return (
+      <p className="rep-review-note" role="note">
+        {here ? "You left your repertoire here: " : `You left your repertoire at ${moveLabel(deviation.ply, deviation.played.san)}: `}
+        played <strong>{moveLabel(deviation.ply, deviation.played.san)}</strong>, repertoire says{" "}
+        <strong>{moveLabel(deviation.ply, deviation.expected.san)}</strong>.{" "}
+        {here ? (
+          <Link to={`/repertoire?color=${color}`}>Open the repertoire</Link>
+        ) : (
+          <button type="button" onClick={() => onSelect(deviation.ply)}>
+            Go there
+          </button>
+        )}
+      </p>
+    );
+  }
+  if (unprepared) {
+    const here = selectedPly === unprepared.ply;
+    return (
+      <p className="rep-review-note rep-review-note-unprepared" role="note">
+        Opponent move you have not prepared: <strong>{moveLabel(unprepared.ply, unprepared.opp.san)}</strong>. Your repertoire has no
+        answer to it yet.{" "}
+        {here ? (
+          <Link to={explorerHref(color, ucis.slice(0, unprepared.ply))}>Pick one in the Explorer</Link>
+        ) : (
+          <button type="button" onClick={() => onSelect(unprepared.ply)}>
+            Go there
+          </button>
+        )}
+      </p>
+    );
+  }
+  return (
+    <p className="rep-review-note rep-review-note-ok" role="note">
+      You followed your repertoire through move {Math.ceil(repertoire.inRepThrough / 2)}.
+    </p>
+  );
+}
 
 function RetryPanel({ ply, retry, onReveal, onAgain }: { ply: ReviewPly; retry: RetryState; onReveal: () => void; onAgain: () => void }) {
   const best = ply.lines[0];

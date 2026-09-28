@@ -10,6 +10,18 @@ import { useWorkspace } from "../hooks/useWorkspace";
 import { formatCount, pct } from "../utils/formatters";
 import "../styles/leaks.css";
 
+const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? "" : "s"}`;
+
+/** "2 leaks · 5 theory holes · 1 unprepared reply" (the last part only when there are some). */
+function countsText(data: { items: unknown[]; holes: number; unprepared: number }): string {
+  const leaks = data.items.length - data.holes - data.unprepared;
+  const parts = [plural(leaks, "leak"), plural(data.holes, "theory hole")];
+  if (data.unprepared) {
+    parts.push(plural(data.unprepared, "unprepared reply").replace("replys", "replies"));
+  }
+  return parts.join(" · ");
+}
+
 /** /leaks: the whole fix list, the watch list, and how the list is made. */
 export function LeaksPage() {
   const [filters, setFilters] = useFilters();
@@ -43,9 +55,7 @@ export function LeaksPage() {
       <section className={`panel home-card${loading && data ? " is-stale" : ""}`} aria-label="Leaks" aria-busy={loading}>
         <div className="home-card-head">
           <h2>
-            {data
-              ? `${data.items.length - data.holes} leak${data.items.length - data.holes === 1 ? "" : "s"} · ${data.holes} theory hole${data.holes === 1 ? "" : "s"}`
-              : "Leaks"}
+            {data ? countsText(data) : "Leaks"}
           </h2>
         </div>
         {data ? <EngineShares data={data} /> : null}

@@ -1,7 +1,7 @@
 import { START_EPD } from "./epd.js";
 import type { ResultsLeakItem } from "./fixList.js";
 import { rootVerdict, round2, sanOf, type EvalLookup } from "./openingAnalysis.js";
-import type { OpeningTree, TreeEdge, TreeNode } from "./openingTree.js";
+import { formatLine, type OpeningTree, type TreeEdge, type TreeNode } from "./openingTree.js";
 import { REPERTOIRE_MAX_PLY, legalMove, type ColorRepertoire, type RepEntry, type RepReplaced, type RepSource, type RepStatus } from "./repertoire.js";
 import { scoreWinPercent } from "./eval.js";
 import type { PlayerColor } from "./types.js";
@@ -76,6 +76,8 @@ export interface SeedEntry {
   reason: string | null;
   /** A locked or edited entry the seed kept as it was. */
   kept: boolean;
+  /** SAN moves from the start to the position on the walk's path (absent for an entry the walk does not reach). */
+  path?: string[];
 }
 
 export function isProtected(entry: Pick<RepEntry, "locked" | "source">): boolean {
@@ -289,16 +291,16 @@ export function seedColor(input: SeedInput): SeedEntry[] {
   const maxPly = input.maxPly ?? REPERTOIRE_MAX_PLY;
   const entries: SeedEntry[] = [];
   const seen = new Set<string>([START_EPD]);
-  const queue: { epd: string; ply: number }[] = [{ epd: START_EPD, ply: 0 }];
-  const visit = (epd: string, ply: number) => {
+  const queue: { epd: string; ply: number; path: string[] }[] = [{ epd: START_EPD, ply: 0, path: [] }];
+  const visit = (epd: string, ply: number, path: string[]) => {
     if (!seen.has(epd)) {
       seen.add(epd);
-      queue.push({ epd, ply });
+      queue.push({ epd, ply, path });
     }
   };
 
   for (let index = 0; index < queue.length; index += 1) {
-    const { epd, ply } = queue[index];
+    const { epd, ply, path } = queue[index];
     const node = tree.nodes.get(epd);
     const ownerToMove = (epd.split(" ")[1] === "w") === (color === "white");
     if (ownerToMove) {
@@ -317,11 +319,12 @@ export function seedColor(input: SeedInput): SeedEntry[] {
           status: existing.status,
           replaced: existing.replaced,
           reason: existing.reason,
-          kept: true
+          kept: true,
+          path
         });
         const next = legalMove(epd, { uci: existing.uci });
         if (next) {
-          visit(next.toEpd, ply + 1);
+          visit(next.toEpd, ply + 1, [...path, next.san]);
         }
         continue;
       }
@@ -342,11 +345,12 @@ export function seedColor(input: SeedInput): SeedEntry[] {
         status: choice.status,
         replaced: choice.replaced,
         reason: choice.reason,
-        kept: false
+        kept: false,
+        path
       });
       const toEpd = choice.pick.edge?.toEpd ?? legalMove(epd, { uci: choice.pick.uci })?.toEpd;
       if (toEpd) {
-        visit(toEpd, ply + 1);
+        visit(toEpd, ply + 1, [...path, choice.pick.san]);
       }
       continue;
     }
@@ -356,7 +360,7 @@ export function seedColor(input: SeedInput): SeedEntry[] {
     for (const edge of node.edges) {
       const share = node.wN > 0 ? edge.weighted.wN / node.wN : 0;
       if (edge.n >= SEED_REPLY_MIN_N || share >= SEED_REPLY_MIN_SHARE) {
-        visit(edge.toEpd, ply + 1);
+        visit(edge.toEpd, ply + 1, [...path, edge.san]);
       }
     }
   }
@@ -384,9 +388,11 @@ export interface SeedChange {
   epd: string;
   ply: number;
   /** The current entry (change, update, remove). */
-  before: Omit<SeedEntry, "kept"> | null;
+  before: Omit<SeedEntry, "kept" | "path"> | null;
   /** The seeded entry (add, change, update). */
-  after: Omit<SeedEntry, "kept"> | null;
+  after: Omit<SeedEntry, "kept" | "path"> | null;
+  /** "1.d4 d5 2.c4 e6": the line to the position and the seeded move, when the walk reached it. */
+  line: string | null;
 }
 
 export interface SeedDiff {
@@ -407,19 +413,20 @@ export function seedDiff(existing: ColorRepertoire, seeded: readonly SeedEntry[]
   const seededEpds = new Set<string>();
   for (const entry of seeded) {
     seededEpds.add(entry.epd);
-    const { kept: isKept, ...after } = entry;
+    const { kept: isKept, path, ...after } = entry;
+    const line = path ? formatLine([...path, entry.san]) : null;
     if (isKept) {
       kept += 1;
       continue;
     }
     const current = existing.get(entry.epd);
     if (!current) {
-      changes.push({ kind: "add", color: entry.color, epd: entry.epd, ply: entry.ply, before: null, after });
+      changes.push({ kind: "add", color: entry.color, epd: entry.epd, ply: entry.ply, before: null, after, line });
       continue;
     }
     const before = pickSeedFields(current);
     if (current.uci !== entry.uci) {
-      changes.push({ kind: "change", color: entry.color, epd: entry.epd, ply: entry.ply, before, after });
+      changes.push({ kind: "change", color: entry.color, epd: entry.epd, ply: entry.ply, before, after, line });
     } else if (
       current.source !== entry.source ||
       current.status !== entry.status ||
@@ -427,14 +434,14 @@ export function seedDiff(existing: ColorRepertoire, seeded: readonly SeedEntry[]
       current.ply !== entry.ply ||
       !sameReplaced(current.replaced, entry.replaced)
     ) {
-      changes.push({ kind: "update", color: entry.color, epd: entry.epd, ply: entry.ply, before, after });
+      changes.push({ kind: "update", color: entry.color, epd: entry.epd, ply: entry.ply, before, after, line });
     } else {
       unchanged += 1;
     }
   }
   for (const current of existing.values()) {
     if (!seededEpds.has(current.epd) && !isProtected(current)) {
-      changes.push({ kind: "remove", color: current.color, epd: current.epd, ply: current.ply, before: pickSeedFields(current), after: null });
+      changes.push({ kind: "remove", color: current.color, epd: current.epd, ply: current.ply, before: pickSeedFields(current), after: null, line: null });
     }
   }
   const order: Record<SeedChangeKind, number> = { change: 0, add: 1, remove: 2, update: 3 };

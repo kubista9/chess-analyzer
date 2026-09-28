@@ -1,4 +1,4 @@
-import { ArrowDownRight, ArrowRight, ArrowUpRight, ListVideo, Star } from "lucide-react";
+import { ArrowDownRight, ArrowRight, ArrowUpRight, BookmarkCheck, BookmarkPlus, ListVideo, Star } from "lucide-react";
 import { formatEval } from "../../shared/eval";
 import { moveSignals, trendDirection, type MoveSignal } from "../../shared/moveSignals";
 import type { WhiteEvalPoint } from "../../shared/openingAnalysis";
@@ -141,10 +141,12 @@ export interface MoveTableProps {
   weighted: boolean;
   /** Plies per game in the tree. */
   maxPly: number;
+  /** At the owner's positions: the repertoire's move here (null = none yet), and how to set one. */
+  repertoire?: { uci: string | null; busy: boolean; onSet: (edge: TreeEdgeView) => void };
 }
 
 /** The moves played from one position: frequency, results, score vs Elo, trend, think time, book. */
-export function MoveTable({ node, color, ply, selected, onSelect, onFollow, onShowGames, weighted, maxPly }: MoveTableProps) {
+export function MoveTable({ node, color, ply, selected, onSelect, onFollow, onShowGames, weighted, maxPly, repertoire }: MoveTableProps) {
   const signals = moveSignals(node.edges);
   const mover: PlayerColor = node.ownerToMove ? color : color === "white" ? "black" : "white";
   const played = node.edges.reduce((sum, edge) => sum + edge.n, 0);
@@ -232,6 +234,26 @@ export function MoveTable({ node, color, ply, selected, onSelect, onFollow, onSh
                       <Star className="engine-star" size={14} aria-label="The engine's best move (within 1 win%)" />
                     ) : null}
                     {tag ? <span className={`move-tag move-tag-${signal}`}>{tag}</span> : null}
+                    {repertoire && node.ownerToMove ? (
+                      repertoire.uci === edge.uci ? (
+                        <span className="rep-mark" title="Your repertoire move here">
+                          <BookmarkCheck size={14} aria-hidden="true" /> My move
+                        </span>
+                      ) : (
+                        <button
+                          type="button"
+                          className="rep-set"
+                          disabled={repertoire.busy}
+                          title={`Make ${moveLabel(ply, edge.san)} your repertoire move here`}
+                          onClick={(event) => {
+                            event.stopPropagation();
+                            repertoire.onSet(edge);
+                          }}
+                        >
+                          <BookmarkPlus size={14} aria-hidden="true" /> Set as my move
+                        </button>
+                      )
+                    ) : null}
                   </div>
                   <BookName edge={edge} />
                 </th>

@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { Link, NavLink, Outlet, useLocation } from "react-router-dom";
-import { Compass, House, Menu, TriangleAlert, X } from "lucide-react";
+import { BookMarked, Compass, House, Menu, TriangleAlert, X } from "lucide-react";
 import { OWNER_USERNAME } from "../../shared/constants";
 import { useNow } from "../hooks/useNow";
 import { useWorkspace } from "../hooks/useWorkspace";
@@ -10,6 +10,7 @@ import { formatMinutes, searchedPercent } from "./EngineCard";
 const navItems = [
   { to: "/", label: "Home", icon: House, end: true },
   { to: "/explorer", label: "Explorer", icon: Compass, end: false },
+  { to: "/repertoire", label: "Repertoire", icon: BookMarked, end: false },
   { to: "/leaks", label: "Leaks", icon: TriangleAlert, end: false }
 ];
 

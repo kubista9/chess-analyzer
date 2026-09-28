@@ -394,3 +394,12 @@
     display: none;
   }
 }
+
+/* The move where the game left the repertoire (P7a). */
+.move-cell-rep {
+  box-shadow: inset 0 -2px 0 var(--amber);
+}
+
+.move-cell-rep-unprepared {
+  box-shadow: inset 0 -2px 0 #a78bfa;
+}
