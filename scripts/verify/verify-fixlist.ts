@@ -1,6 +1,9 @@
-// Checks fix-list v0 over the SQLite store: prints the leaks and the watch lines, checks them
+// Checks the fix list over the SQLite store: prints the leaks and the watch lines, checks them
 // against the tree and the plan's expectations, and re-runs the P3 critic's null simulation to
-// show the gate emits about what the null predicts or fewer. Read-only; no engine.
+// show the gate emits about what the null predicts or fewer. Then fix list v1: the engine holes
+// from the position cache and the list ranked by impact, with the gates each item passed.
+// Read-only (a short-lived engine only reads its version for the engine config). Run
+// verify-analysis first: it makes sure the 2...Bc5 position is in the cache.
 //
 //   npx tsx scripts/verify/verify-fixlist.ts --asof 2026-09-26 [--sims 200] [--seed 1]
 //
@@ -16,10 +19,15 @@
 // null BH keeps the chance of ANY discovery at or below q, so about 0.2 false items per run or
 // fewer, well under the real count.
 import {
+  ENGINE_HOLE_MIN_LOSS,
+  ENGINE_HOLE_REPLY_CP,
+  ENGINE_HOLE_REPLY_LOSS,
   FIX_FDR_Q,
+  FIX_LIST_CAP,
   FIX_MIN_ESS,
   FIX_MIN_N,
   FIX_MIN_Z,
+  buildFixList,
   collectCandidates,
   selectLeaks,
   type CandidateGame,
@@ -29,6 +37,12 @@ import {
 import { buildTree, walkMoves, type OpeningTree, type TreeGame } from "../../shared/openingTree.js";
 import { wilson } from "../../shared/stats.js";
 import type { PlayerColor } from "../../shared/types.js";
+import { OPENING_PLY_LIMIT } from "../../shared/constants.js";
+import { engineConfigKey } from "../../server/engine/engineConfig.js";
+import { ENGINE_PROTOCOL, canonicalJson } from "../../server/engine/protocol.js";
+import { engineOptions } from "../../server/engine/sharedPool.js";
+import { detectEngineId } from "../../server/engine/uci.js";
+import { createAnalysisIndex } from "../../server/services/analysisIndex.js";
 import { loadOpeningBook } from "../../server/services/openingBook.js";
 import { DEFAULT_HALF_LIFE_BY_WINDOW, loadTreeGames, type RatingMode } from "../../server/services/treeService.js";
 import { OWNER, argValue, openStoreReadonly, printTable, readAsofWindow } from "./_lib.js";
@@ -143,6 +157,78 @@ if (golden) {
     check(!(item.color === "black" && line.startsWith("d4 d5 Bf4")), `a 2.Bf4 line (${item.line}) should not be listed`);
   }
   check(ids.size === selection.items.length, "duplicate item ids");
+}
+
+// ---- Fix list v1: engine holes and the ranking by impact ---------------------------------------
+{
+  const idName = await detectEngineId(engineOptions());
+  const configRow = db
+    .prepare("SELECT id FROM engine_configs WHERE engine_version = ? AND protocol_json = ?")
+    .get(engineConfigKey(idName).engineVersion, canonicalJson(ENGINE_PROTOCOL)) as { id: number } | undefined;
+  if (!configRow) {
+    check(false, `no engine config for ${idName}: run verify-analysis (or a backfill) first`);
+  } else {
+    const engine = createAnalysisIndex({ book: () => book, maxPly: OPENING_PLY_LIMIT }).view(db, configRow.id);
+    started = performance.now();
+    const list = buildFixList(view, engine);
+    const complete = view.map((part) => `${part.games.filter((game) => engine.analysisOf(game).status === "complete").length} of ${part.games.length} ${part.color}`);
+    console.log(
+      `\nFix list v1 (engine config #${configRow.id}, ${engine.positions} positions; engine data for ${complete.join(", ")} games): ` +
+        `${list.holes.length} engine holes, ${list.items.length} leaks, ranked by impact (${(performance.now() - started).toFixed(0)} ms). ` +
+        `Hole gate: n >= 3 and (loss >= ${ENGINE_HOLE_MIN_LOSS}, or loss >= ${ENGINE_HOLE_REPLY_LOSS} with the reply >= +${ENGINE_HOLE_REPLY_CP} cp for the opponent).`
+    );
+    printTable(
+      list.ranked.map((item, rank) => ({
+        rank: rank + 1,
+        kind: item.kind,
+        colour: item.color,
+        line: item.line,
+        n: item.n,
+        score: pct(item.kind === "engine-hole" ? item.score : item.raw.score),
+        impact: Number(item.impact.toFixed(2)),
+        loss: item.kind === "engine-hole" ? item.loss : "",
+        best: item.kind === "engine-hole" ? item.bestSan : "",
+        reply: item.kind === "engine-hole" ? (item.reply ? `${item.reply.san} ${item.reply.cpForThem}` : "?") : "",
+        gates:
+          item.kind === "engine-hole"
+            ? [item.gates.loss ? `loss>=${ENGINE_HOLE_MIN_LOSS}` : "", item.gates.reply ? `reply>=${ENGINE_HOLE_REPLY_CP}` : ""].filter(Boolean).join("+")
+            : `${item.tier} z=${item.z.toFixed(2)} q=${item.q.toFixed(3)}`,
+        engine:
+          item.kind === "results-leak" && item.engine
+            ? `err ${item.engine.firstError.errors}/${item.engine.firstError.known}${item.engine.firstError.shown ? "" : " (hidden)"}; ` +
+              `top ${item.engine.topFirstMistake ? `${item.engine.topFirstMistake.san} (best ${item.engine.topFirstMistake.bestSan}) x${item.engine.topFirstMistake.count}` : "-"}`
+            : ""
+      }))
+    );
+    console.log(`(The app shows the first ${FIX_LIST_CAP}, then "show all".)`);
+
+    const impacts = list.ranked.map((item) => item.impact);
+    check(impacts.every((value, index) => index === 0 || impacts[index - 1] >= value), "the ranked list is not sorted by impact");
+    for (const hole of list.holes) {
+      check(Math.abs(hole.impact - (hole.wN * hole.loss) / 100) < 0.01, `${hole.id}: impact is not wN x loss / 100`);
+      check(hole.gates.loss || hole.gates.reply, `${hole.id}: passed no gate`);
+      check(hole.n >= 3, `${hole.id}: fewer than 3 games`);
+    }
+    if (golden) {
+      const bc5 = list.holes.find((hole) => hole.color === "black" && hole.sans.join(" ") === "e4 e5 Nf3 Bc5");
+      check(Boolean(bc5), "Theory hole 2...Bc5 is not listed (run verify-analysis first so the position is cached)");
+      if (bc5) {
+        console.log(
+          `Theory hole: 2...Bc5 after ${bc5.before}: you ${(bc5.ownerEval.best.cp / 100).toFixed(1)} with ${bc5.bestSan} vs ` +
+            `${(bc5.ownerEval.played.cp / 100).toFixed(1)}; ${bc5.reply ? `${bc5.reply.san} ${(bc5.reply.cpForThem / 100).toFixed(1)} for White` : ""}; ` +
+            `${bc5.n} games at ${pct(bc5.score)}.`
+        );
+        check(bc5.score > 0.35 && bc5.score < 0.6, `2...Bc5 scores ${pct(bc5.score)}: expected about 47% (the hole is listed despite fine results)`);
+        check(bc5.reply?.san === "Nxe5", `2...Bc5: the reply is ${bc5.reply?.san}, expected 3.Nxe5`);
+      }
+      for (const item of list.ranked) {
+        const line = item.sans.join(" ");
+        check(!(item.color === "black" && line === "e4 d5"), `the Scandinavian itself (${item.line}) should not be flagged`);
+        check(!(item.color === "black" && line.startsWith("d4 d5 Bf4")), `a 2.Bf4 line (${item.line}) should not be flagged`);
+        check(!(item.kind === "engine-hole" && item.color === "black" && line === "d4 d5 c4 e5"), "the Albin should not be an engine hole");
+      }
+    }
+  }
 }
 
 // ---- Null simulation -----------------------------------------------------------------------------
