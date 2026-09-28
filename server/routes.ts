@@ -563,7 +563,8 @@ export function createApiRouter(deps: ApiDeps): express.Router {
       { white: { tree: built.white.tree, flagged }, black: { tree: built.black.tree, flagged } },
       engine?.lookup ?? null,
       apply === true,
-      deps.now()
+      deps.now(),
+      deps.book()
     );
     response.json({ applied: apply === true, diff } satisfies SeedResponse);
   });

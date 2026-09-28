@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { START_EPD } from "./epd.js";
 import { scoreWinPercent } from "./eval.js";
 import { buildFixList } from "./fixList.js";
+import { buildBook } from "./openingBook.js";
 import type { EvalLookup } from "./openingAnalysis.js";
 import { buildTree, type TreeGame } from "./openingTree.js";
 import { replayOpening } from "./pgn.js";
@@ -56,9 +57,13 @@ function lookupFrom(entries: [string, EngineLine[], EngineLine[]?][]): EvalLooku
   return (epd) => byEpd.get(epd);
 }
 
-function seed(games: TreeGame[], color: PlayerColor, options: { lookup?: EvalLookup | null; flags?: Map<string, SeedFlag>; existing?: Map<string, RepEntry> } = {}) {
-  const tree = buildTree(games, { color, now: NOW, halfLifeDays: null });
-  const entries = seedColor({ tree, lookup: options.lookup ?? null, flags: options.flags ?? new Map(), existing: options.existing ?? new Map() });
+function seed(
+  games: TreeGame[],
+  color: PlayerColor,
+  options: { lookup?: EvalLookup | null; flags?: Map<string, SeedFlag>; existing?: Map<string, RepEntry>; book?: ReturnType<typeof buildBook> } = {}
+) {
+  const tree = buildTree(games, { color, now: NOW, halfLifeDays: null, book: options.book });
+  const entries = seedColor({ tree, lookup: options.lookup ?? null, flags: options.flags ?? new Map(), existing: options.existing ?? new Map(), book: options.book });
   return { tree, entries, at: (line: string) => entries.find((entry) => entry.epd === epdAfter(line)) };
 }
 
@@ -87,6 +92,32 @@ const ALBIN = [
   ...results("d4 d5 c4 e6", "black", { wins: 2, losses: 1 })
 ];
 const ALBIN_EVALS = lookupFrom([["d4 d5 c4", [engineLine("e7e6", -31), engineLine("c7c6", -39), engineLine("d5c4", -38)], [engineLine("e7e5", -78)]]]);
+
+describe("seedColor: the P7a conflict and the ranked replacement", () => {
+  it("keeps a flagged leak that is the engine's best move (2...Nc6), marked for review, instead of replacing it", () => {
+    const games = [...results("e4 e5 Nf3 Nc6", "black", { wins: 5, losses: 15 }), ...results("e4 e5 Nf3 Nf6", "black", { wins: 2, losses: 1 })];
+    const lookup = lookupFrom([["e4 e5 Nf3", [engineLine("b8c6", -36), engineLine("g8f6", -40), engineLine("d7d6", -60)]]]);
+    const flag: SeedFlag = { tier: "leak", n: 20, score: 0.25, expected: 0.5, z: 2.2, line: "1.e4 e5 2.Nf3 Nc6" };
+    const { at } = seed(games, "black", { lookup, flags: new Map([[`${epdAfter("e4 e5 Nf3")}|b8c6`, flag]]) });
+    const entry = at("e4 e5 Nf3")!;
+    expect(entry).toMatchObject({ san: "Nc6", source: "from-games", status: "needs-review", replaced: null });
+    expect(entry.reason).toContain("engine's best move here, so the points are lost later");
+  });
+
+  it("with the book, replaces the flagged Albin by the ranking's top pick (a named book move over a non-book engine line)", () => {
+    const book = buildBook([
+      { eco: "D06", name: "Queen's Gambit", pgn: "1. d4 d5 2. c4" },
+      { eco: "D10", name: "Slav Defense", pgn: "1. d4 d5 2. c4 c6" },
+      { eco: "D08", name: "Queen's Gambit Declined: Albin Countergambit", pgn: "1. d4 d5 2. c4 e5" }
+    ]);
+    const games = results("d4 d5 c4 e5", "black", { wins: 6, losses: 14 });
+    const lookup = lookupFrom([["d4 d5 c4", [engineLine("g7g6", -30), engineLine("c7c6", -32)], [engineLine("e7e5", -78)]]]);
+    const flag: SeedFlag = { tier: "watch", n: 20, score: 0.3, expected: 0.5, z: 1.79, line: "1.d4 d5 2.c4 e5" };
+    const flags = new Map([[`${epdAfter("d4 d5 c4")}|e7e5`, flag]]);
+    expect(seed(games, "black", { lookup, flags }).at("d4 d5 c4")).toMatchObject({ san: "g6", source: "seed-engine" });
+    expect(seed(games, "black", { lookup, flags, book }).at("d4 d5 c4")).toMatchObject({ san: "c6", source: "seed-engine", replaced: { san: "e5" } });
+  });
+});
 
 describe("seedColor", () => {
   it("takes the most-played engine-sound move from the games", () => {

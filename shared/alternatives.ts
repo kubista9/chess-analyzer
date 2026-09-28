@@ -876,6 +876,11 @@ export function ancestorSuggestions(input: AltInput): AncestorSuggestion[] {
   return suggestions;
 }
 
+/** The gated alternatives at a position, ranked, without the questioned move `input.current` (the seed's replacement). */
+export function rankedMoves(input: AltInput): Alternative[] {
+  return rankAt(input).gated;
+}
+
 /** The gated candidates at a position (ranked, the questioned move `input.current` left out) and the rejected ones. */
 function rankAt(input: AltInput): { gated: Alternative[]; rejected: AltRejected[] } {
   const node = input.tree.nodes.get(input.epd);

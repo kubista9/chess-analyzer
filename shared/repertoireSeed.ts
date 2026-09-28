@@ -4,6 +4,8 @@ import { rootVerdict, round2, sanOf, type EvalLookup } from "./openingAnalysis.j
 import { formatLine, type OpeningTree, type TreeEdge, type TreeNode } from "./openingTree.js";
 import { REPERTOIRE_MAX_PLY, legalMove, type ColorRepertoire, type RepEntry, type RepReplaced, type RepSource, type RepStatus } from "./repertoire.js";
 import { scoreWinPercent } from "./eval.js";
+import { rankedMoves } from "./alternatives.js";
+import type { OpeningBook } from "./openingBook.js";
 import type { PlayerColor } from "./types.js";
 
 // Deterministic repertoire seeding from the owner's own games. Per colour, a breadth-first walk
@@ -25,6 +27,13 @@ import type { PlayerColor } from "./types.js";
 //    watch-tier line with at least SEED_FLAG_MIN_N games (e.g. the Albin 2...e5, which the engine
 //    accepts), an engine-sound sibling replaces it (seed-engine, needs-review, `replaced` = the
 //    flagged move with the results evidence).
+//    When the flagged move is itself the engine's best move (loss < SEED_BEST_LOSS), e.g. 2...Nc6
+//    after 1.e4 e5 2.Nf3, the points are lost later in the line, not by this move: it is kept,
+//    marked needs-review, and the alternatives panel offers the other moves as suggestions only.
+//
+// With the book, a replacement (steps 2 and 4) is the top engine-sound, unflagged move of the
+// alternatives ranking (shared/alternatives.ts: owned, named, mainstream, familiar...); without
+// it, the owner's most-played sound move, else the engine's lowest-loss line.
 //
 // At opponent-to-move positions the walk follows replies with at least SEED_REPLY_MIN_N games or
 // a weighted share of SEED_REPLY_MIN_SHARE. Locked and edited entries are never changed: the walk
@@ -39,6 +48,8 @@ export const SEED_CONSOLIDATE_MIN_N = 8;
 /** A sibling played in at least this share of the chosen move's games makes the choice a consolidation. */
 export const SEED_RIVAL_SHARE = 0.5;
 export const SEED_FLAG_MIN_N = 15;
+/** A flagged move losing less than this is the engine's best: the override leaves it (see 4). */
+export const SEED_BEST_LOSS = 1;
 export const SEED_REPLY_MIN_N = 2;
 export const SEED_REPLY_MIN_SHARE = 0.05;
 
@@ -61,6 +72,8 @@ export interface SeedInput {
   /** This colour's current entries: locked and edited ones are kept and followed. */
   existing: ColorRepertoire;
   maxPly?: number;
+  /** The opening book: with it, replacements come from the alternatives ranking. */
+  book?: OpeningBook;
 }
 
 /** A seeded (or kept) entry, without timestamps. */
@@ -78,6 +91,21 @@ export interface SeedEntry {
   kept: boolean;
   /** SAN moves from the start to the position on the walk's path (absent for an entry the walk does not reach). */
   path?: string[];
+}
+
+/** UCI and SAN moves of a SAN path from the start. */
+function pathUcis(sans: readonly string[]): { moves: string[]; sans: string[] } {
+  const moves: string[] = [];
+  let epd = START_EPD;
+  for (const san of sans) {
+    const move = legalMove(epd, { san });
+    if (!move) {
+      break;
+    }
+    moves.push(move.uci);
+    epd = move.toEpd;
+  }
+  return { moves, sans: sans.slice(0, moves.length) };
 }
 
 export function isProtected(entry: Pick<RepEntry, "locked" | "source">): boolean {
@@ -145,7 +173,7 @@ interface Choice {
   reason: string;
 }
 
-function chooseMove(node: TreeNode, input: SeedInput): Choice | null {
+function chooseMove(node: TreeNode, input: SeedInput, path: readonly string[]): Choice | null {
   const evaluation = input.lookup?.(node.epd, "owner");
   const flagOf = (uci: string) => {
     const flag = input.flags.get(`${node.epd}|${uci}`);
@@ -176,10 +204,33 @@ function chooseMove(node: TreeNode, input: SeedInput): Choice | null {
         .sort((a, b) => a.loss! - b.loss! || (a.uci < b.uci ? -1 : 1))
     : [];
 
-  /** An engine-sound replacement for `excluded`: a move the owner plays, else the engine's. */
-  const replacement = (excluded: string): Candidate | undefined =>
-    owned.find((candidate) => candidate.uci !== excluded && isSound(candidate) && !flagOf(candidate.uci)) ??
-    engineMoves.find((candidate) => candidate.uci !== excluded && isSound(candidate));
+  /** An engine-sound replacement for `excluded`: the ranking's top pick, else a move the owner plays, else the engine's. */
+  const replacement = (excluded: string): Candidate | undefined => {
+    if (input.book && evaluation) {
+      const ranked = rankedMoves({
+        tree: input.tree,
+        games: [],
+        book: input.book,
+        epd: node.epd,
+        path: pathUcis(path),
+        root: evaluation,
+        lookup: input.lookup,
+        flags: input.flags,
+        entries: input.existing,
+        current: excluded
+      }).find((alternative) => alternative.eval.gap < SEED_SOUND_LOSS && !flagOf(alternative.uci));
+      if (ranked) {
+        return (
+          owned.find((candidate) => candidate.uci === ranked.uci) ??
+          engineMoves.find((candidate) => candidate.uci === ranked.uci) ?? { uci: ranked.uci, san: ranked.san, edge: null, loss: ranked.eval.gap }
+        );
+      }
+    }
+    return (
+      owned.find((candidate) => candidate.uci !== excluded && isSound(candidate) && !flagOf(candidate.uci)) ??
+      engineMoves.find((candidate) => candidate.uci !== excluded && isSound(candidate))
+    );
+  };
 
   const top = owned[0];
   let choice: Choice;
@@ -265,7 +316,15 @@ function chooseMove(node: TreeNode, input: SeedInput): Choice | null {
 
   // 4. The results-leak override.
   const flag = choice.pick.edge ? flagOf(choice.pick.uci) : undefined;
-  if (flag) {
+  if (flag && choice.pick.loss !== null && choice.pick.loss < SEED_BEST_LOSS) {
+    choice = {
+      ...choice,
+      status: "needs-review",
+      reason:
+        `${choice.reason} ${flagReason(flag)} It is the engine's best move here, so the points are lost later in the line; ` +
+        "its alternatives are suggestions, not a replacement."
+    };
+  } else if (flag) {
     const pick = replacement(choice.pick.uci);
     if (pick) {
       choice = {
@@ -331,7 +390,7 @@ export function seedColor(input: SeedInput): SeedEntry[] {
       if (!node || node.n < SEED_MIN_N) {
         continue;
       }
-      const choice = chooseMove(node, input);
+      const choice = chooseMove(node, input, path);
       if (!choice) {
         continue;
       }

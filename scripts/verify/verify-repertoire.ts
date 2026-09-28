@@ -60,7 +60,7 @@ const fix = buildFixList(built, engine ?? undefined);
 const flagged = [...fix.items, ...fix.watch];
 
 function seed(tree: OpeningTree): SeedEntry[] {
-  return seedColor({ tree, lookup, flags: seedFlags(flagged, tree.color), existing: new Map() });
+  return seedColor({ tree, lookup, flags: seedFlags(flagged, tree.color), existing: new Map(), book });
 }
 
 const started = performance.now();

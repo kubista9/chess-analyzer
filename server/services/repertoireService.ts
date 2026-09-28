@@ -1,6 +1,7 @@
 import { START_EPD } from "../../shared/epd.js";
 import type { ResultsLeakItem } from "../../shared/fixList.js";
 import { rootVerdict, round2, sanOf, type EvalLookup } from "../../shared/openingAnalysis.js";
+import type { OpeningBook } from "../../shared/openingBook.js";
 import type { OpeningTree, TreeGame } from "../../shared/openingTree.js";
 import {
   REPERTOIRE_MAX_PLY,
@@ -158,13 +159,14 @@ export function seedRepertoire(
   sources: Record<PlayerColor, SeedSource>,
   lookup: EvalLookup | null,
   apply: boolean,
-  now: number
+  now: number,
+  book?: OpeningBook
 ): Record<PlayerColor, SeedDiff> {
   const existing = loadRepertoire(db, owner);
   const diff = {} as Record<PlayerColor, SeedDiff>;
   for (const color of ["white", "black"] as const) {
     const { tree, flagged } = sources[color];
-    const seeded = seedColor({ tree, lookup, flags: seedFlags(flagged, color), existing: existing[color] });
+    const seeded = seedColor({ tree, lookup, flags: seedFlags(flagged, color), existing: existing[color], book });
     diff[color] = seedDiff(existing[color], seeded);
   }
   if (apply) {
