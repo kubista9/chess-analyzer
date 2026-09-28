@@ -98,6 +98,16 @@ The Explorer colours a row only when it has at least 8 raw games and an effectiv
 - `GET /api/repertoire?<fix-list filters>`: both colours' lines, coverage and tables. `POST /api/repertoire/seed {apply?}`: the diff (a dry run unless `apply: true`). `GET|PUT|DELETE /api/repertoire/entry` with `{color, epd, uci | san, locked, status, note, ply}` in the body (PUT) or `?color=&epd=` (GET, DELETE): the EPD never travels in a path segment. `GET /api/repertoire/export?color=` downloads PGN with variations.
 - `npx tsx scripts/verify/verify-repertoire.ts --asof 2026-09-26` seeds in memory (nothing is written), prints the lines to ply 10 per colour, the review queue and the coverage, and checks determinism and the golden lines.
 
+## Alternatives
+
+- `/alternatives?color=&moves=&uci=` (from the Explorer's owner rows, fix cards' "Try this instead", the review callout and the repertoire panel) shows, for one of your positions, the engine-sound moves you could play instead of `uci` (default: the repertoire's move, else your most played), ranked by fit with your own games. Everything is offline.
+- Candidates: the engine's top 4, the 6 most-travelled book children and your moves with 3+ games. Gate: at most 5 win% below the best move (engine only; a book move never passes on its name). A gated move that is neither a book move nor one you play is an "engine idea", listed last.
+- Features, each a reason with points: you play it (+4 / +2), named line (+3 / +1), mainstream (share of the book's lines, +2 / +1), better results than the questioned move (+2), familiar pawn skeleton (+2), transposes into your games (+2), only-moves on the sample line (−1 each) and a forcing line (−1), capped at −3 together, and −1 per win% below the best. Each card has a 6-ply sample line to step through, typical replies, your record and "Set as my move" (edited, locked, with the replaced move recorded).
+- "Where the points are lost" splits the questioned move's games by the reply and your answer; "Change earlier" suggests another move at an earlier position (a better-scoring sibling with 20+ games and z ≥ 1.64, or the gated moves where the line's move is a flagged results leak that is not the engine's best).
+- The root is searched once in the lazy **deep tier** (MultiPV 4, depth 18, 3M nodes; `DEEP_TIER` in `server/engine/protocol.ts`), stored in `positions` with `tier = 'deep'` under the same engine config (not part of `ENGINE_PROTOCOL`, so nothing is re-queued), plus ordinary owner-tier searches of the sample lines for the only-move check. `GET /api/alternatives?color=&moves=|epd=&uci=` answers 200 from the cache, or 202 with a preliminary ranking and the interactive job that completes it (about 5-10 s cold on battery).
+- `GET /api/repertoire/coverage` gives Home's "stayed in it through move 4 / 6" line.
+- `npx tsx scripts/verify/verify-alternatives.ts --asof 2026-09-26 [--cached]` prints the panel for the main leaks and checks the Albin and 2...Bc5 lines; it runs the missing deep searches (and stores them) unless `--cached`.
+
 ## Production build
 
 ```bash
@@ -115,7 +125,7 @@ npm run check       # typecheck, then test, then build:web
 
 `npm run build` also runs the typecheck first, because `vite build` does not type-check `src/`.
 
-Verify scripts live in `scripts/verify/` and are read-only (except `verify-analysis.ts`, which may store the evals of two targeted lines). They take `--asof YYYY-MM-DD`, meaning the end of that UTC day, inclusive (see `scripts/verify/_lib.ts`). `verify-import.ts` recounts the stored months, `verify-tree.ts` checks the opening tree's golden numbers and path counts, and `verify-fixlist.ts` checks the fix list and its null simulation, `verify-analysis.ts` the engine insights, and `verify-repertoire.ts` the repertoire seed. `engine-smoke.ts` and `verify-evals.ts` (below) are the opt-in real-engine checks.
+Verify scripts live in `scripts/verify/` and are read-only (except `verify-analysis.ts`, which may store the evals of two targeted lines, and `verify-alternatives.ts`, which may store the deep searches of its positions). They take `--asof YYYY-MM-DD`, meaning the end of that UTC day, inclusive (see `scripts/verify/_lib.ts`). `verify-import.ts` recounts the stored months, `verify-tree.ts` checks the opening tree's golden numbers and path counts, and `verify-fixlist.ts` checks the fix list and its null simulation, `verify-analysis.ts` the engine insights, `verify-repertoire.ts` the repertoire seed, and `verify-alternatives.ts` the alternatives (it may store deep-tier rows; `--cached` makes it read-only). `engine-smoke.ts` and `verify-evals.ts` (below) are the opt-in real-engine checks.
 
 ## Jobs
 
