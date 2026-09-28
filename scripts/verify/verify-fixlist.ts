@@ -24,7 +24,7 @@ import {
   selectLeaks,
   type CandidateGame,
   type FixCandidate,
-  type FixItem
+  type ResultsLeakItem
 } from "../../shared/fixList.js";
 import { buildTree, walkMoves, type OpeningTree, type TreeGame } from "../../shared/openingTree.js";
 import { wilson } from "../../shared/stats.js";
@@ -77,7 +77,7 @@ console.log(
 );
 
 const pct = (value: number) => Number((value * 100).toFixed(1));
-const rows = (items: FixItem[]) =>
+const rows = (items: ResultsLeakItem[]) =>
   items.map((item) => ({
     colour: item.color,
     line: item.line,

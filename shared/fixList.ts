@@ -1,7 +1,23 @@
+import { CATEGORY_THRESHOLDS, classifyLoss, cpEquivalent } from "./eval.js";
 import { benjaminiHochberg, normalSf, trendDirection, type TrendDirection } from "./moveSignals.js";
+import {
+  coverageOk,
+  firstErrorShares,
+  meanEvalAt,
+  rootVerdict,
+  round2,
+  sanOf,
+  topFirstMistakes,
+  whitePoint,
+  type EvalLookup,
+  type FirstMistake,
+  type GameOpeningAnalysis,
+  type OwnerMoveScored,
+  type WhiteEvalPoint
+} from "./openingAnalysis.js";
 import { formatLine, principalPaths, type OpeningTree, type TreeEdge, type TreeGame, type TreeTrend } from "./openingTree.js";
 import { addGame, ageDays, eloExpected, emptyAccumulator, LOW_SAMPLE_N, recencyWeight, summarize, type ScoreAccumulator } from "./stats.js";
-import type { PlayerColor } from "./types.js";
+import type { MoveCategory, PlayerColor } from "./types.js";
 
 // Fix list v0: the opening lines where the owner loses the most points against his Elo
 // expectation, from results only (no engine). Pure; the server feeds it the memoised trees.
@@ -115,8 +131,24 @@ export interface FixExample {
   endTime: number;
 }
 
-/** One line of the fix list. */
-export interface FixItem {
+/**
+ * Engine facts about a results leak's games, from the per-game analyses. Each part carries how
+ * many games it is known for; `shown` is false below the minimum coverage (coverageOk).
+ */
+export interface LeakEngineStats {
+  games: number;
+  /** Games with every ply of the window scored. */
+  complete: number;
+  /** The owner's mean eval after ply 20 (move 10). */
+  evalAt20: { known: number; cp: number; winPct: number; shown: boolean } | null;
+  /** Games with a first mistake (or worse) by ply 20, over the games where that is known. */
+  firstError: { known: number; errors: number; rate: number | null; shown: boolean };
+  /** The most common first mistake and the engine's move there. */
+  topFirstMistake: FirstMistake | null;
+}
+
+/** One results line of the fix list. */
+export interface ResultsLeakItem {
   kind: "results-leak";
   tier: FixTier;
   /** "<color>:<uci,uci,...>" */
@@ -163,7 +195,54 @@ export interface FixItem {
   earlyLoss: { ply: number; n: number; rate: number };
   /** Up to FIX_EXAMPLES of the games this item is blamed for: the most recent losses first. */
   examples: FixExample[];
+  /** The ranking key shared with engine holes: the residual points lost (pointsLost). */
+  impact: number;
+  /** null without engine data (no engine config). */
+  engine: LeakEngineStats | null;
 }
+
+/**
+ * A theory hole: an owner move the engine refutes, whatever its results. Not part of the BH
+ * family (the engine is not a statistical test); ranked with the leaks by impact.
+ */
+export interface EngineHoleItem {
+  kind: "engine-hole";
+  /** "hole:<color>:<uci,uci,...>" */
+  id: string;
+  color: PlayerColor;
+  moves: string[];
+  sans: string[];
+  line: string;
+  /** The line up to the position the move is played from ("1.e4 e5 2.Nf3"). */
+  before: string;
+  name: string | null;
+  eco: string | null;
+  nameExact: boolean;
+  inBook: boolean;
+  n: number;
+  wN: number;
+  /** Raw results of the move, for context ("even though you score 47%"). */
+  score: number;
+  expected: number;
+  /** The owner's win% loss at the move's root, and its class. */
+  loss: number;
+  cls: MoveCategory;
+  bestUci: string;
+  bestSan: string;
+  /** The owner's eval (cp from his side, mate > 0 when he mates) with the best move and with the played one. */
+  ownerEval: { best: { cp: number; mate: number | null }; played: { cp: number; mate: number | null } };
+  /** The same from White's side. */
+  whiteEval: { best: WhiteEvalPoint; played: WhiteEvalPoint };
+  /** The opponent's best reply (null when the position after the move is not analysed) and its eval for him. */
+  reply: { uci: string; san: string; cpForThem: number; mate: number | null } | null;
+  /** Which gate the move passed. */
+  gates: { loss: boolean; reply: boolean };
+  /** Expected points the move itself gives away: wN x loss / 100. */
+  impact: number;
+  examples: FixExample[];
+}
+
+export type FixItem = ResultsLeakItem | EngineHoleItem;
 
 export interface FixSelection {
   /** Candidates tested (the BH family). */
@@ -171,12 +250,12 @@ export interface FixSelection {
   /** Candidates with z >= FIX_MIN_Z that are BH discoveries. */
   significant: number;
   /** The leaks, ranked by pointsLost, then n. */
-  items: FixItem[];
+  items: ResultsLeakItem[];
   /**
    * Lines with z >= FIX_MIN_Z on their own that do not survive BH across the candidate set:
    * worth watching, but as likely as not noise. Same attribution and ranking.
    */
-  watch: FixItem[];
+  watch: ResultsLeakItem[];
 }
 
 const itemId = (candidate: Pick<FixCandidate, "color" | "moves">) => `${candidate.color}:${candidate.moves.join(",")}`;
@@ -208,8 +287,8 @@ export function selectLeaks(candidates: readonly FixCandidate[], scoreOf?: (game
   nominal.sort((a, b) => b.candidate.moves.length - a.candidate.moves.length || b.z - a.z);
   const leakClaims = new Map<string, Claim>();
   const allClaims = new Map<string, Claim>();
-  const items: FixItem[] = [];
-  const watch: FixItem[] = [];
+  const items: ResultsLeakItem[] = [];
+  const watch: ResultsLeakItem[] = [];
   for (const entry of nominal) {
     const { candidate, tier } = entry;
     const claims = tier === "leak" ? leakClaims : allClaims;
@@ -241,7 +320,7 @@ export function selectLeaks(candidates: readonly FixCandidate[], scoreOf?: (game
     (tier === "leak" ? items : watch).push(toItem(candidate, entry, s, pointsLost, residualGames, [...explainedBy]));
   }
 
-  const rank = (a: FixItem, b: FixItem) => b.pointsLost - a.pointsLost || b.n - a.n || (a.id < b.id ? -1 : 1);
+  const rank = (a: ResultsLeakItem, b: ResultsLeakItem) => b.pointsLost - a.pointsLost || b.n - a.n || (a.id < b.id ? -1 : 1);
   return {
     tested: candidates.length,
     significant: nominal.filter((entry) => entry.tier === "leak").length,
@@ -277,7 +356,7 @@ function toItem(
   pointsLost: number,
   residualGames: CandidateGame[],
   explainedBy: string[]
-): FixItem {
+): ResultsLeakItem {
   const { edge, games } = candidate;
   const { summary } = entry;
   const rawAcc = emptyAccumulator();
@@ -333,11 +412,153 @@ function toItem(
     explainedBy,
     trend: { ...edge.trend, direction: trendDirection(edge.trend) },
     earlyLoss: { ply: EARLY_LOSS_PLY, n: early, rate: games.length ? early / games.length : 0 },
-    examples
+    examples,
+    impact: pointsLost,
+    engine: null
   };
 }
 
-/** The fix list over both colours' trees (one BH family). */
-export function buildFixList(trees: readonly { tree: OpeningTree; games: readonly TreeGame[] }[]): FixSelection {
-  return selectLeaks(trees.flatMap(({ tree, games }) => collectCandidates(tree, games)));
+// Engine holes (fix list v1). The critic measured 2...Bc5 at 9.5-11.5 win% depending on the
+// budget, right on the mistake line, so the gate is not "mistake or worse": a move is a hole
+// when it loses >= 7 win%, or when it loses at least an inaccuracy's worth (5) and the
+// opponent's best reply is >= +100 cp for him.
+
+/** Raw games of the move at least... */
+export const ENGINE_HOLE_MIN_N = 3;
+/** ...and a win% loss of at least this, */
+export const ENGINE_HOLE_MIN_LOSS = 7;
+/** or at least an inaccuracy (this loss) with the opponent's best reply this good for him (cp). */
+export const ENGINE_HOLE_REPLY_LOSS = CATEGORY_THRESHOLDS.good;
+export const ENGINE_HOLE_REPLY_CP = 100;
+/** Items the ranked list shows before "show all". */
+export const FIX_LIST_CAP = 10;
+
+/** What the fix list needs from the engine: the position cache and the per-game analyses. */
+export interface FixEngine {
+  lookup: EvalLookup;
+  analysisOf: (game: TreeGame) => GameOpeningAnalysis;
+}
+
+function ownerScore(line: { cp: number | null; mate: number | null }) {
+  return { cp: cpEquivalent(line), mate: line.mate };
+}
+
+/** The engine holes of one colour's tree, ranked by impact. */
+export function collectEngineHoles(tree: OpeningTree, games: readonly TreeGame[], engine: FixEngine): EngineHoleItem[] {
+  const byId = new Map(games.map((game) => [game.id, game]));
+  const paths = principalPaths(tree);
+  const holes: EngineHoleItem[] = [];
+  for (const node of tree.nodes.values()) {
+    const path = paths.get(node.epd);
+    if (!node.ownerToMove || !path) {
+      continue;
+    }
+    const root = engine.lookup(node.epd, "owner");
+    for (const edge of node.edges) {
+      if (edge.n < ENGINE_HOLE_MIN_N) {
+        continue;
+      }
+      const verdict = rootVerdict(root, edge.uci);
+      if (!verdict) {
+        continue;
+      }
+      const child = engine.lookup(edge.toEpd, "opponent");
+      const replyLine = child?.lines[0];
+      const reply = replyLine
+        ? { uci: replyLine.uci, san: sanOf(edge.toEpd, replyLine.uci), cpForThem: cpEquivalent(replyLine), mate: replyLine.mate }
+        : null;
+      // Without the child's search, the played move's score at the root stands in for the reply.
+      const cpForThem = reply ? reply.cpForThem : -cpEquivalent(verdict.played);
+      const gates = {
+        loss: verdict.loss >= ENGINE_HOLE_MIN_LOSS,
+        reply: verdict.loss >= ENGINE_HOLE_REPLY_LOSS && cpForThem >= ENGINE_HOLE_REPLY_CP
+      };
+      if (!gates.loss && !gates.reply) {
+        continue;
+      }
+      const moves = [...path.moves, edge.uci];
+      const sans = [...path.sans, edge.san];
+      const mover = tree.color;
+      const examples = edge.gameIds.slice(0, FIX_EXAMPLES).map((id): FixExample => {
+        const game = byId.get(id);
+        const index = game ? game.plies.findIndex((ply) => ply.epdBefore === node.epd && ply.uci === edge.uci) : -1;
+        return { id, ply: index + 1, score: game?.score ?? 0, endTime: game?.endTime ?? 0 };
+      });
+      holes.push({
+        kind: "engine-hole",
+        id: `hole:${tree.color}:${moves.join(",")}`,
+        color: tree.color,
+        moves,
+        sans,
+        line: formatLine(sans),
+        before: formatLine(path.sans),
+        name: edge.name,
+        eco: edge.eco,
+        nameExact: edge.nameExact,
+        inBook: edge.inBook,
+        n: edge.n,
+        wN: edge.weighted.wN,
+        score: edge.raw.score,
+        expected: edge.raw.expected,
+        loss: round2(verdict.loss),
+        cls: classifyLoss(verdict.loss),
+        bestUci: verdict.best.uci,
+        bestSan: sanOf(node.epd, verdict.best.uci),
+        ownerEval: { best: ownerScore(verdict.best), played: ownerScore(verdict.played) },
+        whiteEval: { best: whitePoint(verdict.best, mover), played: whitePoint(verdict.played, mover) },
+        reply,
+        gates,
+        impact: (edge.weighted.wN * verdict.loss) / 100,
+        examples
+      });
+    }
+  }
+  return holes.sort((a, b) => b.impact - a.impact || b.n - a.n || (a.id < b.id ? -1 : 1));
+}
+
+/** Engine facts about the games of a results leak (see LeakEngineStats). */
+export function leakEngineStats(games: readonly TreeGame[], engine: FixEngine): LeakEngineStats {
+  const analyses = games.map((game) => engine.analysisOf(game));
+  const evalAt20 = meanEvalAt(analyses, 20);
+  const [share] = firstErrorShares(analyses, [20]);
+  const firsts = analyses
+    .map((analysis) => analysis.firstOwnerError)
+    .filter((first): first is OwnerMoveScored => first !== null && first !== "pending");
+  return {
+    games: analyses.length,
+    complete: analyses.filter((analysis) => analysis.status === "complete").length,
+    evalAt20: evalAt20 ? { ...evalAt20, shown: coverageOk(evalAt20.known, analyses.length) } : null,
+    firstError: { known: share.known, errors: share.errors, rate: share.rate, shown: coverageOk(share.known, analyses.length) },
+    topFirstMistake: topFirstMistakes(firsts, 1)[0] ?? null
+  };
+}
+
+export interface FixList extends FixSelection {
+  /** Engine holes over both colours (empty without engine data). */
+  holes: EngineHoleItem[];
+  /** Leaks and engine holes merged by impact (the watch tier stays apart). */
+  ranked: FixItem[];
+}
+
+/** The fix list over both colours' trees (the leaks form one BH family), with engine holes when `engine` is given. */
+export function buildFixList(trees: readonly { tree: OpeningTree; games: readonly TreeGame[] }[], engine?: FixEngine): FixList {
+  const candidates = trees.flatMap(({ tree, games }) => collectCandidates(tree, games));
+  const selection = selectLeaks(candidates);
+  if (!engine) {
+    return { ...selection, holes: [], ranked: [...selection.items] };
+  }
+  const byId = new Map(trees.flatMap(({ games }) => games.map((game) => [`${game.color}:${game.id}`, game] as const)));
+  const byItem = new Map(candidates.map((candidate) => [itemId(candidate), candidate]));
+  const withStats = (item: ResultsLeakItem): ResultsLeakItem => {
+    const candidate = byItem.get(item.id)!;
+    const games = candidate.games.map((game) => byId.get(`${candidate.color}:${game.id}`)!);
+    return { ...item, engine: leakEngineStats(games, engine) };
+  };
+  const items = selection.items.map(withStats);
+  const watch = selection.watch.map(withStats);
+  const holes = trees
+    .flatMap(({ tree, games }) => collectEngineHoles(tree, games, engine))
+    .sort((a, b) => b.impact - a.impact || b.n - a.n || (a.id < b.id ? -1 : 1));
+  const ranked: FixItem[] = [...items, ...holes].sort((a, b) => b.impact - a.impact || b.n - a.n || (a.id < b.id ? -1 : 1));
+  return { ...selection, items, watch, holes, ranked };
 }

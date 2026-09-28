@@ -1,10 +1,13 @@
 import { describe, expect, it } from "vitest";
 import {
   EARLY_LOSS_PLY,
+  ENGINE_HOLE_MIN_LOSS,
   FIX_FDR_Q,
   bhAdjusted,
   buildFixList,
   collectCandidates,
+  collectEngineHoles,
+  type FixEngine,
   selectLeaks,
   type CandidateGame,
   type FixCandidate
@@ -12,7 +15,8 @@ import {
 import { benjaminiHochberg } from "./moveSignals.js";
 import { buildTree, formatLine, principalPaths, type OpeningTree, type TreeGame } from "./openingTree.js";
 import { replayOpening } from "./pgn.js";
-import type { PlayerColor } from "./types.js";
+import { analyzeGameOpening } from "./openingAnalysis.js";
+import type { PlayerColor, PositionEval } from "./types.js";
 
 const DAY = 86_400;
 const NOW = Date.parse("2026-09-27T00:00:00Z") / 1000;
@@ -283,5 +287,95 @@ describe("item details", () => {
     expect(selectLeaks(candidates).items).toHaveLength(1);
     const fair = selectLeaks(candidates, (entry: CandidateGame) => (Number(entry.id) % 2 ? 1 : 0));
     expect(fair.items).toEqual([]);
+  });
+});
+
+describe("engine holes", () => {
+  const engineLine = (uci: string, cp: number) => ({ uci, cp, mate: null, winPct: 0, depth: 15, pv: [uci] });
+  const epdAfter = (line: string) => {
+    const sans = line.split(" ");
+    return replayOpening(sans, sans.length)[sans.length - 1].epdAfter;
+  };
+  // Owner-to-move roots and the positions after, as the backfill stores them.
+  const evals = new Map<string, PositionEval>();
+  const put = (line: string, lines: [string, number][], scored: [string, number][] = []) => {
+    const epd = epdAfter(line);
+    const all = lines.map(([uci, cp]) => engineLine(uci, cp));
+    evals.set(epd, {
+      epd,
+      tier: "owner",
+      depth: 15,
+      nodes: 1,
+      lines: all,
+      scored: scored.map(([uci, cp]) => engineLine(uci, cp)),
+      terminal: null,
+      bestUci: all[0].uci,
+      score: all[0]
+    });
+  };
+  put("e4 e5 Nf3", [["b8c6", -45], ["g8f6", -52]], [["f8c5", -160], ["d7d6", -60], ["f7f6", -105]]);
+  put("e4", [["e7e5", -30]]);
+  put("e4 e5 Nf3 Bc5", [["f3e5", 155]]);
+  put("e4 e5 Nf3 f6", [["f3e5", 120]]);
+  const engine: FixEngine = {
+    lookup: (epd) => evals.get(epd),
+    analysisOf: (entry) => analyzeGameOpening(entry, (epd) => evals.get(epd))
+  };
+
+  it("lists a refuted owner move even when its results are fine, with impact = wN x loss / 100", () => {
+    const games = [
+      ...results("e4 e5 Nf3 Bc5", "black", { wins: 8, losses: 8 }),
+      ...results("e4 e5 Nf3 d6", "black", { wins: 3, losses: 3 }),
+      ...results("e4 e5 Nf3 f6", "black", { wins: 2, losses: 2 }),
+      ...results("e4 e5 Nf3 Nc6", "black", { wins: 1, losses: 1 })
+    ];
+    const tree = buildTree(games, { color: "black", now: NOW, halfLifeDays: null });
+    const holes = collectEngineHoles(tree, games, engine);
+    // Bc5 (loss ~11, the loss gate); f6 (loss ~5.4 with 3.Nxe5 at +1.20 for White: the reply gate);
+    // d6 (loss ~1.6) and Nc6 (1 game) are not holes.
+    expect(holes.map((hole) => hole.sans.join(" "))).toEqual(["e4 e5 Nf3 Bc5", "e4 e5 Nf3 f6"]);
+    const [bc5, f6] = holes;
+    expect(bc5).toMatchObject({
+      kind: "engine-hole",
+      id: "hole:black:e2e4,e7e5,g1f3,f8c5",
+      line: "1.e4 e5 2.Nf3 Bc5",
+      before: "1.e4 e5 2.Nf3",
+      n: 16,
+      score: 0.5,
+      bestSan: "Nc6",
+      reply: { san: "Nxe5", cpForThem: 155 },
+      ownerEval: { best: { cp: -45 }, played: { cp: -160 } },
+      whiteEval: { best: { cp: 45 }, played: { cp: 160 } },
+      gates: { loss: true, reply: true }
+    });
+    expect(bc5.loss).toBeGreaterThanOrEqual(ENGINE_HOLE_MIN_LOSS);
+    expect(bc5.impact).toBeCloseTo((16 * bc5.loss) / 100, 2);
+    expect(f6.gates).toEqual({ loss: false, reply: true });
+    expect(bc5.examples).toHaveLength(3);
+  });
+
+  it("merges holes with the leaks by impact and adds engine stats to the leaks", () => {
+    const games = [
+      ...results("e4 e5 Nf3 Bc5", "black", { wins: 1, losses: 15 }),
+      ...crowd(20).map((entry) => ({ ...entry, color: "white" as const }))
+    ];
+    const list = fixList(games);
+    expect(list.holes).toEqual([]);
+    const withEngine = buildFixList(
+      (["white", "black"] as const).map((color) => ({ tree: buildTree(games, { color, now: NOW, halfLifeDays: null }), games })),
+      engine
+    );
+    expect(withEngine.holes.map((hole) => hole.line)).toEqual(["1.e4 e5 2.Nf3 Bc5"]);
+    expect(withEngine.ranked.map((item) => item.kind)).toContain("engine-hole");
+    const impacts = withEngine.ranked.map((item) => item.impact);
+    expect(impacts).toEqual([...impacts].sort((a, b) => b - a));
+    const leak = withEngine.items.find((item) => item.line === "1.e4 e5 2.Nf3 Bc5");
+    // The 4-ply games are fully scored: the first mistake (2...Bc5) is known in all 16.
+    expect(leak?.engine).toMatchObject({
+      games: 16,
+      complete: 0,
+      firstError: { known: 16, errors: 16, rate: 1, shown: true },
+      topFirstMistake: { san: "Bc5", bestSan: "Nc6", count: 16 }
+    });
   });
 });

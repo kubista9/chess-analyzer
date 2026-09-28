@@ -1,6 +1,7 @@
 import { Link } from "react-router-dom";
 import type { FixListResponse } from "../../shared/types";
 import { formatCount } from "../utils/formatters";
+import { isLeak } from "./FixCard";
 import { FixCard, explainedLinesOf } from "./FixCard";
 
 /** Home shows this many leaks; /leaks shows them all. */
@@ -32,7 +33,7 @@ export function EmptyLeaks({ data }: { data: FixListResponse }) {
 /** Home: the top leaks from the results-only fix list, with a link to the full list. */
 export function LeaksCard({ data, error }: { data: FixListResponse | null; error: string | null }) {
   const weighted = Boolean(data?.halfLifeDays);
-  const top = data?.items.slice(0, HOME_LEAKS) ?? [];
+  const top = data?.items.filter(isLeak).slice(0, HOME_LEAKS) ?? [];
   const more = data ? data.items.length - top.length : 0;
 
   return (
@@ -56,7 +57,7 @@ export function LeaksCard({ data, error }: { data: FixListResponse | null; error
       ) : top.length ? (
         <div className="fix-list">
           {top.map((item, index) => (
-            <FixCard key={item.id} item={item} rank={index + 1} weighted={weighted} explainedLines={explainedLinesOf(item, data.items)} />
+            <FixCard key={item.id} item={item} rank={index + 1} weighted={weighted} explainedLines={explainedLinesOf(item, data.items.filter(isLeak))} />
           ))}
         </div>
       ) : (

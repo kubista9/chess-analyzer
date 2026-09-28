@@ -270,7 +270,19 @@ describe("fix list and snapshot API", () => {
     expect(body).toMatchObject({ halfLifeDays: 90, timeClass: null, maxPly: 20, tested: 0, significant: 0, items: [], watch: [] });
     expect(body.games.white + body.games.black).toBe(8);
     expect(body.window.key).toBe("6m");
-    expect(body.thresholds).toEqual({ minN: 8, minEss: 8, minZ: 1.64, fdrQ: 0.2, minPoints: 1, earlyLossPly: 40 });
+    expect(body.thresholds).toEqual({
+      minN: 8,
+      minEss: 8,
+      minZ: 1.64,
+      fdrQ: 0.2,
+      minPoints: 1,
+      earlyLossPly: 40,
+      hole: { minN: 3, minLoss: 7, replyLoss: 5, replyCp: 100 },
+      engine: { minGames: 5, minCoverage: 0.5 }
+    });
+    // No position is analysed yet: engine data for 0 games, and no engine claim is shown.
+    expect(body).toMatchObject({ holes: 0, cap: 10, engine: { white: { complete: 0 }, black: { complete: 0 } } });
+    expect(body.engine!.black.firstErrorShares.every((share) => !share.shown && share.known === 0)).toBe(true);
     // Memoised: a second request answers the same list.
     expect((await call<FixListResponse>("/fixlist")).body).toEqual(body);
     expect((await call<FixListResponse>("/fixlist?window=3m&tc=blitz")).body).toMatchObject({ halfLifeDays: null, timeClass: "blitz" });
@@ -360,6 +372,34 @@ describe("engine check API", () => {
     expect(review.body).toMatchObject({ status: "completed", result: { gameId: id } });
     expect(review.body.result?.moves).toHaveLength(20);
     expect(log).toHaveLength(searches);
+  });
+
+  it("adds engine fields to the tree once positions are analysed, and pending before", async () => {
+    const { call, backfill } = await startApi();
+    const before = (await call<TreeResponse>("/tree?color=black&hl=off")).body;
+    expect(before.engine).toMatchObject({ configId: 1, games: before.games, complete: 0 });
+    expect(before.node.engine).toMatchObject({ eval: "pending", bestSan: null });
+    expect(before.node.edges.every((edge) => edge.engine?.status === "pending")).toBe(true);
+
+    await call("/analysis/backfill", { method: "POST", body: "{}" });
+    await backfill.idle();
+    const after = (await call<TreeResponse>("/tree?color=black&hl=off")).body;
+    expect(after.engine).toMatchObject({ games: after.games, complete: after.games });
+    expect(after.node.engine?.eval).toMatchObject({ cp: expect.any(Number) });
+    const [edge] = after.node.edges;
+    expect(edge.engine).toMatchObject({ status: "scored", approx: true });
+    const deeper = (await call<TreeResponse>(`/tree?color=black&hl=off&moves=${edge.uci}`)).body;
+    expect(deeper.node.ownerToMove).toBe(true);
+    for (const row of deeper.node.edges) {
+      expect(row.engine).toMatchObject({ status: "scored", approx: false, loss: expect.any(Number), cls: expect.any(String) });
+      if (row.engine?.status === "scored") {
+        expect(Math.abs(row.engine.eval.cp)).toBeLessThanOrEqual(1000);
+      }
+    }
+    expect(deeper.node.engine?.hotspot.known).toBe(deeper.node.engine?.games);
+
+    const fix = (await call<FixListResponse>("/fixlist?hl=off")).body;
+    expect(fix.engine?.black).toMatchObject({ complete: fix.games.black, games: fix.games.black });
   });
 
   it("runs an unanalysed game's review on the pool and then records the game as analysed", async () => {

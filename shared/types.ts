@@ -1,7 +1,8 @@
 import type { IMPORTED_TIME_CLASSES, MOVE_CATEGORIES, SKIP_REASONS } from "./constants.js";
-import type { FixItem } from "./fixList.js";
+import type { FixItem, ResultsLeakItem } from "./fixList.js";
 import type { TreeEdge, TreeNode } from "./openingTree.js";
 import type { ColorSnapshot } from "./repertoireSnapshot.js";
+import type { EdgeEngine, NodeEngine } from "./treeEngine.js";
 import type { GameWindow } from "./window.js";
 
 export type MoveCategory = (typeof MOVE_CATEGORIES)[number];
@@ -392,11 +393,23 @@ export interface GameResponse {
   game: GameRecord;
 }
 
-/** A move row as the API sends it: the tree edge without its game ids (GET /api/tree/games pages them). */
-export type TreeEdgeView = Omit<TreeEdge, "gameIds">;
+/**
+ * A move row as the API sends it: the tree edge without its game ids (GET /api/tree/games pages
+ * them), with its engine fields (null when there is no engine data at all).
+ */
+export type TreeEdgeView = Omit<TreeEdge, "gameIds"> & { engine: EdgeEngine | null };
 
 export interface TreeNodeView extends Omit<TreeNode, "edges"> {
   edges: TreeEdgeView[];
+  engine: NodeEngine | null;
+}
+
+/** How much of a colour's games the engine has seen: "engine data for X of Y games". */
+export interface EngineCoverage {
+  configId: number;
+  /** Games in the filters, and those with every ply of their window scored. */
+  games: number;
+  complete: number;
 }
 
 /** One step of the move path from the start position (a breadcrumb). */
@@ -429,6 +442,8 @@ export interface TreeResponse {
   node: TreeNodeView;
   /** The moves from the start when the node was asked for by `moves=`; empty for `epd=`. */
   path: TreeBreadcrumb[];
+  /** null when no engine config could be resolved (no engine installed). */
+  engine: EngineCoverage | null;
 }
 
 /** A game that played one move of the tree, for the Explorer's games drawer. */
@@ -474,15 +489,36 @@ export interface RepertoireScope {
   games: Record<PlayerColor, number>;
 }
 
-/** GET /api/fixlist: results-only leaks over both colours' trees. */
+/** A colour's engine summary for Home: coverage and the first-mistake shares by ply. */
+export interface ColorEngineSummary extends EngineCoverage {
+  firstErrorShares: { ply: number; known: number; errors: number; rate: number | null; shown: boolean }[];
+}
+
+/** GET /api/fixlist: results leaks and engine holes over both colours' trees. */
 export interface FixListResponse extends RepertoireScope {
   /** Owner moves with enough games that were tested (one Benjamini-Hochberg family). */
   tested: number;
   significant: number;
+  /** Results leaks and engine holes, merged by impact. */
   items: FixItem[];
+  /** How many of `items` are engine holes. */
+  holes: number;
   /** Nominally significant lines that do not survive the multiple-comparison control. */
-  watch: FixItem[];
-  thresholds: { minN: number; minEss: number; minZ: number; fdrQ: number; minPoints: number; earlyLossPly: number };
+  watch: ResultsLeakItem[];
+  /** null without an engine config. */
+  engine: Record<PlayerColor, ColorEngineSummary> | null;
+  /** Items shown before "show all". */
+  cap: number;
+  thresholds: {
+    minN: number;
+    minEss: number;
+    minZ: number;
+    fdrQ: number;
+    minPoints: number;
+    earlyLossPly: number;
+    hole: { minN: number; minLoss: number; replyLoss: number; replyCp: number };
+    engine: { minGames: number; minCoverage: number };
+  };
 }
 
 /** GET /api/snapshot: the main opponent moves and the owner's answers, per colour. */

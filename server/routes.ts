@@ -3,6 +3,8 @@ import { z } from "zod";
 import { IMPORTED_TIME_CLASSES, OPENING_PLY_LIMIT } from "../shared/constants.js";
 import type {
   AnalysisStatus,
+  ColorEngineSummary,
+  EngineCoverage,
   FixListResponse,
   GameResponse,
   PlayerColor,
@@ -20,15 +22,22 @@ import { START_EPD } from "../shared/epd.js";
 import type { OpeningBook } from "../shared/openingBook.js";
 import {
   EARLY_LOSS_PLY,
+  ENGINE_HOLE_MIN_LOSS,
+  ENGINE_HOLE_MIN_N,
+  ENGINE_HOLE_REPLY_CP,
+  ENGINE_HOLE_REPLY_LOSS,
   FIX_FDR_Q,
+  FIX_LIST_CAP,
   FIX_MIN_ESS,
   FIX_MIN_N,
   FIX_MIN_POINTS,
   FIX_MIN_Z,
   buildFixList,
-  type FixSelection
+  type FixList
 } from "../shared/fixList.js";
+import { ENGINE_MIN_COVERAGE, ENGINE_MIN_GAMES, coverageOk, firstErrorShares } from "../shared/openingAnalysis.js";
 import { nodeView, walkMoves, type OpeningTree, type TreeNode } from "../shared/openingTree.js";
+import { edgeEngine, nodeEngine } from "../shared/treeEngine.js";
 import { buildSnapshot } from "../shared/repertoireSnapshot.js";
 import { GAME_WINDOWS, parseGameWindow, windowBounds } from "../shared/window.js";
 import { config } from "./config.js";
@@ -38,6 +47,7 @@ import { jobStore as defaultJobStore, type JobStore } from "./store/jobStore.js"
 import { syncArchives } from "./services/archiveImport.js";
 import { buildImportStatus } from "./services/importStatus.js";
 import { getOpeningBook } from "./services/openingBook.js";
+import { createAnalysisIndex, type EngineView } from "./services/analysisIndex.js";
 import { cachedGameReview, runGameReview } from "./services/reviewAnalysis.js";
 import { BackfillService, BackfillStartError } from "./services/backfillService.js";
 import { readPowerState } from "./services/power.js";
@@ -205,18 +215,37 @@ export function createApiRouter(deps: ApiDeps): express.Router {
     return { built, scope };
   };
 
-  // The fix list is recomputed only when either memoised tree was rebuilt.
-  const fixMemo = new Map<string, { trees: Record<PlayerColor, OpeningTree>; selection: FixSelection }>();
-  const fixList = (built: Record<PlayerColor, BuiltTree>): FixSelection => {
+  const analysis = createAnalysisIndex({ book: deps.book, maxPly: OPENING_PLY_LIMIT });
+
+  /** The position cache of the current engine config, or null when no engine config resolves (no engine installed). */
+  const engineView = async (): Promise<EngineView | null> => {
+    const db = deps.db();
+    try {
+      return analysis.view(db, (await deps.engineConfig(db)).id);
+    } catch {
+      return null;
+    }
+  };
+
+  const coverageOf = (engine: EngineView, built: BuiltTree): EngineCoverage => ({
+    configId: engine.configId,
+    games: built.games.length,
+    complete: built.games.filter((game) => engine.analysisOf(game).status === "complete").length
+  });
+
+  // The fix list is recomputed only when either memoised tree was rebuilt or the position cache changed.
+  const fixMemo = new Map<string, { trees: Record<PlayerColor, OpeningTree>; generation: string | null; selection: FixList }>();
+  const fixList = (built: Record<PlayerColor, BuiltTree>, engine: EngineView | null): FixList => {
     const { window, timeClass, halfLifeDays } = built.white.filters;
     const key = `${window}|${timeClass ?? "all"}|${halfLifeDays ?? "off"}`;
+    const generation = engine?.generation ?? null;
     const hit = fixMemo.get(key);
-    if (hit && hit.trees.white === built.white.tree && hit.trees.black === built.black.tree) {
+    if (hit && hit.trees.white === built.white.tree && hit.trees.black === built.black.tree && hit.generation === generation) {
       return hit.selection;
     }
-    const selection = buildFixList([built.white, built.black]);
+    const selection = buildFixList([built.white, built.black], engine ?? undefined);
     fixMemo.delete(key);
-    fixMemo.set(key, { trees: { white: built.white.tree, black: built.black.tree }, selection });
+    fixMemo.set(key, { trees: { white: built.white.tree, black: built.black.tree }, generation, selection });
     if (fixMemo.size > 16) {
       fixMemo.delete(fixMemo.keys().next().value!);
     }
@@ -259,9 +288,16 @@ export function createApiRouter(deps: ApiDeps): express.Router {
   // One node of the per-colour opening tree (by `moves=`, `epd=`, or the start position) with
   // its move rows and breadcrumbs, over the stored games in the window. Trees are memoised
   // per filter set.
-  router.get("/tree", (request, response) => {
+  router.get("/tree", async (request, response) => {
     const query = treeQuerySchema.parse(request.query);
     const { built, node, path } = findTreeNode(trees, query, deps.now());
+    const engine = await engineView();
+    const view = engine
+      ? nodeView(node, {
+          node: nodeEngine(node, built.games, engine.analysisOf, engine.lookup, built.tree.maxPly),
+          edge: (edge) => edgeEngine(node, edge, engine.lookup)
+        })
+      : nodeView(node);
     response.json({
       window: built.window,
       color: query.color,
@@ -269,29 +305,49 @@ export function createApiRouter(deps: ApiDeps): express.Router {
       halfLifeDays: built.filters.halfLifeDays,
       maxPly: built.tree.maxPly,
       games: built.tree.games,
-      node: nodeView(node),
-      path
+      node: view,
+      path,
+      engine: engine ? coverageOf(engine, built) : null
     } satisfies TreeResponse);
   });
 
   // Fix list v0: the owner's moves that lose points against his Elo expectation, over both
   // colours (one multiple-comparison family), with blame attribution. Results only.
-  router.get("/fixlist", (request, response) => {
+  router.get("/fixlist", async (request, response) => {
     const { built, scope } = bothTrees(repertoireQuerySchema.parse(request.query));
-    const selection = fixList(built);
+    const engine = await engineView();
+    const selection = fixList(built, engine);
+    const summary = (colorBuilt: BuiltTree): ColorEngineSummary => {
+      const analyses = colorBuilt.games.map((game) => engine!.analysisOf(game));
+      return {
+        ...coverageOf(engine!, colorBuilt),
+        firstErrorShares: firstErrorShares(analyses, [10, 16, 20]).map(({ ply, known, errors, rate }) => ({
+          ply,
+          known,
+          errors,
+          rate,
+          shown: coverageOk(known, analyses.length)
+        }))
+      };
+    };
     response.json({
       ...scope,
       tested: selection.tested,
       significant: selection.significant,
-      items: selection.items,
+      items: selection.ranked,
+      holes: selection.holes.length,
       watch: selection.watch,
+      engine: engine ? { white: summary(built.white), black: summary(built.black) } : null,
+      cap: FIX_LIST_CAP,
       thresholds: {
         minN: FIX_MIN_N,
         minEss: FIX_MIN_ESS,
         minZ: FIX_MIN_Z,
         fdrQ: FIX_FDR_Q,
         minPoints: FIX_MIN_POINTS,
-        earlyLossPly: EARLY_LOSS_PLY
+        earlyLossPly: EARLY_LOSS_PLY,
+        hole: { minN: ENGINE_HOLE_MIN_N, minLoss: ENGINE_HOLE_MIN_LOSS, replyLoss: ENGINE_HOLE_REPLY_LOSS, replyCp: ENGINE_HOLE_REPLY_CP },
+        engine: { minGames: ENGINE_MIN_GAMES, minCoverage: ENGINE_MIN_COVERAGE }
       }
     } satisfies FixListResponse);
   });

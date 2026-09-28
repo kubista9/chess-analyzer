@@ -8,6 +8,7 @@ import { useFilters } from "../hooks/useFilters";
 import { useStoreQuery } from "../hooks/useStoreQuery";
 import { useWorkspace } from "../hooks/useWorkspace";
 import { formatCount } from "../utils/formatters";
+import { isLeak } from "../components/FixCard";
 import "../styles/leaks.css";
 
 /** /leaks: the whole fix list, the watch list, and how the list is made. */
@@ -20,7 +21,7 @@ export function LeaksPage() {
   );
   const { data, error, loading } = useStoreQuery((signal) => fetchFixList(query, signal), [query, dataVersion]);
   const weighted = Boolean(data?.halfLifeDays);
-  const all = data ? [...data.items, ...data.watch] : [];
+  const all = data ? [...data.items.filter(isLeak), ...data.watch] : [];
 
   return (
     <div className="page-content leaks-page">
@@ -48,7 +49,7 @@ export function LeaksPage() {
           <p className="home-empty">Loading…</p>
         ) : data.items.length ? (
           <div className="fix-list">
-            {data.items.map((item, index) => (
+            {data.items.filter(isLeak).map((item, index) => (
               <FixCard key={item.id} item={item} rank={index + 1} weighted={weighted} explainedLines={explainedLinesOf(item, all)} />
             ))}
           </div>

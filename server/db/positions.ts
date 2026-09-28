@@ -163,3 +163,20 @@ export function averageNodes(db: Db, configId: number): Record<EngineTier, { n: 
   }
   return result;
 }
+
+/** A cheap change stamp of a config's positions: rows are only ever inserted or upgraded (analyzed_at moves). */
+export function positionsStamp(db: Db, configId: number): { count: number; lastAt: number } {
+  const row = db.prepare("SELECT COUNT(*) AS n, MAX(analyzed_at) AS m FROM positions WHERE config_id = ?").get(configId) as {
+    n: number;
+    m: number | null;
+  };
+  return { count: row.n, lastAt: row.m ?? 0 };
+}
+
+/** Every eval of a config written at or after `sinceMs` (ms since the epoch), for incremental in-memory indexes. */
+export function listPositionEvals(db: Db, configId: number, sinceMs = 0): PositionEval[] {
+  const rows = db
+    .prepare(`SELECT ${SELECT_COLUMNS} FROM positions WHERE config_id = ? AND analyzed_at >= ?`)
+    .all(configId, sinceMs) as PositionRow[];
+  return rows.map(toEval);
+}

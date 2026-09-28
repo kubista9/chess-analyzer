@@ -12,6 +12,7 @@ import {
   type ScoreAccumulator,
   type ScoreSummary
 } from "./stats.js";
+import type { EdgeEngine, NodeEngine } from "./treeEngine.js";
 import type { GameRecord, OpeningPly, PlayerColor, TreeBreadcrumb, TreeNodeView } from "./types.js";
 
 // A per-colour opening tree keyed by EPD, so transpositions land on one node. Built in memory
@@ -476,9 +477,13 @@ export function formatLine(sans: readonly string[], firstPly: number = 1): strin
     .join(" ");
 }
 
-/** A node as the API sends it: every edge without its game ids. */
-export function nodeView(node: TreeNode): TreeNodeView {
-  return { ...node, edges: node.edges.map(({ gameIds: _gameIds, ...edge }) => edge) };
+/** A node as the API sends it: every edge without its game ids, with the engine fields if given. */
+export function nodeView(node: TreeNode, engine?: { node: NodeEngine; edge: (edge: TreeEdge) => EdgeEngine }): TreeNodeView {
+  return {
+    ...node,
+    edges: node.edges.map(({ gameIds: _gameIds, ...edge }, index) => ({ ...edge, engine: engine ? engine.edge(node.edges[index]) : null })),
+    engine: engine?.node ?? null
+  };
 }
 
 /**

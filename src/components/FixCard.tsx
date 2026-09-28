@@ -1,6 +1,8 @@
 import { Link } from "react-router-dom";
 import { ArrowDownRight, ArrowRight, ArrowUpRight, Compass } from "lucide-react";
-import type { FixItem } from "../../shared/fixList";
+import type { FixItem as AnyFixItem, ResultsLeakItem as FixItem } from "../../shared/fixList";
+
+export const isLeak = (item: AnyFixItem): item is FixItem => item.kind === "results-leak";
 import type { PlayerColor } from "../../shared/types";
 import type { ExplorerFilters } from "../hooks/useFilters";
 import { formatCount, formatDay, formatDelta, formatPoints, pct, pctOne } from "../utils/formatters";
