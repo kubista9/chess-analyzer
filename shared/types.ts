@@ -203,47 +203,6 @@ export interface ReviewLine {
   mate: number | null;
 }
 
-export interface AnnotatedMove {
-  ply: number;
-  moveNumber: number;
-  san: string;
-  uci: string;
-  color: PlayerColor;
-  category: MoveCategory;
-  /** Evals from White's point of view (cp clamped to +/-1000; mate kept separately, + = White mates). */
-  whiteCpBefore: number;
-  whiteCpAfter: number;
-  mateBefore: number | null;
-  mateAfter: number | null;
-  /** Win% the mover gave away (lichess formula), never negative. */
-  lossWinPct: number;
-  bestLine: ReviewLine;
-  fenBefore: string;
-  fenAfter: string;
-  note: string;
-  isPlayerMove: boolean;
-}
-
-/** A small header for the review page, derived from the archive game (no engine fields). */
-export interface ReviewGameHeader {
-  url: string;
-  endTime: number;
-  timeClass: TimeClass;
-  openingName: string;
-  result: GameResult;
-  white: { username: string; rating: number };
-  black: { username: string; rating: number };
-}
-
-export interface ReviewSummary {
-  gameId: string;
-  /** The owner's colour. */
-  color: PlayerColor;
-  header: ReviewGameHeader;
-  /** At most OPENING_PLY_LIMIT moves. */
-  moves: AnnotatedMove[];
-}
-
 /** One ply of a game's opening, as stored in game_plies (the first DERIVE_PLY_LIMIT plies). */
 export interface OpeningPly {
   /** 1-based half-move number. */

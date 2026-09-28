@@ -32,7 +32,8 @@ import { engineOptions } from "../../server/engine/sharedPool.js";
 import { UciEngine, detectEngineId } from "../../server/engine/uci.js";
 import { runBackfill, type BackfillPool } from "../../server/services/backfill.js";
 import { isAnswered, openingPositions } from "../../server/services/openingPass.js";
-import { cachedGameReview } from "../../server/services/reviewAnalysis.js";
+import { reviewFromStore } from "../../server/services/review.js";
+import { getOpeningBook } from "../../server/services/openingBook.js";
 import { OWNER, argValue, openStoreReadonly, printTable } from "./_lib.js";
 
 const failures: string[] = [];
@@ -177,10 +178,10 @@ try {
   check(again.gamesAnalysed === 0 && again.progress.games.total === 0 && again.positionsSearched === 0, "incremental rule: a second run analysed games");
 
   const reviewStarted = performance.now();
-  const review = cachedGameReview(db, sampleIds[0], current.id);
+  const review = reviewFromStore(db, sampleIds[0], current.id, getOpeningBook());
   const reviewMs = performance.now() - reviewStarted;
-  console.log(`Review of ${sampleIds[0]} from the cache: ${review ? `${review.moves.length} moves in ${reviewMs.toFixed(1)} ms` : "NOT cached"}.`);
-  check(Boolean(review) && review!.moves.length === Math.min(OPENING_PLY_LIMIT, moves.get(sampleIds[0])?.plies.length ?? 0), "the cached review is incomplete");
+  console.log(`Review of ${sampleIds[0]} from the cache: ${review.coverage.pliesScored} / ${review.plies.length} plies scored in ${reviewMs.toFixed(1)} ms.`);
+  check(review.status === "complete" && review.plies.length === Math.min(OPENING_PLY_LIMIT, moves.get(sampleIds[0])?.plies.length ?? 0), "the cached review is incomplete");
 
   const oldRows = (db.prepare("SELECT COUNT(*) AS n FROM game_analysis WHERE config_id = ?").get(current.id) as { n: number }).n;
   const oldQueue = countAnalysisQueue(db, query(current.id));

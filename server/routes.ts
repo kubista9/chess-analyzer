@@ -12,7 +12,6 @@ import type {
   RepertoireScope,
   SnapshotResponse,
   QueryWindow,
-  ReviewSummary,
   TreeBreadcrumb,
   SyncJobResult,
   TreeGamesResponse,
@@ -48,7 +47,8 @@ import { syncArchives } from "./services/archiveImport.js";
 import { buildImportStatus } from "./services/importStatus.js";
 import { getOpeningBook } from "./services/openingBook.js";
 import { createAnalysisIndex, type EngineView } from "./services/analysisIndex.js";
-import { cachedGameReview, runGameReview } from "./services/reviewAnalysis.js";
+import { ReviewInputError, completeReview, retryMove, reviewFromStore } from "./services/review.js";
+import type { GameAnalysisResponse, OpeningReview, RetryResult } from "../shared/review.js";
 import { BackfillService, BackfillStartError } from "./services/backfillService.js";
 import { readPowerState } from "./services/power.js";
 import type { EngineConfig } from "./db/engineConfigs.js";
@@ -63,8 +63,9 @@ import {
   type TreeService
 } from "./services/treeService.js";
 
-const reviewSchema = z.object({
-  gameId: z.string().min(1)
+const retrySchema = z.object({
+  ply: z.number().int().min(1).max(OPENING_PLY_LIMIT),
+  uci: z.string().regex(/^[a-h][1-8][a-h][1-8][qrbn]?$/, "a UCI move")
 });
 
 const syncSchema = z.object({
@@ -128,6 +129,15 @@ export class HttpError extends Error {
     readonly code?: string
   ) {
     super(message);
+  }
+}
+
+/** Runs a review step, turning its input errors into HTTP errors. */
+async function withReviewErrors<T>(run: () => Promise<T>): Promise<T> {
+  try {
+    return await run();
+  } catch (error) {
+    throw error instanceof ReviewInputError ? new HttpError(error.status, error.message) : error;
   }
 }
 
@@ -384,30 +394,45 @@ export function createApiRouter(deps: ApiDeps): express.Router {
     } satisfies TreeGamesResponse);
   });
 
-  // Starts (or joins) the opening review of one stored game, keyed "review:<gameId>". A game
-  // whose positions are all in the position cache (e.g. backfilled) is answered at once.
-  router.post("/game-review", async (request, response) => {
-    const { gameId } = reviewSchema.parse(request.body);
+  // The opening review of one stored game, from the position cache. A game whose positions are
+  // all cached (e.g. backfilled) is answered at once (200). Otherwise the missing positions are
+  // queued at interactive priority as one job per game ("review:<gameId>"; opening the review
+  // twice joins it), and the partial review is answered with 202 and the job id; the job's
+  // result is the complete review.
+  router.get("/games/:id/analysis", async (request, response) => {
+    const gameId = request.params.id;
     const db = deps.db();
-    if (!getGame(db, gameId)) {
-      throw new HttpError(404, `Game ${gameId} is not in the game store. Sync from Home first.`);
+    const book = deps.book();
+    let configId: number | null = null;
+    let engineError: string | null = null;
+    try {
+      configId = (await deps.engineConfig(db)).id;
+    } catch (error) {
+      engineError = `Stockfish is not available: ${error instanceof Error ? error.message : String(error)}`;
     }
-
-    const key = `review:${gameId}`;
-    const engineConfig = await deps.engineConfig(db);
-    const cached = cachedGameReview(db, gameId, engineConfig.id);
-    if (cached) {
-      response.json(deps.jobs.completed<ReviewSummary>(key, "game-review", "Opening review ready", cached));
+    const review = await withReviewErrors(async () => reviewFromStore(db, gameId, configId, book));
+    if (review.status === "complete" || configId === null) {
+      response.json({ review, job: null, engineError } satisfies GameAnalysisResponse);
       return;
     }
-
-    const { job } = deps.jobs.startOrReuse<ReviewSummary>(key, "game-review", "Opening review", async (reporter) => {
+    const engineConfigId = configId;
+    const { job } = deps.jobs.startOrReuse<OpeningReview>(`review:${gameId}`, "game-review", "Opening review", async (reporter) => {
       reporter.progress(5, "Starting Stockfish");
-      return runGameReview(deps.db(), deps.pool(), engineConfig.id, gameId, (done, total) =>
+      return completeReview({ db: deps.db(), pool: deps.pool(), configId: engineConfigId }, gameId, book, (done, total) =>
         reporter.progress(5 + (done / total) * 90, `Stockfish: ${done} of ${total} positions`)
       );
     });
-    response.status(202).json(job);
+    response.status(202).json({ review, job, engineError } satisfies GameAnalysisResponse);
+  });
+
+  // Retry: judges the owner's move {ply, uci} from the position before ply `ply` against the
+  // cached best line. A move the cache has not scored is scored now at interactive priority.
+  router.post("/games/:id/retry", async (request, response) => {
+    const { ply, uci } = retrySchema.parse(request.body);
+    const db = deps.db();
+    const configId = (await deps.engineConfig(db)).id;
+    const result = await withReviewErrors(() => retryMove({ db, pool: deps.pool(), configId }, request.params.id, ply, uci));
+    response.json(result satisfies RetryResult);
   });
 
   // The engine check: coverage of the window, the queue, and the running backfill (in this

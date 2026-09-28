@@ -10,12 +10,13 @@ import type {
   FixListResponse,
   JobState,
   PowerState,
-  ReviewSummary,
   SnapshotResponse,
   SyncSummary,
   TreeGamesResponse,
   TreeResponse
 } from "../shared/types.js";
+import { Chess } from "chess.js";
+import type { GameAnalysisResponse, OpeningReview, RetryResult } from "../shared/review.js";
 import { legalFakePool } from "../test/fakeEngine.js";
 import { loadOwnerGames } from "../test/loadFixtures.js";
 import { createApp } from "./app.js";
@@ -142,7 +143,7 @@ describe("jobs API", () => {
 
   it("answers 404 for a review of a game that is not stored", async () => {
     const { call } = await startApi();
-    const { status } = await call("/game-review", { method: "POST", body: JSON.stringify({ gameId: "123" }) });
+    const { status } = await call("/games/123/analysis");
     expect(status).toBe(404);
   });
 });
@@ -367,11 +368,41 @@ describe("engine check API", () => {
     const searches = log.length;
     const [{ id }] = db.prepare("SELECT id FROM games ORDER BY end_time DESC LIMIT 1").all() as { id: string }[];
 
-    const review = await call<JobState<ReviewSummary>>("/game-review", { method: "POST", body: JSON.stringify({ gameId: id }) });
+    const review = await call<GameAnalysisResponse>(`/games/${id}/analysis`);
     expect(review.status).toBe(200);
-    expect(review.body).toMatchObject({ status: "completed", result: { gameId: id } });
-    expect(review.body.result?.moves).toHaveLength(20);
+    expect(review.body).toMatchObject({ job: null, engineError: null, review: { gameId: id, status: "complete" } });
+    expect(review.body.review.plies).toHaveLength(20);
+    expect(review.body.review.plies.every((ply) => ply.lines.length && ply.played && ply.evalAfter !== "pending")).toBe(true);
     expect(log).toHaveLength(searches);
+  });
+
+  it("judges a Retry move from the cache, scores an unknown move on demand, and refuses opponent plies", async () => {
+    const { call, backfill, log, db } = await startApi();
+    await call("/analysis/backfill", { method: "POST", body: "{}" });
+    await backfill.idle();
+    const [{ id }] = db.prepare("SELECT id FROM games ORDER BY end_time DESC LIMIT 1").all() as { id: string }[];
+    const { review } = (await call<GameAnalysisResponse>(`/games/${id}/analysis`)).body;
+    const mine = review.plies.find((ply) => ply.owner)!;
+    const theirs = review.plies.find((ply) => !ply.owner)!;
+    const retry = (ply: number, uci: string) => call<RetryResult & { error?: string }>(`/games/${id}/retry`, { method: "POST", body: JSON.stringify({ ply, uci }) });
+    const searches = log.length;
+
+    // The fake engine's lines are +20, +10, 0 cp: the best is correct, the second within 1 win%.
+    const best = await retry(mine.ply, mine.lines[0].uci);
+    expect(best.body).toMatchObject({ verdict: "correct", loss: 0, searched: false, san: mine.lines[0].san });
+    expect(log).toHaveLength(searches);
+
+    // A legal move nobody played there: one depth-matched searchmoves follow-up (-40 cp), stored.
+    const known = new Set([...mine.lines.map((entry) => entry.uci), mine.uci]);
+    const fresh = new Chess(mine.fenBefore).moves({ verbose: true }).map((move) => move.lan).find((uci) => !known.has(uci))!;
+    const unknown = await retry(mine.ply, fresh);
+    expect(unknown.body).toMatchObject({ verdict: "try-again", searched: true, uci: fresh });
+    expect(unknown.body.best.san).toBe(mine.lines[0].san);
+    expect(log.slice(searches)).toEqual([expect.objectContaining({ searchmoves: [fresh] })]);
+    expect((await retry(mine.ply, fresh)).body.searched).toBe(false);
+
+    expect((await retry(theirs.ply, theirs.uci)).status).toBe(400);
+    expect((await retry(mine.ply, "a1a8")).status).toBe(400);
   });
 
   it("adds engine fields to the tree once positions are analysed, and pending before", async () => {
@@ -405,13 +436,24 @@ describe("engine check API", () => {
   it("runs an unanalysed game's review on the pool and then records the game as analysed", async () => {
     const { call, db, jobs } = await startApi();
     const [{ id }] = db.prepare("SELECT id FROM games ORDER BY end_time DESC LIMIT 1").all() as { id: string }[];
-    const started = await call<JobState<ReviewSummary>>("/game-review", { method: "POST", body: JSON.stringify({ gameId: id }) });
+    const [started, again] = await Promise.all([
+      call<GameAnalysisResponse>(`/games/${id}/analysis`),
+      call<GameAnalysisResponse>(`/games/${id}/analysis`)
+    ]);
     expect(started.status).toBe(202);
-    for (let tries = 0; tries < 100 && jobs.get(started.body.id)?.status !== "completed"; tries += 1) {
+    expect(started.body.review.status).toBe("partial");
+    const job = started.body.job!;
+    expect(job).toMatchObject({ key: `review:${id}`, type: "game-review" });
+    // Opening it twice starts one job.
+    expect(again.body.job?.id).toBe(job.id);
+    for (let tries = 0; tries < 100 && jobs.get(job.id)?.status !== "completed"; tries += 1) {
       await new Promise((resolve) => setTimeout(resolve, 20));
     }
-    expect(jobs.get<ReviewSummary>(started.body.id)?.result?.moves.length).toBeGreaterThan(0);
+    expect(jobs.get<OpeningReview>(job.id)?.result).toMatchObject({ gameId: id, status: "complete" });
     const status = await call<AnalysisStatus>("/analysis/status");
     expect(status.body.games.analysed).toBe(1);
+    const reopened = await call<GameAnalysisResponse>(`/games/${id}/analysis`);
+    expect(reopened.status).toBe(200);
+    expect(reopened.body.job).toBeNull();
   });
 });
