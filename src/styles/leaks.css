@@ -72,6 +72,21 @@
   color: var(--text);
 }
 
+/* Unprepared replies (the repertoire has no answer) are violet. */
+.fix-card-unprepared {
+  border-color: rgba(167, 139, 250, 0.4);
+  background: linear-gradient(180deg, rgba(167, 139, 250, 0.06), transparent 60%);
+}
+
+.move-tag-unprepared {
+  background: rgba(167, 139, 250, 0.2);
+  color: #c4b5fd;
+}
+
+.fix-card-unprepared .fix-stats dd {
+  color: var(--text);
+}
+
 .fix-engine {
   color: var(--muted);
 }

@@ -156,6 +156,30 @@ export const MIGRATIONS: Migration[] = [
         error              TEXT
       );
     `
+  },
+  {
+    version: 4,
+    name: "repertoire entries",
+    sql: `
+      -- The owner's repertoire: per colour, one move for each owner-to-move position (EPD), so
+      -- transposed positions share one entry. Seeded from his games, then edited by him.
+      CREATE TABLE repertoire_entries (
+        username      TEXT    NOT NULL,
+        color         TEXT    NOT NULL CHECK (color IN ('white', 'black')),
+        epd           TEXT    NOT NULL,
+        uci           TEXT    NOT NULL,
+        san           TEXT    NOT NULL,
+        source        TEXT    NOT NULL CHECK (source IN ('from-games', 'seed-engine', 'edited')),
+        status        TEXT    NOT NULL CHECK (status IN ('active', 'needs-review')),
+        locked        INTEGER NOT NULL DEFAULT 0,  -- 1: a re-seed never changes it
+        replaced_json TEXT,                        -- {uci, san, loss, reason} of the move it replaced
+        reason        TEXT,                        -- the seed's explanation (facts only)
+        note          TEXT,                        -- the owner's note
+        ply           INTEGER NOT NULL,            -- the move's ply on the shortest path
+        updated_at    INTEGER NOT NULL,            -- ms
+        PRIMARY KEY (username, color, epd)
+      ) WITHOUT ROWID;
+    `
   }
 ];
 

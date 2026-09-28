@@ -10,6 +10,8 @@ import type {
   FixListResponse,
   JobState,
   PowerState,
+  RepertoireResponse,
+  SeedResponse,
   SnapshotResponse,
   SyncSummary,
   TreeGamesResponse,
@@ -17,6 +19,7 @@ import type {
 } from "../shared/types.js";
 import { Chess } from "chess.js";
 import type { GameAnalysisResponse, OpeningReview, RetryResult } from "../shared/review.js";
+import type { RepEntry } from "../shared/repertoire.js";
 import { legalFakePool } from "../test/fakeEngine.js";
 import { loadOwnerGames } from "../test/loadFixtures.js";
 import { createApp } from "./app.js";
@@ -101,7 +104,8 @@ async function startApi(sync: () => Promise<SyncSummary> = () => new Promise(() 
     });
     // Unknown routes answer Express's HTML 404, not JSON.
     const text = await response.text();
-    return { status: response.status, body: (text.startsWith("{") || text.startsWith("[") ? JSON.parse(text) : text) as T };
+    const json = response.headers.get("content-type")?.includes("json") ?? false;
+    return { status: response.status, body: (json ? JSON.parse(text) : text) as T };
   };
   return { call, jobs, db, backfill, log: fake.log };
 }
@@ -455,5 +459,87 @@ describe("engine check API", () => {
     const reopened = await call<GameAnalysisResponse>(`/games/${id}/analysis`);
     expect(reopened.status).toBe(200);
     expect(reopened.body.job).toBeNull();
+  });
+});
+
+describe("repertoire API", () => {
+  it("seeds as a dry run, applies, edits losslessly, never overwrites an edit, and exports PGN", async () => {
+    const { call } = await startApi();
+    const empty = await call<RepertoireResponse>("/repertoire");
+    expect(empty.status).toBe(200);
+    expect(empty.body.white).toMatchObject({ entries: 0, needsReview: 0 });
+    expect(empty.body.white.nodes[0]).toMatchObject({ epd: START_EPD, ply: 0, ownerToMove: true, entry: null });
+
+    // Dry run: a diff, nothing written.
+    const dry = await call<SeedResponse>("/repertoire/seed", { method: "POST", body: "{}" });
+    expect(dry.status).toBe(200);
+    expect(dry.body.applied).toBe(false);
+    const adds = [...dry.body.diff.white.changes, ...dry.body.diff.black.changes].filter((change) => change.kind === "add");
+    expect(adds.length).toBeGreaterThan(0);
+    expect((await call<RepertoireResponse>("/repertoire")).body.white.entries).toBe(0);
+
+    const applied = await call<SeedResponse>("/repertoire/seed", { method: "POST", body: JSON.stringify({ apply: true }) });
+    expect(applied.body.applied).toBe(true);
+    const seeded = (await call<RepertoireResponse>("/repertoire")).body;
+    expect(seeded.white.entries + seeded.black.entries).toBe(adds.length);
+    // A second seed changes nothing.
+    const again = await call<SeedResponse>("/repertoire/seed", { method: "POST", body: "{}" });
+    expect([...again.body.diff.white.changes, ...again.body.diff.black.changes]).toEqual([]);
+
+    // The owner sets 1.b3 at the start: edited, locked, active; the seeded move is kept as replaced.
+    const put = await call<{ entry: RepEntry }>("/repertoire/entry", {
+      method: "PUT",
+      body: JSON.stringify({ color: "white", epd: START_EPD, san: "b3", ply: 1 })
+    });
+    expect(put.status).toBe(200);
+    expect(put.body.entry).toMatchObject({ uci: "b2b3", san: "b3", source: "edited", status: "active", locked: true, ply: 1 });
+    const key = new URLSearchParams({ color: "white", epd: START_EPD });
+    const got = await call<{ entry: RepEntry }>(`/repertoire/entry?${key}`);
+    expect(got.body.entry).toEqual(put.body.entry);
+    // PUT round trip: sending the entry back changes nothing, not even updatedAt.
+    const { uci, locked, status, note } = got.body.entry;
+    const same = await call<{ entry: RepEntry }>("/repertoire/entry", {
+      method: "PUT",
+      body: JSON.stringify({ color: "white", epd: START_EPD, uci, locked, status, note })
+    });
+    expect(same.body.entry).toEqual(got.body.entry);
+
+    // Re-seeding never overwrites the edit.
+    const reseed = await call<SeedResponse>("/repertoire/seed", { method: "POST", body: JSON.stringify({ apply: true }) });
+    expect(reseed.body.diff.white.kept).toBeGreaterThanOrEqual(1);
+    expect(reseed.body.diff.white.changes.some((change) => change.epd === START_EPD)).toBe(false);
+    expect((await call<{ entry: RepEntry }>(`/repertoire/entry?${key}`)).body.entry).toEqual(got.body.entry);
+
+    // The tree's start node carries the entry; the export is PGN.
+    const tree = await call<TreeResponse>("/tree?color=white");
+    expect(tree.body.repertoire).toMatchObject({ san: "b3", source: "edited" });
+    const exported = await call<string>("/repertoire/export?color=white");
+    expect(exported.status).toBe(200);
+    expect(exported.body).toContain('[Event "kubista9 repertoire as White"]');
+    expect(exported.body).toMatch(/\n1\. b3 \{edited\}/);
+
+    // Bad input: an illegal move, the wrong side to move, an unknown entry.
+    const illegal = await call("/repertoire/entry", { method: "PUT", body: JSON.stringify({ color: "white", epd: START_EPD, san: "Ke2" }) });
+    expect(illegal.status).toBe(400);
+    const wrongSide = await call("/repertoire/entry", { method: "PUT", body: JSON.stringify({ color: "black", epd: START_EPD, san: "e5", ply: 1 }) });
+    expect(wrongSide.status).toBe(400);
+    const deleted = await call(`/repertoire/entry?${key}`, { method: "DELETE" });
+    expect(deleted.status).toBe(204);
+    expect((await call(`/repertoire/entry?${key}`, { method: "DELETE" })).status).toBe(404);
+  });
+
+  it("marks where a reviewed game left the repertoire", async () => {
+    const { call, db } = await startApi();
+    const id = (db.prepare("SELECT id FROM games WHERE color = 'white' ORDER BY end_time LIMIT 1").get() as { id: string }).id;
+    const first = getGamePlies(db, id)[0];
+    const other = first.uci === "e2e4" ? "d4" : "e4";
+    await call("/repertoire/entry", { method: "PUT", body: JSON.stringify({ color: "white", epd: START_EPD, san: other, ply: 1 }) });
+    const response = await call<GameAnalysisResponse>(`/games/${id}/analysis`);
+    expect(response.body.repertoire).toMatchObject({
+      entries: 1,
+      deviation: { ply: 1, played: { uci: first.uci }, expected: { san: other } },
+      unprepared: null,
+      inRepThrough: 0
+    });
   });
 });

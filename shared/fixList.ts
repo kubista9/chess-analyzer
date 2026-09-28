@@ -17,6 +17,7 @@ import {
 } from "./openingAnalysis.js";
 import { formatLine, principalPaths, type OpeningTree, type TreeEdge, type TreeGame, type TreeTrend } from "./openingTree.js";
 import { addGame, ageDays, eloExpected, emptyAccumulator, LOW_SAMPLE_N, recencyWeight, summarize, type ScoreAccumulator } from "./stats.js";
+import { UNPREPARED_MIN_N, type UnpreparedRow } from "./repertoire.js";
 import type { MoveCategory, PlayerColor } from "./types.js";
 
 // Fix list v0: the opening lines where the owner loses the most points against his Elo
@@ -242,7 +243,34 @@ export interface EngineHoleItem {
   examples: FixExample[];
 }
 
-export type FixItem = ResultsLeakItem | EngineHoleItem;
+/**
+ * An opponent reply the repertoire has no answer to, seen in UNPREPARED_MIN_N or more games that
+ * followed the repertoire up to it. Computed from the stored entries at read time.
+ */
+export interface UnpreparedItem {
+  kind: "unprepared";
+  /** "unprepared:<color>:<uci,uci,...>" */
+  id: string;
+  color: PlayerColor;
+  /** UCI moves from the start; the last one is the opponent's reply. */
+  moves: string[];
+  sans: string[];
+  line: string;
+  /** The line up to the position the reply is played from. */
+  before: string;
+  /** Book name of the position the reply reaches. */
+  name: string | null;
+  eco: string | null;
+  n: number;
+  /** Raw score of those games. */
+  score: number;
+  /** Recency-weighted points below the Elo expectation in those games (the impact). */
+  pointsLost: number;
+  impact: number;
+  examples: FixExample[];
+}
+
+export type FixItem = ResultsLeakItem | EngineHoleItem | UnpreparedItem;
 
 export interface FixSelection {
   /** Candidates tested (the BH family). */
@@ -536,16 +564,62 @@ export function leakEngineStats(games: readonly TreeGame[], engine: FixEngine): 
 export interface FixList extends FixSelection {
   /** Engine holes over both colours (empty without engine data). */
   holes: EngineHoleItem[];
-  /** Leaks and engine holes merged by impact (the watch tier stays apart). */
+  /** Unprepared opponent replies (empty without a repertoire). */
+  unprepared: UnpreparedItem[];
+  /** Leaks, engine holes and unprepared replies merged by impact (the watch tier stays apart). */
   ranked: FixItem[];
 }
 
+/**
+ * The unprepared fix items of one colour: the stats' unprepared rows with at least
+ * UNPREPARED_MIN_N games that lose points against expectation.
+ */
+export function collectUnprepared(tree: OpeningTree, rows: readonly UnpreparedRow[]): UnpreparedItem[] {
+  const paths = principalPaths(tree);
+  const items: UnpreparedItem[] = [];
+  for (const row of rows) {
+    const path = paths.get(row.parentEpd);
+    if (row.n < UNPREPARED_MIN_N || !(row.pointsLost > 0) || !path) {
+      continue;
+    }
+    const edge = tree.nodes.get(row.parentEpd)?.edges.find((candidate) => candidate.uci === row.opp.uci);
+    const moves = [...path.moves, row.opp.uci];
+    const sans = [...path.sans, row.opp.san];
+    items.push({
+      kind: "unprepared",
+      id: `unprepared:${tree.color}:${moves.join(",")}`,
+      color: tree.color,
+      moves,
+      sans,
+      line: formatLine(sans),
+      before: formatLine(path.sans),
+      name: edge?.name ?? null,
+      eco: edge?.eco ?? null,
+      n: row.n,
+      score: row.score,
+      pointsLost: row.pointsLost,
+      impact: row.pointsLost,
+      examples: row.examples
+    });
+  }
+  return items;
+}
+
 /** The fix list over both colours' trees (the leaks form one BH family), with engine holes when `engine` is given. */
-export function buildFixList(trees: readonly { tree: OpeningTree; games: readonly TreeGame[] }[], engine?: FixEngine): FixList {
+export function buildFixList(
+  trees: readonly { tree: OpeningTree; games: readonly TreeGame[] }[],
+  engine?: FixEngine,
+  /** Each colour's unprepared rows against the stored repertoire. */
+  repertoire?: Partial<Record<PlayerColor, readonly UnpreparedRow[]>>
+): FixList {
   const candidates = trees.flatMap(({ tree, games }) => collectCandidates(tree, games));
   const selection = selectLeaks(candidates);
+  const unprepared = trees
+    .flatMap(({ tree }) => collectUnprepared(tree, repertoire?.[tree.color] ?? []))
+    .sort((a, b) => b.impact - a.impact || b.n - a.n || (a.id < b.id ? -1 : 1));
+  const rank = (items: FixItem[]) => items.sort((a, b) => b.impact - a.impact || b.n - a.n || (a.id < b.id ? -1 : 1));
   if (!engine) {
-    return { ...selection, holes: [], ranked: [...selection.items] };
+    return { ...selection, holes: [], unprepared, ranked: rank([...selection.items, ...unprepared]) };
   }
   const byId = new Map(trees.flatMap(({ games }) => games.map((game) => [`${game.color}:${game.id}`, game] as const)));
   const byItem = new Map(candidates.map((candidate) => [itemId(candidate), candidate]));
@@ -559,6 +633,5 @@ export function buildFixList(trees: readonly { tree: OpeningTree; games: readonl
   const holes = trees
     .flatMap(({ tree, games }) => collectEngineHoles(tree, games, engine))
     .sort((a, b) => b.impact - a.impact || b.n - a.n || (a.id < b.id ? -1 : 1));
-  const ranked: FixItem[] = [...items, ...holes].sort((a, b) => b.impact - a.impact || b.n - a.n || (a.id < b.id ? -1 : 1));
-  return { ...selection, items, watch, holes, ranked };
+  return { ...selection, items, watch, holes, unprepared, ranked: rank([...items, ...holes, ...unprepared]) };
 }

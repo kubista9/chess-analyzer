@@ -184,7 +184,7 @@ if (golden) {
         colour: item.color,
         line: item.line,
         n: item.n,
-        score: pct(item.kind === "engine-hole" ? item.score : item.raw.score),
+        score: pct(item.kind === "results-leak" ? item.raw.score : item.score),
         impact: Number(item.impact.toFixed(2)),
         loss: item.kind === "engine-hole" ? item.loss : "",
         best: item.kind === "engine-hole" ? item.bestSan : "",
@@ -192,7 +192,9 @@ if (golden) {
         gates:
           item.kind === "engine-hole"
             ? [item.gates.loss ? `loss>=${ENGINE_HOLE_MIN_LOSS}` : "", item.gates.reply ? `reply>=${ENGINE_HOLE_REPLY_CP}` : ""].filter(Boolean).join("+")
-            : `${item.tier} z=${item.z.toFixed(2)} q=${item.q.toFixed(3)}`,
+            : item.kind === "unprepared"
+              ? `unprepared n>=3`
+              : `${item.tier} z=${item.z.toFixed(2)} q=${item.q.toFixed(3)}`,
         engine:
           item.kind === "results-leak" && item.engine
             ? `err ${item.engine.firstError.errors}/${item.engine.firstError.known}${item.engine.firstError.shown ? "" : " (hidden)"}; ` +

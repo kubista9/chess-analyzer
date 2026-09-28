@@ -1,6 +1,8 @@
 import type { IMPORTED_TIME_CLASSES, MOVE_CATEGORIES, SKIP_REASONS } from "./constants.js";
 import type { FixItem, ResultsLeakItem } from "./fixList.js";
 import type { TreeEdge, TreeNode } from "./openingTree.js";
+import type { ColorRepertoireView, RepEntry } from "./repertoire.js";
+import type { SeedDiff } from "./repertoireSeed.js";
 import type { ColorSnapshot } from "./repertoireSnapshot.js";
 import type { EdgeEngine, NodeEngine } from "./treeEngine.js";
 import type { GameWindow } from "./window.js";
@@ -403,6 +405,8 @@ export interface TreeResponse {
   path: TreeBreadcrumb[];
   /** null when no engine config could be resolved (no engine installed). */
   engine: EngineCoverage | null;
+  /** At an owner-to-move node: the repertoire's entry here, or null. */
+  repertoire: RepEntry | null;
 }
 
 /** A game that played one move of the tree, for the Explorer's games drawer. */
@@ -462,6 +466,8 @@ export interface FixListResponse extends RepertoireScope {
   items: FixItem[];
   /** How many of `items` are engine holes. */
   holes: number;
+  /** How many of `items` are unprepared opponent replies. */
+  unprepared: number;
   /** Nominally significant lines that do not survive the multiple-comparison control. */
   watch: ResultsLeakItem[];
   /** null without an engine config. */
@@ -484,4 +490,18 @@ export interface FixListResponse extends RepertoireScope {
 export interface SnapshotResponse extends RepertoireScope {
   white: ColorSnapshot;
   black: ColorSnapshot;
+}
+
+/** GET /api/repertoire: both colours' repertoire lines, coverage and tables in the filters. */
+export interface RepertoireResponse extends RepertoireScope {
+  white: ColorRepertoireView;
+  black: ColorRepertoireView;
+  /** False without an engine config: losses are unknown. */
+  engine: boolean;
+}
+
+/** POST /api/repertoire/seed: what a (re-)seed changes; `applied` when it was written. */
+export interface SeedResponse {
+  applied: boolean;
+  diff: Record<PlayerColor, SeedDiff>;
 }

@@ -12,6 +12,8 @@ import type {
   RepertoireScope,
   SnapshotResponse,
   QueryWindow,
+  RepertoireResponse,
+  SeedResponse,
   TreeBreadcrumb,
   SyncJobResult,
   TreeGamesResponse,
@@ -38,10 +40,13 @@ import { ENGINE_MIN_COVERAGE, ENGINE_MIN_GAMES, coverageOk, firstErrorShares } f
 import { nodeView, walkMoves, type OpeningTree, type TreeNode } from "../shared/openingTree.js";
 import { edgeEngine, nodeEngine } from "../shared/treeEngine.js";
 import { buildSnapshot } from "../shared/repertoireSnapshot.js";
+import { REPERTOIRE_MAX_PLY, repertoireStats, walkRepertoire } from "../shared/repertoire.js";
+import { repertoireStamp, deleteRepEntry, getRepEntry } from "./db/repertoire.js";
+import { RepertoireInputError, colorView, editEntry, loadRepertoire, repertoirePgn, seedRepertoire } from "./services/repertoireService.js";
 import { GAME_WINDOWS, parseGameWindow, windowBounds } from "../shared/window.js";
 import { config } from "./config.js";
 import { getDb, type Db } from "./db/connection.js";
-import { getGame, listMoveGames } from "./db/games.js";
+import { getGame, getGamePlies, listMoveGames } from "./db/games.js";
 import { jobStore as defaultJobStore, type JobStore } from "./store/jobStore.js";
 import { syncArchives } from "./services/archiveImport.js";
 import { buildImportStatus } from "./services/importStatus.js";
@@ -68,6 +73,28 @@ const retrySchema = z.object({
   uci: z.string().regex(/^[a-h][1-8][a-h][1-8][qrbn]?$/, "a UCI move")
 });
 
+// A position key as the tree stores it: the first four FEN fields.
+const EPD_PATTERN = /^[1-8pnbrqkPNBRQK]+(?:\/[1-8pnbrqkPNBRQK]+){7} [wb] (?:-|[KQkq]{1,4}) (?:-|[a-h][36])$/;
+
+const UCI_PATTERN = /^[a-h][1-8][a-h][1-8][qrbn]?$/;
+
+const colorSchema = z.enum(["white", "black"]);
+const epdSchema = z.string().regex(EPD_PATTERN, "an EPD: the first four FEN fields");
+
+// The EPD travels in the body or the query, never in a path segment (it holds '/' and spaces).
+const repEntrySchema = z.object({
+  color: colorSchema,
+  epd: epdSchema,
+  uci: z.string().regex(UCI_PATTERN, "a UCI move").optional(),
+  san: z.string().min(1).max(10).optional(),
+  locked: z.boolean().optional(),
+  status: z.enum(["active", "needs-review"]).optional(),
+  note: z.string().max(500).nullable().optional(),
+  ply: z.number().int().min(1).max(REPERTOIRE_MAX_PLY).optional()
+});
+
+const repEntryKeySchema = z.object({ color: colorSchema, epd: epdSchema });
+
 const syncSchema = z.object({
   full: z.boolean().optional()
 });
@@ -82,11 +109,6 @@ const gamesQuerySchema = z.object({
   tc: z.enum(IMPORTED_TIME_CLASSES).optional(),
   color: z.enum(["white", "black"]).optional()
 });
-
-// A position key as the tree stores it: the first four FEN fields.
-const EPD_PATTERN = /^[1-8pnbrqkPNBRQK]+(?:\/[1-8pnbrqkPNBRQK]+){7} [wb] (?:-|[KQkq]{1,4}) (?:-|[a-h][36])$/;
-
-const UCI_PATTERN = /^[a-h][1-8][a-h][1-8][qrbn]?$/;
 
 // Half-life in days, or "off" / 0 for unweighted; omitted = the window's default.
 const halfLifeSchema = z.union([z.literal("off"), z.coerce.number().min(0).max(3650)]).optional();
@@ -111,6 +133,15 @@ const treeQuerySchema = z.object({
   tc: z.enum(IMPORTED_TIME_CLASSES).optional(),
   hl: halfLifeSchema
 });
+
+const seedSchema = z.object({
+  apply: z.boolean().optional(),
+  window: z.string().optional(),
+  tc: z.enum(IMPORTED_TIME_CLASSES).optional(),
+  hl: halfLifeSchema
+});
+
+const exportQuerySchema = repertoireQuerySchema.extend({ color: colorSchema });
 
 const treeGamesQuerySchema = treeQuerySchema.extend({
   uci: z.string().regex(UCI_PATTERN, "a UCI move"),
@@ -137,7 +168,7 @@ async function withReviewErrors<T>(run: () => Promise<T>): Promise<T> {
   try {
     return await run();
   } catch (error) {
-    throw error instanceof ReviewInputError ? new HttpError(error.status, error.message) : error;
+    throw error instanceof ReviewInputError || error instanceof RepertoireInputError ? new HttpError(error.status, error.message) : error;
   }
 }
 
@@ -243,17 +274,28 @@ export function createApiRouter(deps: ApiDeps): express.Router {
     complete: built.games.filter((game) => engine.analysisOf(game).status === "complete").length
   });
 
-  // The fix list is recomputed only when either memoised tree was rebuilt or the position cache changed.
-  const fixMemo = new Map<string, { trees: Record<PlayerColor, OpeningTree>; generation: string | null; selection: FixList }>();
+  // The fix list is recomputed only when either memoised tree was rebuilt, the position cache
+  // changed or a repertoire entry was written.
+  const fixMemo = new Map<string, { trees: Record<PlayerColor, OpeningTree>; generation: string; selection: FixList }>();
   const fixList = (built: Record<PlayerColor, BuiltTree>, engine: EngineView | null): FixList => {
     const { window, timeClass, halfLifeDays } = built.white.filters;
     const key = `${window}|${timeClass ?? "all"}|${halfLifeDays ?? "off"}`;
-    const generation = engine?.generation ?? null;
+    const db = deps.db();
+    const generation = `${engine?.generation ?? "none"}|${repertoireStamp(db, deps.owner)}`;
     const hit = fixMemo.get(key);
     if (hit && hit.trees.white === built.white.tree && hit.trees.black === built.black.tree && hit.generation === generation) {
       return hit.selection;
     }
-    const selection = buildFixList([built.white, built.black], engine ?? undefined);
+    const entries = loadRepertoire(db, deps.owner);
+    const unprepared = (colorBuilt: BuiltTree) =>
+      repertoireStats(colorBuilt.tree.color, colorBuilt.games, entries[colorBuilt.tree.color], {
+        now: colorBuilt.tree.now,
+        halfLifeDays: colorBuilt.tree.halfLifeDays
+      }).unprepared;
+    const selection = buildFixList([built.white, built.black], engine ?? undefined, {
+      white: unprepared(built.white),
+      black: unprepared(built.black)
+    });
     fixMemo.delete(key);
     fixMemo.set(key, { trees: { white: built.white.tree, black: built.black.tree }, generation, selection });
     if (fixMemo.size > 16) {
@@ -317,7 +359,8 @@ export function createApiRouter(deps: ApiDeps): express.Router {
       games: built.tree.games,
       node: view,
       path,
-      engine: engine ? coverageOf(engine, built) : null
+      engine: engine ? coverageOf(engine, built) : null,
+      repertoire: node.ownerToMove ? getRepEntry(deps.db(), deps.owner, query.color, node.epd) ?? null : null
     } satisfies TreeResponse);
   });
 
@@ -346,6 +389,7 @@ export function createApiRouter(deps: ApiDeps): express.Router {
       significant: selection.significant,
       items: selection.ranked,
       holes: selection.holes.length,
+      unprepared: selection.unprepared.length,
       watch: selection.watch,
       engine: engine ? { white: summary(built.white), black: summary(built.black) } : null,
       cap: FIX_LIST_CAP,
@@ -411,8 +455,11 @@ export function createApiRouter(deps: ApiDeps): express.Router {
       engineError = `Stockfish is not available: ${error instanceof Error ? error.message : String(error)}`;
     }
     const review = await withReviewErrors(async () => reviewFromStore(db, gameId, configId, book));
+    const entries = loadRepertoire(db, deps.owner)[review.color];
+    const walk = walkRepertoire({ color: review.color, plies: getGamePlies(db, gameId) }, entries);
+    const repertoire = { entries: entries.size, deviation: walk.deviation, unprepared: walk.unprepared, inRepThrough: walk.inRepThrough };
     if (review.status === "complete" || configId === null) {
-      response.json({ review, job: null, engineError } satisfies GameAnalysisResponse);
+      response.json({ review, job: null, engineError, repertoire } satisfies GameAnalysisResponse);
       return;
     }
     const engineConfigId = configId;
@@ -422,7 +469,7 @@ export function createApiRouter(deps: ApiDeps): express.Router {
         reporter.progress(5 + (done / total) * 90, `Stockfish: ${done} of ${total} positions`)
       );
     });
-    response.status(202).json({ review, job, engineError } satisfies GameAnalysisResponse);
+    response.status(202).json({ review, job, engineError, repertoire } satisfies GameAnalysisResponse);
   });
 
   // Retry: judges the owner's move {ply, uci} from the position before ply `ply` against the
@@ -460,6 +507,81 @@ export function createApiRouter(deps: ApiDeps): express.Router {
   router.post("/analysis/pause", async (_request, response) => {
     deps.backfill.pause();
     response.json(await deps.backfill.status());
+  });
+
+  /** Both colours' repertoire views in the query's filters. */
+  const repertoireViews = async (query: RepertoireQuery) => {
+    const { built, scope } = bothTrees(query);
+    const engine = await engineView();
+    const entries = loadRepertoire(deps.db(), deps.owner);
+    const view = (colorBuilt: BuiltTree) =>
+      colorView(colorBuilt.tree, colorBuilt.games, entries[colorBuilt.tree.color], engine?.lookup ?? null, {
+        now: colorBuilt.tree.now,
+        halfLifeDays: colorBuilt.tree.halfLifeDays
+      });
+    return { scope, engine, white: view(built.white), black: view(built.black) };
+  };
+
+  // The repertoire: per colour, the lines walked from the start (the entry at the owner's
+  // positions, the frequent replies at the opponent's), coverage, deviations and unprepared
+  // replies, all computed from the stored entries at read time.
+  router.get("/repertoire", async (request, response) => {
+    const { scope, engine, white, black } = await repertoireViews(repertoireQuerySchema.parse(request.query));
+    response.json({ ...scope, white, black, engine: engine !== null } satisfies RepertoireResponse);
+  });
+
+  // Seeds (or re-seeds) the repertoire from the games: a dry-run diff, written with {apply: true}.
+  // Locked and edited entries are never changed.
+  router.post("/repertoire/seed", async (request, response) => {
+    const { apply, ...query } = seedSchema.parse(request.body ?? {});
+    const { built } = bothTrees(query);
+    const engine = await engineView();
+    const fix = fixList(built, engine);
+    const flagged = [...fix.items, ...fix.watch];
+    const diff = seedRepertoire(
+      deps.db(),
+      deps.owner,
+      { white: { tree: built.white.tree, flagged }, black: { tree: built.black.tree, flagged } },
+      engine?.lookup ?? null,
+      apply === true,
+      deps.now()
+    );
+    response.json({ applied: apply === true, diff } satisfies SeedResponse);
+  });
+
+  // The owner's edit of one entry: {color, epd, uci | san} sets his move (edited, locked);
+  // {color, epd, locked | status | note} changes only those. Returns the entry.
+  router.put("/repertoire/entry", async (request, response) => {
+    const edit = repEntrySchema.parse(request.body);
+    const entry = await withReviewErrors(async () => editEntry(deps.db(), deps.owner, edit, deps.now()));
+    response.json({ entry });
+  });
+
+  router.get("/repertoire/entry", (request, response) => {
+    const { color, epd } = repEntryKeySchema.parse(request.query);
+    const entry = getRepEntry(deps.db(), deps.owner, color, epd);
+    if (!entry) {
+      throw new HttpError(404, `No ${color} entry at ${epd}.`);
+    }
+    response.json({ entry });
+  });
+
+  router.delete("/repertoire/entry", (request, response) => {
+    const { color, epd } = repEntryKeySchema.parse(request.query);
+    if (!deleteRepEntry(deps.db(), deps.owner, color, epd)) {
+      throw new HttpError(404, `No ${color} entry at ${epd}.`);
+    }
+    response.status(204).end();
+  });
+
+  // One colour's repertoire lines as a PGN file with variations.
+  router.get("/repertoire/export", async (request, response) => {
+    const { color, ...query } = exportQuerySchema.parse(request.query);
+    const views = await repertoireViews(query);
+    const pgn = repertoirePgn(views[color], deps.owner, new Date(deps.now()));
+    response.setHeader("Content-Type", "application/x-chess-pgn; charset=utf-8");
+    response.setHeader("Content-Disposition", `attachment; filename="${deps.owner}-repertoire-${color}.pgn"`);
+    response.send(pgn);
   });
 
   // Before /jobs/:jobId, which would otherwise match "active".
