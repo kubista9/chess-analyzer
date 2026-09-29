@@ -29,6 +29,8 @@ import { loadOwnerGames } from "../test/loadFixtures.js";
 import { createApp } from "./app.js";
 import { openDatabase, type Db } from "./db/connection.js";
 import { getGamePlies, replaceMonthGames } from "./db/games.js";
+import { upsertRepEntry } from "./db/repertoire.js";
+import { entry } from "../test/trainingFixtures.js";
 import { createApiRouter } from "./routes.js";
 import { deriveMonth, utcMonth } from "./services/gameDerive.js";
 import { getOpeningBook } from "./services/openingBook.js";
@@ -694,5 +696,22 @@ describe("drills API", () => {
     const focus = await call<DrillSessionResponse>(`/drills/due?color=white&moves=h2h3,h7h6`);
     expect(focus.status).toBe(200);
     expect(focus.body.focusNote).toMatch(/no drill for this position/);
+
+    // Seeded (not edited) entries: their new line cards wait for the daily cap of 5.
+    for (const [moves, uci] of [
+      [["e2e4", "e7e5"], "g1f3"],
+      [["e2e4", "c7c5"], "g1f3"],
+      [["e2e4", "e7e6"], "d2d4"],
+      [["e2e4", "c7c6"], "d2d4"],
+      [["e2e4", "d7d5"], "e4d5"],
+      [["e2e4", "g8f6"], "e4e5"],
+      [["e2e4", "d7d6"], "d2d4"]
+    ] as const) {
+      upsertRepEntry(db, OWNER, { ...entry("white", moves, uci, NOW), source: "from-games" });
+    }
+    const seeded = await call<DrillStats>("/drills/stats");
+    expect(seeded.body.repertoireEntries).toBe(8);
+    expect(seeded.body.total["repertoire-line"]).toBeGreaterThan(seeded.body.due["repertoire-line"]);
+    expect(seeded.body.due["repertoire-line"]).toBeLessThanOrEqual(5);
   });
 });

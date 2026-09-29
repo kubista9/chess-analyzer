@@ -28,7 +28,7 @@ function useBoardWidth(ref: React.RefObject<HTMLElement | null>): number {
     const measure = () => {
       const column = ref.current?.getBoundingClientRect().width ?? 0;
       const wide = window.innerWidth >= 900;
-      const byWidth = wide ? column * 0.58 : column - 4;
+      const byWidth = wide ? column * 0.58 : column - 34; // the card's padding and border
       const byHeight = window.innerHeight - (wide ? 230 : 280);
       setWidth(Math.round(Math.max(160, Math.min(560, byWidth, Math.max(260, byHeight)))));
     };
@@ -172,6 +172,12 @@ export function TrainPage() {
 
   const data = stats.data;
   const current = session?.queue[session.index] ?? null;
+  const currentKey = current?.key ?? null;
+  useEffect(() => {
+    if (currentKey) {
+      columnRef.current?.scrollIntoView({ block: "start" });
+    }
+  }, [currentKey]);
   const noRepertoire = data !== null && data.repertoireEntries === 0;
   const noMistakes = data !== null && (!data.engine || (data.analysedGames === 0 && data.total["own-mistake"] === 0 && data.unchecked === 0));
   const dueHere =
@@ -311,7 +317,8 @@ function DrillBadgeIcon({ kind }: { kind: DrillKind }) {
 }
 
 function SessionSummary({ session, stats }: { session: Session; stats: DrillStats | null }) {
-  const rows = (["repertoire-line", "own-mistake"] as const).map((kind) => {
+  const kinds = (["repertoire-line", "own-mistake"] as const).filter((kind) => session.outcomes.some((outcome) => outcome.kind === kind));
+  const rows = kinds.map((kind) => {
     const outcomes = session.outcomes.filter((outcome) => outcome.kind === kind);
     return {
       kind,
@@ -323,6 +330,7 @@ function SessionSummary({ session, stats }: { session: Session; stats: DrillStat
   return (
     <section className="panel train-summary-card" aria-label="Session summary">
       <h2>Session done</h2>
+      {!rows.length ? <p className="train-counts">No drill answered.</p> : null}
       <ul>
         {rows.map((row) => (
           <li key={row.kind} className={DRILL_KIND_UI[row.kind].className}>

@@ -214,7 +214,11 @@ export function createDrillService(deps: DrillDeps) {
     const cards = listCards(db, deps.owner).filter(visible);
     const lineNew = cards
       .filter((card) => card.kind === "repertoire-line" && card.srs.box === 0)
-      .map((card) => ({ card, fresh: nowMs - (getRepEntry(db, deps.owner, card.color, card.epd)?.updatedAt ?? 0) < FRESH_EDIT_MS }))
+      .map((card) => {
+        // Only the owner's own edits (an adopted alternative, Set as my move) skip the cap; a seed does not.
+        const entry = getRepEntry(db, deps.owner, card.color, card.epd);
+        return { card, fresh: entry?.source === "edited" && nowMs - entry.updatedAt < FRESH_EDIT_MS };
+      })
       .filter((item) => item.card.primary);
     // Fresh edits first, then the most-reached positions (a child is never reached more than its
     // parent, so the lines are learnt from move 1 down).
@@ -426,7 +430,8 @@ export function createDrillService(deps: DrillDeps) {
       }
     }
     const toCheck = introduceNew(db, nowMs, focus);
-    const job = startCheck(toCheck, nowMs, focus?.id ?? null);
+    // A lines-only session does not start the deep check of new positions from the games.
+    const job = options.kind === "repertoire-line" && focus?.kind !== "own-mistake" ? null : startCheck(toCheck, nowMs, focus?.id ?? null);
     if (focus?.kind === "own-mistake" && toCheck.some((card) => card.id === focus!.id)) {
       focusNote = "Checking this position with the engine first.";
     }

@@ -161,7 +161,7 @@ export function LineDrill({ item, width, onFinish }: LineDrillProps) {
         {name ? ` (${name})` : ""}
       </p>
       <div className="drill-body">
-        <div className="drill-board">
+        <div className="drill-board" style={{ width, height: width }}>
           <PlayableBoard
             key={`${item.key}-${boardKey}`}
             id={`drill-${item.key}`}
@@ -176,7 +176,7 @@ export function LineDrill({ item, width, onFinish }: LineDrillProps) {
         <div className="drill-side">
           {done ? (
             <div className="drill-feedback drill-feedback-good" role="status">
-              End of your line: {fromMemory} of {gradedCount} move{gradedCount === 1 ? "" : "s"} from memory.
+              End of your line: {fromMemory} of {gradedCount} move{gradedCount === 1 ? "" : "s"} right on the first try.
             </div>
           ) : step?.graded ? (
             <p className="drill-prompt">
@@ -295,7 +295,7 @@ export function MistakeDrill({ item, width, priorTries, onFinish }: MistakeDrill
       </p>
       <p className="drill-path">{card.pathSan.length ? formatMoves(card.pathSan) : "Start position"}{card.lineName ? ` · ${card.lineName}` : ""}</p>
       <div className="drill-body">
-        <div className="drill-board">
+        <div className="drill-board" style={{ width, height: width }}>
           <PlayableBoard
             key={`${item.key}-${boardKey}`}
             id={`drill-${item.key}`}
