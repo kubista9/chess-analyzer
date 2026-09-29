@@ -2,7 +2,6 @@ import { Link } from "react-router-dom";
 import { ArrowDownRight, ArrowRight, ArrowUpRight, Compass, GraduationCap, Lightbulb } from "lucide-react";
 import { alternativesHref, explorerHref, trainHref } from "../utils/links";
 import type { EngineHoleItem, FixItem as AnyFixItem, ResultsLeakItem as FixItem, LeakEngineStats, UnpreparedItem } from "../../shared/fixList";
-import type { PlayerColor } from "../../shared/types";
 import type { ExplorerFilters } from "../hooks/useFilters";
 import { formatCount, formatDay, formatDelta, formatPoints, pct, pctOne } from "../utils/formatters";
 import { ScoreWhisker, moveLabel } from "./MoveTable";

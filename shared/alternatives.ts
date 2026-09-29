@@ -444,7 +444,7 @@ function treeIndex(tree: OpeningTree): TreeIndex {
 
 const startsWith = (line: readonly string[], prefix: readonly string[]) => prefix.length <= line.length && prefix.every((uci, index) => line[index] === uci);
 
-function nodeLabel(tree: OpeningTree, index: TreeIndex, node: TreeNode): string {
+function nodeLabel(index: TreeIndex, node: TreeNode): string {
   const sans = index.paths.get(node.epd)?.sans ?? [];
   return `${formatLine(sans)}${node.name ? ` (${node.name})` : ""}`;
 }
@@ -492,7 +492,7 @@ interface Context {
 }
 
 function buildAlternative(context: Context, uci: string, evaluation: AltEval): Alternative {
-  const { input, color, node, index } = context;
+  const { input, node, index } = context;
   const edge = node?.edges.find((candidate) => candidate.uci === uci);
   const move = legalMove(input.epd, { uci })!;
   const named = input.book.named.get(move.toEpd);
@@ -561,7 +561,7 @@ function buildAlternative(context: Context, uci: string, evaluation: AltEval): A
     reasons.push({
       feature: "familiar",
       points: 2,
-      text: `Same pawn skeleton (${pct(familiar.similarity)} alike) as your ${nodeLabel(input.tree, index, familiar.node)}, reached in ${games(familiar.node.n)}.`
+      text: `Same pawn skeleton (${pct(familiar.similarity)} alike) as your ${nodeLabel(index, familiar.node)}, reached in ${games(familiar.node.n)}.`
     });
   }
   // transposes (moves he has not played)
@@ -572,7 +572,7 @@ function buildAlternative(context: Context, uci: string, evaluation: AltEval): A
         reasons.push({
           feature: "transposes",
           points: 2,
-          text: `Transposes into your ${nodeLabel(input.tree, index, target)} (${games(target.n)}) after ${formatLine(sample.sans.slice(0, plyIndex + 1), input.path.moves.length + 1)}.`
+          text: `Transposes into your ${nodeLabel(index, target)} (${games(target.n)}) after ${formatLine(sample.sans.slice(0, plyIndex + 1), input.path.moves.length + 1)}.`
         });
         break;
       }

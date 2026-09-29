@@ -11,7 +11,6 @@ import type {
   PowerState,
   RepertoireScope,
   SnapshotResponse,
-  QueryWindow,
   RepertoireCoverageResponse,
   RepertoireResponse,
   SeedResponse,
@@ -47,7 +46,7 @@ import { buildSnapshot } from "../shared/repertoireSnapshot.js";
 import { REPERTOIRE_MAX_PLY, legalMove, repertoireStats, walkRepertoire } from "../shared/repertoire.js";
 import { repertoireStamp, deleteRepEntry, getRepEntry } from "./db/repertoire.js";
 import { RepertoireInputError, colorView, editEntry, loadRepertoire, repertoirePgn, seedRepertoire } from "./services/repertoireService.js";
-import { GAME_WINDOWS, parseGameWindow, windowBounds } from "../shared/window.js";
+import { parseGameWindow } from "../shared/window.js";
 import { config } from "./config.js";
 import { getDb, type Db } from "./db/connection.js";
 import { getGame, getGamePlies, listMoveGames } from "./db/games.js";
@@ -115,12 +114,6 @@ const syncSchema = z.object({
 const backfillSchema = z.object({
   allowBattery: z.boolean().optional(),
   limit: z.number().int().min(1).optional()
-});
-
-const gamesQuerySchema = z.object({
-  window: z.string().optional(),
-  tc: z.enum(IMPORTED_TIME_CLASSES).optional(),
-  color: z.enum(["white", "black"]).optional()
 });
 
 // Half-life in days, or "off" / 0 for unweighted; omitted = the window's default.
@@ -215,16 +208,6 @@ async function withReviewErrors<T>(run: () => Promise<T>): Promise<T> {
       ? new HttpError(error.status, error.message)
       : error;
   }
-}
-
-/** The query window for `?window=` (6m by default, or 3m), ending now. */
-function queryWindow(value: unknown, nowMs: number): QueryWindow {
-  const key = parseGameWindow(value);
-  if (!key) {
-    throw new HttpError(400, `Unknown window "${String(value)}"; use 6m or 3m.`);
-  }
-  const days = GAME_WINDOWS[key];
-  return { key, days, ...windowBounds(Math.floor(nowMs / 1000), days) };
 }
 
 type TreeQuery = z.infer<typeof treeQuerySchema>;

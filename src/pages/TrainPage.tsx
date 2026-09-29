@@ -55,10 +55,6 @@ interface Session {
   focusNote: string | null;
 }
 
-function itemKind(item: SessionItem): DrillKind {
-  return item.type === "line-run" ? "repertoire-line" : "own-mistake";
-}
-
 export function TrainPage() {
   const [params, setParams] = useSearchParams();
   const { dataVersion } = useWorkspace();

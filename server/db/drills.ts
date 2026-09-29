@@ -162,29 +162,6 @@ export function insertReview(db: Db, username: string, review: DrillReview): voi
   );
 }
 
-export function listReviews(db: Db, username: string, cardId?: string): DrillReview[] {
-  const rows = (
-    cardId
-      ? db.prepare("SELECT * FROM drill_reviews WHERE username = ? AND card_id = ? ORDER BY id").all(username, cardId)
-      : db.prepare("SELECT * FROM drill_reviews WHERE username = ? ORDER BY id").all(username)
-  ) as Record<string, unknown>[];
-  return rows.map((row) => ({
-    cardId: row.card_id as string,
-    kind: row.kind as DrillKind,
-    reviewedAt: row.reviewed_at as number,
-    uci: row.uci as string,
-    san: row.san as string,
-    verdict: row.verdict as DrillVerdict,
-    loss: row.loss as number | null,
-    graded: row.graded === 1,
-    attempts: row.attempts as number,
-    ms: row.ms as number | null,
-    boxBefore: row.box_before as number,
-    boxAfter: row.box_after as number,
-    dueAfter: row.due_after as number | null
-  }));
-}
-
 /** Graded reviews since `sinceMs`, by kind and outcome. */
 export function countReviewsSince(db: Db, username: string, sinceMs: number): { kind: DrillKind; correct: number; wrong: number }[] {
   return db
