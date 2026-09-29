@@ -9,7 +9,7 @@
     "dev:web": "vite",
     "build": "npm run typecheck && npm run build:web && npm run build:server",
     "build:web": "vite build",
-    "build:server": "tsc -p tsconfig.server.json",
+    "build:server": "node -e \"for (const dir of ['dist/server', 'dist/shared']) require('node:fs').rmSync(dir, { recursive: true, force: true })\" && tsc -p tsconfig.server.json",
     "start": "node dist/server/index.js",
     "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p tsconfig.server.json --noEmit && tsc -p tsconfig.test.json --noEmit",
     "test": "vitest run",
@@ -17,6 +17,8 @@
     "sync": "tsx scripts/sync.ts",
     "backfill": "tsx scripts/backfill.ts",
     "setup:engine": "node scripts/install-stockfish.mjs",
+    "cleanup": "node scripts/clean-legacy-cache.mjs",
+    "clean:legacy": "node scripts/clean-legacy-cache.mjs",
     "postinstall": "node scripts/install-stockfish.mjs"
   },
   "dependencies": {
