@@ -156,6 +156,90 @@ export const MIGRATIONS: Migration[] = [
         error              TEXT
       );
     `
+  },
+  {
+    version: 4,
+    name: "repertoire entries",
+    sql: `
+      -- The owner's repertoire: per colour, one move for each owner-to-move position (EPD), so
+      -- transposed positions share one entry. Seeded from his games, then edited by him.
+      CREATE TABLE repertoire_entries (
+        username      TEXT    NOT NULL,
+        color         TEXT    NOT NULL CHECK (color IN ('white', 'black')),
+        epd           TEXT    NOT NULL,
+        uci           TEXT    NOT NULL,
+        san           TEXT    NOT NULL,
+        source        TEXT    NOT NULL CHECK (source IN ('from-games', 'seed-engine', 'edited')),
+        status        TEXT    NOT NULL CHECK (status IN ('active', 'needs-review')),
+        locked        INTEGER NOT NULL DEFAULT 0,  -- 1: a re-seed never changes it
+        replaced_json TEXT,                        -- {uci, san, loss, reason} of the move it replaced
+        reason        TEXT,                        -- the seed's explanation (facts only)
+        note          TEXT,                        -- the owner's note
+        ply           INTEGER NOT NULL,            -- the move's ply on the shortest path
+        updated_at    INTEGER NOT NULL,            -- ms
+        PRIMARY KEY (username, color, epd)
+      ) WITHOUT ROWID;
+    `
+  },
+  {
+    version: 5,
+    name: "drill cards and reviews",
+    sql: `
+      -- Spaced-repetition drills: one card per (kind, colour, owner-to-move EPD). The generated
+      -- content (path, repertoire move, name, weight, source games) is rewritten by each
+      -- regeneration; the Leitner state and the review log stay with the card id.
+      CREATE TABLE drill_cards (
+        username       TEXT    NOT NULL,
+        id             TEXT    NOT NULL,              -- kind|color|epd
+        kind           TEXT    NOT NULL CHECK (kind IN ('repertoire-line', 'own-mistake')),
+        color          TEXT    NOT NULL CHECK (color IN ('white', 'black')),
+        epd            TEXT    NOT NULL,
+        status         TEXT    NOT NULL CHECK (status IN ('active', 'removed')),
+        confirm        TEXT    NOT NULL CHECK (confirm IN ('none', 'pending', 'confirmed', 'rejected')),
+        content_json   TEXT    NOT NULL,
+        check_json     TEXT,                          -- the lazy deep check of a mistake card
+        box            INTEGER NOT NULL DEFAULT 0,    -- 0 = new
+        due_at         INTEGER,                       -- ms
+        introduced_at  INTEGER,
+        lapses         INTEGER NOT NULL DEFAULT 0,
+        streak         INTEGER NOT NULL DEFAULT 0,
+        reviews        INTEGER NOT NULL DEFAULT 0,
+        last_review_at INTEGER,
+        retired        INTEGER NOT NULL DEFAULT 0,
+        generated_at   INTEGER NOT NULL,
+        PRIMARY KEY (username, id),
+        UNIQUE (username, kind, color, epd)
+      ) WITHOUT ROWID;
+      CREATE INDEX drill_cards_due ON drill_cards (username, status, due_at);
+
+      -- Every answer, graded or not (append-only).
+      CREATE TABLE drill_reviews (
+        id          INTEGER PRIMARY KEY AUTOINCREMENT,
+        username    TEXT    NOT NULL,
+        card_id     TEXT    NOT NULL,
+        kind        TEXT    NOT NULL,
+        reviewed_at INTEGER NOT NULL,
+        uci         TEXT    NOT NULL,
+        san         TEXT    NOT NULL,
+        verdict     TEXT    NOT NULL,
+        loss        REAL,
+        graded      INTEGER NOT NULL,                 -- 1: the answer changed the schedule
+        attempts    INTEGER NOT NULL,
+        ms          INTEGER,
+        box_before  INTEGER NOT NULL,
+        box_after   INTEGER NOT NULL,
+        due_after   INTEGER
+      );
+      CREATE INDEX drill_reviews_card ON drill_reviews (username, card_id, reviewed_at);
+
+      -- Small per-owner values, e.g. the inputs stamp of the last card regeneration.
+      CREATE TABLE drill_meta (
+        username TEXT NOT NULL,
+        key      TEXT NOT NULL,
+        value    TEXT NOT NULL,
+        PRIMARY KEY (username, key)
+      ) WITHOUT ROWID;
+    `
   }
 ];
 

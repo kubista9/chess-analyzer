@@ -1,187 +1,201 @@
 # Chess Analyst
 
-Local-first opening analysis for one Chess.com account, `kubista9` (hard-coded as `OWNER_USERNAME` in `shared/constants.ts`). The app imports every standard blitz and rapid game of the last 6 months into a local SQLite store (about 1,380 games) and shows:
+An offline opening trainer for one Chess.com account, `kubista9` (hard-coded as `OWNER_USERNAME` in `shared/constants.ts`). It imports your standard **blitz and rapid** games of the **last 6 months** into a local SQLite file, checks their **first 10 moves** (20 plies) with Stockfish, and turns that into:
 
-- Home: a Sync card with the stored games (`1,380 games · 1,234 blitz / 146 rapid · Mar 28 – Sep 27 · synced 5 min ago`), the Sync button and a Full re-check; the top 3 "Biggest leaks" from the fix list (below); and a repertoire snapshot per colour (`vs 1.e4: 1...d5 55% (223) mostly lately · 1...e5 39% (216) rarely played lately`), each move linking into the Explorer.
-- Leaks (`/leaks`): the whole results-only fix list, a "worth watching" list and how the list is made.
-- An Explorer (`/explorer`): pick As White or As Black, then walk the opening move by move on a board (click or drag a move, click a row, or use the arrow keys). Each position shows its book name and ECO, and each move row shows raw n with its share (and the effective n when recent games count more), W/D/L, the score with a 95% interval whisker, the score against the Elo expectation, the 90-day trend, your average think time and the book name or "out of book". A row is coloured as below or above expectation only when the difference clears the noise gate (see below). Each row opens a games drawer that links every game to its review and to Chess.com. It is built from game results only; no engine runs for it.
-- An opening review of a selected game: Stockfish looks at the first 20 plies (10 moves each) at a fixed depth. Evals are shown from White's side (`+0.80`, `M3`, `-M3`), and each move is labelled `best`, `good`, `inaccuracy`, `mistake` or `blunder` by the lichess win% it gives away against the best move in the same position (< 1, < 5, < 10, < 15, >= 15).
+- **Leaks**: the moves that cost you points, from results and from the engine;
+- **Explorer**: your own opening tree, move by move, with scores against your Elo expectation;
+- **Review**: the opening of any one game, with the engine's view of every move;
+- **Repertoire**: one written-down move for each of your positions, seeded from your games;
+- **Alternatives**: engine-sound moves you could play instead, ranked by how well they fit your games;
+- **Train**: two kinds of spaced-repetition drill, your repertoire lines and positions from your games.
 
-## Stack
+Everything runs on your machine. The only network calls are the Chess.com archive sync (and the one-time Stockfish download). Nothing is fetched from Lichess, there is no popularity data from other players, and there is no account.
 
-- React + TypeScript + Vite
-- Express + TypeScript API server
-- Stockfish 18 downloaded into the repo during `npm install`
-- SQLite game store in `storage/chess.db` (better-sqlite3, WAL), plus the file-based cache under `storage/cache`
+## First run checklist
 
-## Run locally
+1. `npm install` (downloads Stockfish 18 into `storage/engines/`).
+2. `npm run sync` (a few seconds to a minute: fetches the last 6 months from Chess.com into `storage/chess.db`).
+3. **Plug the laptop in**, then `npm run backfill` (about 30-35 min on mains, about an hour on battery; see [Engine check](#engine-check-the-backfill)).
+4. `npm run dev` and open [http://localhost:5173](http://localhost:5173).
+5. Repertoire → **Seed from my games**, then accept or change the suggestions that need review.
+6. Train → **Start session**. Come back daily; the badge in the sidebar counts what is due.
+7. Optional, once: `npm run cleanup` to see what legacy files can go (a dry run; see [Legacy cleanup](#legacy-cleanup)).
+
+## Setup
+
+Requirements: Node.js 22 or newer (better-sqlite3 13 needs it), macOS or Linux. Stockfish is downloaded by `npm install` (the `postinstall` script); `npm run setup:engine` repeats it. The binary lands in `storage/engines/stockfish/current/stockfish`; `STOCKFISH_PATH` points elsewhere.
 
 ```bash
 npm install
-npm run dev
+cp .env.example .env   # optional; every variable has a default
+npm run dev            # API on http://127.0.0.1:3001, UI on http://localhost:5173 (proxies /api)
 ```
 
-Frontend: [http://localhost:5173](http://localhost:5173)
+Production build: `npm run build && npm start` serves the built UI and the API together on `http://127.0.0.1:3001`.
 
-The backend API runs on `http://127.0.0.1:3001` and Vite proxies `/api` requests automatically. The API listens on loopback only by default; it has no auth.
+The API listens on loopback only and has no auth. `npm run dev:web -- --host` shows the UI on your LAN (the Vite proxy then forwards `/api` for every LAN client, so only do it on a trusted network). `HOST=0.0.0.0` exposes the API port itself and prints a warning.
 
-`.env` in the repo root is loaded by `server/config.ts`, so the server, CLI and verify scripts all see it. Variables already set in the shell win. See `.env.example`.
+## The workflow
 
-### Testing from a phone on the LAN
-
-```bash
-npm run dev:web -- --host
-```
-
-Vite then serves the UI on your LAN IP, and the API itself stays bound to 127.0.0.1. Note that the Vite proxy forwards `/api/*` for every LAN client, so anyone on the network can use the API through Vite while `--host` is on (including endpoints that start long engine jobs). Only use it on a network you trust, and stop it when done.
-
-To expose the API port itself (not recommended), opt in explicitly:
+### 1. Sync
 
 ```bash
-HOST=0.0.0.0 npm run dev:server   # prints: API exposed on LAN; no auth
-```
-
-## Game store (SQLite)
-
-```bash
-npm run sync              # fetch kubista9's Chess.com archive months into storage/chess.db
-npm run sync -- --full    # also revalidate closed months (in case Chess.com amended them)
+npm run sync              # the current and previous month are revalidated; closed months are fetched once
+npm run sync -- --full    # also revalidate closed months (in case Chess.com amended one)
 npm run sync -- --offline # no network: seed empty months from storage/cache/raw-games
 ```
 
-The sync lists the archives, then requests the months that overlap the last 183 days, one at a time with a 300 ms gap and the configured User-Agent. Each month's raw response is kept in `archive_months` with its ETag, so re-deriving never needs the network. A closed month (older than the previous month, validated more than 48 h after it ended) is fetched once; the current and previous months are revalidated with `If-None-Match` (a 304 costs nothing). On a 429 the sync waits for `Retry-After` (or 60 s), at most 3 tries; on a 5xx or a network error it keeps the stored month and reports a warning.
+Home's **Sync** card does the same as a background job. Requests are serial, 300 ms apart, with a polite User-Agent, and use ETags, so a repeat sync costs almost nothing. Only standard chess is kept: `rules == "chess"`, no custom start position, blitz or rapid. Each skipped game is counted by reason. The 6-month window (183 days, with a 3-month filter) is applied when reading, so older games stay stored.
 
-Only standard games are imported: `rules == "chess"`, no `SetUp`/`FEN` start position, and time class blitz or rapid. Each skipped game is counted under one reason (variant, custom-start, time-class, not-owner, duplicate, malformed), so kept + skipped always equals the month's archive length. Kept games go to `games`, and their first 30 plies (SAN, UCI, EPD before/after, clock, time spent) go to `game_plies`. The 6-month window is applied when querying, not when fetching or deriving. Ratings are Chess.com's post-game ratings.
+### 2. Engine check (the backfill)
 
-- `GET /api/status`: window counts by time class and colour, the date range, the last sync, a stale flag (no successful sync in 24 h) and per-month rows with skip reasons and the last HTTP status.
-- `POST /api/sync` (`{"full": true}` optional): starts the sync as a background job keyed `sync` and answers 202 with the job. A second request while it runs gets the same job. The completed job's result is `{summary, status}`.
-- `GET /api/games/:id` returns one stored game, or 404.
-- `npx tsx scripts/verify/verify-import.ts --asof 2026-09-26` recounts the stored raw months independently and checks the invariants and the golden window numbers (read-only).
-
-The pages read only from the store; the browser keeps no snapshot of games (just the id of a running sync job and the Explorer's filters). `storage/chess.db` is gitignored and can be deleted and re-synced at any time; the app never deletes the caches under `storage/cache`.
-
-## Opening tree and book
-
-Opening names come from the [lichess-org/chess-openings](https://github.com/lichess-org/chess-openings) TSVs (CC0), vendored in `data/chess-openings/` at a pinned commit (see `SOURCE.md` there; re-vendor by hand with `node scripts/update-opening-book.mjs [--commit <sha>]`). The server indexes them by EPD once at startup (about 1 s). The dataset is a list of names, not a theory book: it names unsound lines too, so a "named line" is never a quality mark.
-
-The opening tree is built in memory per colour from `game_plies` (the first 20 plies), keyed by EPD, so move orders that transpose land on one node. Each game counts a position once. Every move row carries raw n and W/D/L, the score against the Elo expectation (the owner's pre-game rating, taken from his previous game in the same time class) as a delta in points, a Wilson 95% interval, recency-weighted versions of those with the effective n, a leak z-score, the 90-day trend, the owner's average think time and the book name. Nothing is persisted; trees are memoised per filter set until the stored games change.
-
-The Explorer colours a row only when it has at least 8 raw games and an effective n of at least 8, |z| >= 1.64, and it survives Benjamini-Hochberg at q = 0.2 across the rows of its table (`shared/moveSignals.ts`). A plain "n >= 8 and z >= 1" gate flags about as many lines on simulated no-leak data as on the real games. Rows under 8 games are greyed as low sample; the trend arrow needs 8 games on each side of the 90-day split.
-
-- `GET /api/tree?color=white|black&moves=<uci,uci,...>|epd=<EPD>&window=6m|3m&tc=blitz|rapid&hl=<days>|off`: one node (the start position by default) with its move rows, and with `moves=` the breadcrumbs of the path (each step's SAN, n and name). Rows carry no game ids. The default half-life is 90 days on the 6-month window and off on the 3-month window. 404 when the games never reached the position.
-- `GET /api/tree/games?<the same filters>&uci=<move>&page=N&size=20`: the games that played `uci` from that node, newest first, 20 per page, with opponent, ratings, result, date, time control, the Chess.com URL and the ply of the move (the drawer links to `/review/:id?ply=N`).
-- `npx tsx scripts/verify/verify-tree.ts --asof 2026-09-26` checks the golden lines, names, effective n, book exit and the counts along every path (read-only).
-
-## Fix list
-
-`shared/fixList.ts` lists the owner's moves that lose points against his Elo expectation, from results (the leaks), and the moves the engine refutes (theory holes):
-
-- Candidates are the owner's own moves in both colours' trees (the first 20 plies) with at least 8 raw games and an effective n of 8.
-- A candidate is a leak when z >= 1.64 and it is a Benjamini-Hochberg discovery at q = 0.2 across the whole candidate set (one-sided p). Nominally significant lines that fail BH are a separate "watch" list; on simulated no-leak results about as many lines land there as on the real games.
-- Blame attribution runs bottom-up: a game counted for an emitted deeper move no longer counts for the moves before it, so a line and its continuation are never listed for the same points. A shorter line is still listed when its residual has 8 games, loses at least 1 weighted point and has z >= 1.
-- Items are ranked by those recency-weighted points lost and carry the CI, the expectation and delta, the 90-day trend, the share of games lost by move 20 and up to 3 recent losing games.
-
-- **Theory holes** (`kind: "engine-hole"`): an owner move played at least 3 times that loses at least 7 win% against the engine's best at its root, or at least 5 when the opponent's best reply is then +100 cp or more for him. They are listed whatever the results (2...Bc5 after 1.e4 e5 2.Nf3 scores 47% but loses about 12 win% to 3.Nxe5) and sit outside the BH family. Impact = recency-weighted games x loss / 100, the points the move itself gives away.
-- Leaks and holes are merged by impact (a leak's impact is its points lost); /leaks shows the first 10 and "Show all". Leak cards also carry engine facts about their games (the mean eval at move 10, the share with a first mistake by move 10, the most common first mistake and the engine's move there), shown only with enough coverage.
-
-- `GET /api/fixlist?window=6m|3m&tc=blitz|rapid&hl=<days>|off`: `{tested, significant, items (leaks and holes by impact), holes, watch, engine (coverage and first-mistake shares per colour), cap, thresholds, games, ...}`.
-- `GET /api/snapshot?<the same filters>`: per colour, the opponent's main moves at his first decision and the owner's answers with score, n, trend and a usage hint.
-- `npx tsx scripts/verify/verify-fixlist.ts --asof 2026-09-26 [--sims 200]` checks the items against the tree and re-runs the null simulation (every result redrawn at its Elo expectation): the plan's gate emits about 11-13 lines on no-leak data, the fix list about 0.15.
-
-## Production build
+The engine check scores every position of the first 20 plies of every window game, once. Run it **plugged in**: on mains power the full 6-month window (about 1,380 games, 16k positions) takes about **30-35 minutes**; on battery it takes about an hour, and it asks first.
 
 ```bash
-npm run build
-npm start
+npm run backfill -- --dry-run   # queue size, positions to search and the estimated time; searches nothing
+npm run backfill                # the full run (Ctrl-C pauses; run it again to resume)
+npm run backfill -- --limit 20  # only the 20 newest queued games
+npx tsx scripts/verify/verify-evals.ts   # afterwards: coverage, measured Mnps and time per game
 ```
+
+Home's **Engine check** card starts, pauses and shows the same run ("Start engine check (~N min)", later "Analyse N new games" after a sync). `AUTO_BACKFILL=1` starts it after every server sync, on mains power only. Only one backfill runs at a time (`storage/backfill.lock`), whether started from the server or the CLI.
+
+It is incremental: a game with an analysis row under the current engine config is never analysed again. New games from a sync are queued automatically. A game you open in the review before the backfill reaches it is analysed on the spot (a few seconds).
+
+### 3. Leaks
+
+`/leaks` (top 3 on Home) lists what to fix first, by impact:
+
+- **Results leaks**: your moves that score clearly below your Elo expectation. A move needs at least 8 games, z ≥ 1.64 and a Benjamini-Hochberg discovery at q = 0.2 across all candidates. Lines that are only nominally significant are shown as "worth watching".
+- **Theory holes**: moves you played 3+ times that Stockfish refutes (a loss of 7+ win%, or 5+ when the reply is +1 or better for the opponent), whatever the results.
+- **Unprepared replies**: opponent moves your repertoire has no answer to and that cost points.
+
+Each card links to the Explorer, to the alternatives and to a drill.
+
+### 4. Explorer
+
+`/explorer`: pick As White or As Black and walk your own games move by move (click or drag on the board, click a row, or use the arrow keys). Positions are keyed by EPD, so transpositions merge. Each move row shows games, W/D/L, score with a 95% interval, the score against your Elo expectation, the 90-day trend, your think time, the book name and the engine's eval and loss. A row is coloured only when the difference clears the noise gate above. Every row opens its games, and each game links to its review and to Chess.com. **Set as my move** writes the move to your repertoire.
+
+### 5. Review
+
+`/review/:gameId` (from the Explorer's games list, a leak card or a drill): the first 10 moves of one game. It opens at your first opening mistake, or at the book exit for a clean game. It shows an eval bar (White's side), the SAN move list with classes, the book exit, and "2...Bc5 is a mistake (−12% win chance). Best was 2...Nc6". Engine lines are steppable chips. **Retry** lets you play your move again from the position before it. Keys: ← → moves, ↑ ↓ previous/next mistake, S/B/R Show/Best/Retry, F flip.
+
+Move classes follow the lichess win% loss against the best move in the same position: `best` < 1, `good` < 5, `inaccuracy` < 10, `mistake` < 15, `blunder` ≥ 15.
+
+### 6. Repertoire
+
+`/repertoire`: one move per position where it is your turn, per colour, up to move 8. **Seed from my games** proposes your most-played move where Stockfish accepts it (loss < 5 win%). An engine hole such as 2...Bc5 is replaced by a sound move you also play, else by the engine's move, and a leaking line with 15+ games (the Albin) gets an engine-sound sibling. Suggestions you have not reviewed are marked. Accept locks a move, and a move you set yourself is never changed by a re-seed. The page shows where your games leave the repertoire (coverage through moves 4 and 6) and exports PGN.
+
+### 7. Alternatives
+
+`/alternatives?color=&moves=&uci=` (from the Explorer, leak cards, the review and the repertoire): for one of your positions, the moves within 5 win% of the engine's best, ranked by fit: moves you already play, named book lines, mainstream book moves, better results, a familiar pawn structure, transpositions into your games, and fewer forcing or only-move lines. Each card has a 6-ply sample line, typical replies and **Set as my move**. "Where the points are lost" splits the questioned move's games by the reply, and "Change earlier" points at an earlier move when the problem starts there. The position is searched once in the deep tier (about 5-10 s the first time, cached after).
+
+### 8. Train
+
+`/train` has two drill kinds with their own colours and wording:
+
+- **Your repertoire line** (blue): a run from move 1 through your repertoire. The opponent's replies are sampled by how often your opponents played them. Only your repertoire move is correct.
+- **Position from your game** (amber): the position before a game's first opening error. The engine's best move, any move within 3 win% of it, or a sound repertoire move is accepted. New cards are confirmed by a deep search before they are shown.
+
+One Leitner scheduler for both: lines 1/3/7/16/35/60 days, positions 2/5/14/30/90 days (retired after 3 correct in a row at 21+ days), a wrong answer is due tomorrow, and at most 5 new cards per kind and day. Cards regenerate by themselves after a sync, a backfill or a repertoire edit and keep their schedule.
+
+## Architecture
+
+```text
+server/        Express API (routes.ts), SQLite access (db/), engine core (engine/), services/
+shared/        pure logic used by both sides: tree, fix list, eval maths, repertoire, alternatives, training/
+src/           React UI (pages/, components/, styles/)
+scripts/       sync.ts, backfill.ts, clean-legacy-cache.mjs, install-stockfish.mjs, verify/
+data/          vendored opening names (lichess-org/chess-openings, CC0)
+storage/       chess.db (all app data), engines/ (Stockfish), cache/raw-games (offline seed); gitignored
+```
+
+**SQLite** (`storage/chess.db`, better-sqlite3, WAL). Numbered migrations in `server/db/migrations.ts` (`schema_migrations`); a new version only adds migrations.
+
+| Table | Holds |
+|---|---|
+| `archive_months` | each Chess.com month's raw response with its ETag (re-deriving never needs the network) |
+| `games`, `game_plies` | the kept games and their first 30 plies (SAN, UCI, EPD before/after, clocks) |
+| `sync_runs` | one row per sync |
+| `engine_configs` | one row per (engine version, protocol) |
+| `positions` | evals per (EPD, engine config, tier): cp or mate, best move, lines, depth, nodes |
+| `game_analysis` | "this game is fully analysed under this config", with its opening summary |
+| `backfill_runs` | measured speed of each run, for the next estimate |
+| `repertoire_entries` | your repertoire, per colour and EPD |
+| `drill_cards`, `drill_reviews`, `drill_meta` | drill cards with their Leitner state, the answer log, the regeneration stamp |
+
+`storage/chess.db` can be deleted and rebuilt with `npm run sync` and `npm run backfill`, but that loses your repertoire and drill history.
+
+**Engine config and the incremental rule.** The engine version (from the UCI `id name` line) and the search protocol (`server/engine/protocol.ts`) form one `engine_configs` row. The work queue is every window game without a `game_analysis` row for the current config, newest first. A new Stockfish binary or a protocol change creates a new config and re-queues the window by itself; the old rows are kept, never mixed in.
+
+**Tiers** (fixed depth, single thread, Hash 64, so results do not depend on machine load):
+
+| Tier | Search | Used for |
+|---|---|---|
+| `owner` | MultiPV 3, depth 15 | your positions; every move you played there is scored at the same depth (`searchmoves`) |
+| `opponent` | MultiPV 1, depth 14 | the opponent's positions (a quicker search, so their classes are approximate) |
+| `deep` | MultiPV 4, depth 18, 3M nodes | on demand: the alternatives panel and drill confirmation; not part of the protocol, so it never re-queues games |
+
+The engine pool (`ENGINE_WORKERS` single-thread Stockfish processes) serves interactive work (a review, an alternatives search, a drill check) ahead of the backfill, and restarts a crashed engine once. The server closes its engines on exit.
+
+**Jobs.** Syncs, reviews, alternatives and drill checks are in-memory background jobs with a dedupe key, so a second click or tab joins the running job. The client polls one request at a time. After a server restart a job is gone and the page offers Retry.
+
+## Environment variables
+
+Set them in `.env` (loaded by `server/config.ts` for the server, CLI and verify scripts) or in the shell (the shell wins).
+
+| Variable | Default | Meaning |
+|---|---|---|
+| `PORT` | `3001` | API port |
+| `HOST` | `127.0.0.1` | bind address; `0.0.0.0` opts in to LAN exposure (no auth; prints a warning) |
+| `ENGINE_WORKERS` | `3` | single-thread Stockfish workers, 1-8, per process (the server and `npm run backfill` each have their own) |
+| `AUTO_BACKFILL` | off | `1` starts the engine check after every server sync, on mains power only |
+| `STOCKFISH_PATH` | `storage/engines/stockfish/current/stockfish` | the engine binary |
+| `CHESS_COM_USER_AGENT` | `chess-analyst-local/0.1 (...)` | User-Agent of the archive requests |
+| `STOCKFISH_RELEASE_TAG`, `STOCKFISH_DOWNLOAD_URL` | `sf_18` | what `npm run setup:engine` downloads |
+| `CHESS_ANALYZER_SKIP_ENGINE_DOWNLOAD` | unset | `1` skips the download in `npm install` |
+| `CHESS_OWNER` | `kubista9` | tests only; the UI always uses kubista9 |
+
+The window (183 days, `shared/window.ts`), the ply limit (20, `OPENING_PLY_LIMIT` in `shared/constants.ts`) and the engine protocol are constants in code, not environment variables.
+
+## Honesty notes
+
+- **No popularity data.** "Mainstream" and "named line" come from the lichess-org/chess-openings name list only (vendored at commit `c67912be58`, CC0; see `data/chess-openings/SOURCE.md`). It names unsound lines too, so a name is never a quality mark, and there are no move frequencies of other players.
+- **The engine budget is modest.** Depth 15 for your moves and 14 for the opponent's keeps the full backfill near half an hour. Losses near a class boundary (for example 2...Bc5 at about 9.5-12 win%) can move by a class between runs or depths.
+- **Ratings.** Chess.com archives store post-game ratings. The Elo expectation uses your pre-game rating, taken from your previous game in the same time class.
+- **Win% is lichess's curve**, fitted on much stronger players; read it as the engine's win chance, not yours.
+- **Small samples.** Results claims need 8+ games and pass a multiple-testing gate; engine claims about a set of games need 5+ games with half of them analysed. Until the full backfill has run, many cards say "engine data for X of Y games".
+
+## Legacy cleanup
+
+Earlier versions left caches that the app no longer reads (`storage/cache/scans`, `reviews*`, `snapshots`), about 220 MB of Stockfish installer leftovers in `storage/tmp`, and stale build output in `dist/` (including a stray `dist/storage` copy). The app never deletes them itself.
+
+```bash
+npm run cleanup                   # dry run: lists each item with its size; deletes nothing
+npm run cleanup -- --yes          # deletes the listed items
+npm run cleanup -- --include-raw  # also lists storage/cache/raw-games (the offline seed; kept by default)
+```
+
+It uses a fixed allow-list and never touches `storage/chess.db` or `storage/engines`. After it removes `dist/`, run `npm run build` before `npm start` (`npm run dev` does not need it).
 
 ## Checks
 
 ```bash
-npm run typecheck   # web, server and test tsconfigs
-npm test            # vitest (shared/ and server/ tests)
-npm run check       # typecheck, then test, then build:web
+npm run check   # typecheck (web, server, test), vitest, vite build
 ```
 
-`npm run build` also runs the typecheck first, because `vite build` does not type-check `src/`.
+The verify scripts in `scripts/verify/` check the real data. They take `--asof YYYY-MM-DD` (the end of that UTC day) and are read-only unless noted:
 
-Verify scripts live in `scripts/verify/` and are read-only (except `verify-analysis.ts`, which may store the evals of two targeted lines). They take `--asof YYYY-MM-DD`, meaning the end of that UTC day, inclusive (see `scripts/verify/_lib.ts`). `verify-import.ts` recounts the stored months, `verify-tree.ts` checks the opening tree's golden numbers and path counts, and `verify-fixlist.ts` checks the fix list and its null simulation, and `verify-analysis.ts` the engine insights. `engine-smoke.ts` and `verify-evals.ts` (below) are the opt-in real-engine checks.
+| Script | Checks |
+|---|---|
+| `verify-import.ts --asof D` | recounts the stored months independently; the golden window numbers |
+| `verify-tree.ts --asof D` | the opening tree: golden lines, names, effective n, path counts |
+| `verify-fixlist.ts --asof D` | the fix list against the tree, and its null simulation |
+| `verify-analysis.ts --asof D` | engine insights; may store the evals of two target lines |
+| `verify-repertoire.ts --asof D` | the repertoire seed, in memory |
+| `verify-cards.ts --asof D` | the drill cards, in memory |
+| `verify-alternatives.ts --asof D [--cached]` | the alternatives panel; stores deep searches unless `--cached` |
+| `verify-evals.ts [--games N]` | backfill coverage and speed, the incremental rule, re-queueing on a new config |
+| `engine-smoke.ts [--store]` | the real engine: evals, timings, the pool, a killed engine |
 
-## Jobs
-
-Syncs and reviews run as in-memory background jobs with a dedupe key (`sync`, `review:<gameId>`): starting a key that is still running joins that job, so a double click or a second tab never starts a second sync or a second Stockfish review. Finished jobs are kept for 30 minutes, then evicted. `GET /api/jobs/:id` answers 404 for an unknown job, and `GET /api/jobs/active` lists the running ones.
-
-The client polls one request at a time (a timeout chain, every 1.4 s) and stops when the job completes or fails, on a 404, or after 5 consecutive errors. After a server restart the job is gone, so the page shows "Job lost (the server restarted), run again." with a Retry instead of polling forever. A failed job shows its reason and a Retry.
-
-## Stockfish
-
-The install script downloads Stockfish automatically into:
-
-```text
-storage/engines/stockfish/current/stockfish
-```
-
-You can override the binary path with:
-
-```bash
-STOCKFISH_PATH=/absolute/path/to/stockfish
-```
-
-### Engine core (`server/engine/`)
-
-- **Protocol** (`protocol.ts`): fixed depth, single thread, Hash 64. The owner's positions get MultiPV 3 at depth 15, the opponent's MultiPV 1 at depth 14. A move played from a position but outside its lines is scored with `go depth <depth of the lines> searchmoves <move>` on the same root and warm hash, so the best and the played move always come from one root at one depth. A 3M-node cap guards against pathological positions. The depth was chosen from measurements on the owner's M1 so that the full 6-month backfill (about 16k positions) takes about an hour on battery, roughly half that on mains power (see `docs/phases/P4a.md`).
-- **UCI session** (`uci.ts`): reads the engine version from `id name`; any process error, exit or stdin error rejects the pending search and marks the engine dead; each search has a watchdog (`stop`, a grace period, then kill). MultiPV is only re-sent when it changes, and `ucinewgame` is sent once per game, never per position.
-- **MultiPV parser** (`multipv.ts`): skips lowerbound/upperbound lines and returns the deepest iteration in which all ranks completed at the same depth with distinct moves, ignoring the previous-depth leftovers Stockfish prints when a search stops mid-iteration. `bestmove` is informational only.
-- **Checkmate and stalemate** are resolved with chess.js without searching (mate 0 / cp 0).
-- **Pool** (`pool.ts`): `ENGINE_WORKERS` (default 3) single-thread workers. Work comes in games; a worker keeps a game on one engine. Interactive work (the review) runs before backfill work and is checked between positions. A crashed engine is respawned and the position retried once; a second failure fails the job with the engine's error. The server closes the engines on SIGINT/SIGTERM, so `tsx watch` restarts leave none behind.
-- **Store** (`server/db/engineConfigs.ts`, `positions.ts`, `gameAnalysis.ts`): `engine_configs` has one row per (engine version, protocol); `positions` holds the evals per (EPD, config, tier); `game_analysis` marks a game as fully analysed under a config. The analysis work queue is every window game without a `game_analysis` row for the current config, newest first, so a game is never analysed twice under one config, and a new engine or protocol re-queues the window automatically (old rows are kept).
-
-### Engine check (backfill)
-
-`npm run backfill` analyses the openings (the first 20 plies) of every window game that has no `game_analysis` row under the current engine config, newest first. It runs outside `tsx watch`, so code edits do not restart it.
-
-- **Positions.** Each (tier, EPD) of the queued games is searched once, with every move ever played from it in a window game scored at the same root, so later games reaching it are already answered. The position cache is read before each search and every result is stored as it arrives. The owner-to-move positions (MultiPV 3, depth 15) come first, then the opponent-to-move ones (MultiPV 1, depth 14). A game's row, with its summary (first owner error, worst move, accuracy, category counts, evals after plies 12/16/20 from the owner's side), is written once all its positions are answered.
-- **Resumable.** Ctrl-C pauses (the games in progress finish; a second Ctrl-C stops at once). An interrupted game has no row and is simply redone from the cache on the next run.
-- **Flags.** `--limit N` (the N newest queued games), `--dry-run` (queue size, positions to search, estimated time; nothing is searched), `--allow-battery` (it otherwise asks before running on battery, from `pmset -g batt`).
-- **One at a time.** `storage/backfill.lock` holds the running process's pid and progress (a lock whose pid is gone or whose heartbeat is older than 2 min is taken over). The server refuses to start while the CLI runs, and shows the CLI's progress on Home.
-- **Speed.** Every run is recorded in `backfill_runs`; the next estimate uses the last completed run's measured nodes per second and the stored mean nodes per position.
-
-Home has an **Engine check** card: coverage per colour, "Start engine check (~N min)" / "Analyse N new games", and while it runs "Engine check: X / Y of your positions · then opponent positions · ~N min left [Pause]", with a chip in the sidebar. `AUTO_BACKFILL=1` also starts it after every server sync (on mains power only).
-
-- `GET /api/analysis/status`: engine and config, state (`idle`, `running`, `pausing`, `paused`, `failed`), who runs it (server or CLI), progress with nps and ETA, games analysed per colour, window positions cached per tier, the estimate for the queue, the power state.
-- `POST /api/analysis/backfill` (`{"allowBattery": true}` optional): starts or resumes it; 409 with `code: "on-battery"` on battery, or `code: "locked"` while another process runs it.
-- `POST /api/analysis/pause`: the games in progress finish, the rest stays queued. The paused state lives in memory; after a restart the card offers Start again.
-
-The review reads every position from the cache first and only sends the rest to the engine pool (interactive priority, ahead of the backfill), storing what it computes; a backfilled game's review opens at once. A review that completes a game also writes its `game_analysis` row.
-
-`npx tsx scripts/verify/verify-evals.ts [--games N]` reports coverage and the measured throughput, checks every analysed game against the store, and on a temporary copy of the database checks cache hits (a sample redone with an engine that may not search), the incremental rule (a second run analyses 0 games), a cached review and the re-queueing under a new engine config.
-
-`npx tsx scripts/verify/engine-smoke.ts [--store]` runs the real engine on a few opening positions, prints timings, checks the evals, runs them through the pool and kills an engine mid-search. With `--store` it also creates the current engine config in `storage/chess.db` and prints the work-queue size. It never runs the backfill.
-
-### Engine insights (from the position cache)
-
-Nothing new is stored: `shared/openingAnalysis.ts` derives each game's opening analysis from the cached positions and its plies (the owner's moves with best move, loss and class, the first mistake, opponent errors and missed punishments, the owner's eval after plies 10/16/20, the book exit, think time). A position the cache cannot answer is `pending`, never a number. `server/services/analysisIndex.ts` keeps the current config's positions in memory, reloading only rows written since the last load, and memoises the analyses by the cache generation, so the numbers follow a running backfill.
-
-- `GET /api/tree` rows carry `engine`: the eval after the move from White's side (M# for mates), and for the owner's moves the win% loss, the class and the engine-best star (loss < 1). The node carries its eval, the engine's move (a blue arrow on the board at the owner's positions), the owner's first-mistake hotspot over his next 3 moves ("your first mistake comes within 3 moves in 41% of games · usually 6...Bc5 (best 6...Nf6)"), the mean eval at move 10, and `engine: {complete, games}` for "engine data for X of Y games".
-- Claims about a set of games (hotspots, mistake rates, mean evals) need at least 5 games and half of them known (`ENGINE_MIN_GAMES`, `ENGINE_MIN_COVERAGE`); a rate only counts games where every owner move of its span is scored.
-- `npm run backfill -- --line e2e4,e7e5,g1f3,f8c5 --color black` checks one line only: every position along it, with every move the colour's window games played there. No game is marked analysed.
-- `npx tsx scripts/verify/verify-analysis.ts --asof 2026-09-26` prints coverage, the class distribution, the most frequent mistakes and the first-mistake shares per colour, and asserts 2...Bc5 (loss >= 8, best Nc6/Nf6/d6, reply 3.Nxe5) and the Albin. When those two lines are not cached it checks just them with one engine (seconds, stored in the cache). `verify-fixlist.ts` then prints the ranked v1 list with the gates each item passed.
-
-## Notes on move labels
-
-Centipawn evals are clamped to +/-1000 and mates are kept separately, so a mate counts as a clamped eval of the mating side and a mate-to-mate move costs 0. The loss of a move is the drop in the mover's lichess win% between the best line and the played move, both scored in the position before the move (`shared/eval.ts`). The class depends on that loss only: `best` < 1, `good` < 5, `inaccuracy` < 10, `mistake` < 15, `blunder` >= 15. Whether the move was the engine's rank-1 move does not matter, since near-equal moves swap ranks between runs. The win% curve was fitted on much stronger players, so read it as the engine's win chance.
-
-Reviews are built from the position cache (`positions` in `storage/chess.db`) under the current engine config, so a new engine or protocol never serves old numbers. The older `storage/cache/reviews*/` and `storage/cache/scans/` directories are no longer read or written, and the app never deletes them.
-
-## Tunable environment variables
-
-```bash
-PORT=3001
-HOST=0.0.0.0 # opt-in LAN exposure; default 127.0.0.1
-STOCKFISH_PATH=/absolute/path/to/stockfish
-ENGINE_WORKERS=3 # single-thread Stockfish workers, 1-8 (per process: the server and npm run backfill each)
-AUTO_BACKFILL=1 # analyse new games after each server sync (mains power only); off by default
-CHESS_ANALYZER_SKIP_ENGINE_DOWNLOAD=1
-```
-
-`CHESS_OWNER` overrides the owner on the server side. It exists for tests only; the UI always uses `kubista9`.
+Run them with `npx tsx scripts/verify/<script>`.

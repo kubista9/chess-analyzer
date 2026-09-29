@@ -177,8 +177,9 @@ try {
   printTable([{ step: "second run", games: again.gamesAnalysed, searched: again.positionsSearched, queued: again.progress.games.total }]);
   check(again.gamesAnalysed === 0 && again.progress.games.total === 0 && again.positionsSearched === 0, "incremental rule: a second run analysed games");
 
+  const book = getOpeningBook();
   const reviewStarted = performance.now();
-  const review = reviewFromStore(db, sampleIds[0], current.id, getOpeningBook());
+  const review = reviewFromStore(db, sampleIds[0], current.id, book);
   const reviewMs = performance.now() - reviewStarted;
   console.log(`Review of ${sampleIds[0]} from the cache: ${review.coverage.pliesScored} / ${review.plies.length} plies scored in ${reviewMs.toFixed(1)} ms.`);
   check(review.status === "complete" && review.plies.length === Math.min(OPENING_PLY_LIMIT, moves.get(sampleIds[0])?.plies.length ?? 0), "the cached review is incomplete");

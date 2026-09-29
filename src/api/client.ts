@@ -5,6 +5,9 @@ import type {
   ImportStatus,
   JobState,
   PlayerColor,
+  RepertoireCoverageResponse,
+  RepertoireResponse,
+  SeedResponse,
   SnapshotResponse,
   SyncJobResult,
   TimeClass,
@@ -12,7 +15,11 @@ import type {
   TreeResponse
 } from "../../shared/types";
 import type { GameAnalysisResponse, RetryRequest, RetryResult } from "../../shared/review";
+import type { RepEntry, RepStatus } from "../../shared/repertoire";
+import type { AlternativesResponse } from "../../shared/alternatives";
 import type { GameWindow } from "../../shared/window";
+import { START_EPD } from "../../shared/epd";
+import type { DrillAnswerRequest, DrillAnswerResponse, DrillFilter, DrillSessionResponse, DrillStats } from "../../shared/training/api";
 
 /** A non-2xx API answer. `status` lets the polling loop tell a lost job (404) from a blip. */
 export class ApiError extends Error {
@@ -39,7 +46,8 @@ async function request<T>(input: string, init?: RequestInit): Promise<T> {
     throw new ApiError(response.status, payload?.error ?? `Request failed (${response.status})`, payload?.code);
   }
 
-  return response.json() as Promise<T>;
+  // 204 No Content (e.g. DELETE) has no body.
+  return (response.status === 204 ? undefined : response.json()) as Promise<T>;
 }
 
 function query(params: Record<string, string | undefined>): string {
@@ -117,6 +125,54 @@ export function fetchSnapshot(filters: RepertoireQuery, signal?: AbortSignal): P
   return request<SnapshotResponse>(`/api/snapshot${query(repertoireParams(filters))}`, { signal });
 }
 
+/** Both colours' repertoire lines, coverage and tables. */
+export function fetchRepertoire(filters: RepertoireQuery, signal?: AbortSignal): Promise<RepertoireResponse> {
+  return request<RepertoireResponse>(`/api/repertoire${query(repertoireParams(filters))}`, { signal });
+}
+
+/** A (re-)seed of the repertoire from the games: a dry-run diff, written when `apply`. */
+export function seedRepertoire(filters: RepertoireQuery, apply: boolean): Promise<SeedResponse> {
+  const { window, tc, hl } = repertoireParams(filters);
+  return request<SeedResponse>("/api/repertoire/seed", { method: "POST", body: JSON.stringify({ apply, window, tc, hl }) });
+}
+
+export interface RepEntryEdit {
+  color: PlayerColor;
+  epd: string;
+  uci?: string;
+  locked?: boolean;
+  status?: RepStatus;
+  note?: string | null;
+  /** Required when the entry is new. */
+  ply?: number;
+  /** The move this replaces and why (recorded in `replaced` when the move changes). */
+  replaces?: { uci: string; loss?: number | null; reason?: string };
+}
+
+/** Sets the owner's move at a position (edited, locked) or changes an entry's lock, status or note. */
+export function putRepEntry(edit: RepEntryEdit): Promise<{ entry: RepEntry }> {
+  return request<{ entry: RepEntry }>("/api/repertoire/entry", { method: "PUT", body: JSON.stringify(edit) });
+}
+
+export function deleteRepEntry(color: PlayerColor, epd: string): Promise<void> {
+  return request<void>(`/api/repertoire/entry${query({ color, epd })}`, { method: "DELETE" });
+}
+
+/** The ranked alternatives at an owner position; a 202 carries a preliminary ranking and the deep-search job. */
+export function fetchAlternatives(tree: TreeQuery, moves: readonly string[], uci: string | null, signal?: AbortSignal): Promise<AlternativesResponse> {
+  return request<AlternativesResponse>(`/api/alternatives${query({ ...treeParams(tree, moves), uci: uci ?? undefined })}`, { signal });
+}
+
+/** Coverage of the repertoire per colour (Home's line). */
+export function fetchRepertoireCoverage(filters: RepertoireQuery, signal?: AbortSignal): Promise<RepertoireCoverageResponse> {
+  return request<RepertoireCoverageResponse>(`/api/repertoire/coverage${query(repertoireParams(filters))}`, { signal });
+}
+
+/** The PGN download of one colour's repertoire. */
+export function repertoireExportHref(color: PlayerColor, filters: RepertoireQuery): string {
+  return `/api/repertoire/export${query({ color, ...repertoireParams(filters) })}`;
+}
+
 /** The opening review from the cache; a partial one comes with the job that completes it. */
 export function fetchGameAnalysis(gameId: string, signal?: AbortSignal): Promise<GameAnalysisResponse> {
   return request<GameAnalysisResponse>(`/api/games/${encodeURIComponent(gameId)}/analysis`, { signal });
@@ -147,4 +203,32 @@ export function startBackfill(allowBattery = false): Promise<AnalysisStatus> {
 
 export function pauseBackfill(): Promise<AnalysisStatus> {
   return request<AnalysisStatus>("/api/analysis/pause", { method: "POST", body: "{}" });
+}
+
+export function fetchDrillStats(signal?: AbortSignal): Promise<DrillStats> {
+  return request<DrillStats>("/api/drills/stats", { signal });
+}
+
+/** A card to put first: its id, or a colour and a position by its moves from the start. */
+export interface DrillFocus {
+  id?: string;
+  color?: PlayerColor;
+  moves?: readonly string[];
+}
+
+export function fetchDrillSession(kind: DrillFilter, focus: DrillFocus | null, signal?: AbortSignal): Promise<DrillSessionResponse> {
+  return request<DrillSessionResponse>(
+    `/api/drills/due${query({
+      kind,
+      focus: focus?.id,
+      color: focus?.moves ? focus.color : undefined,
+      moves: focus?.moves?.length ? focus.moves.join(",") : undefined,
+      epd: focus?.moves && !focus.moves.length ? START_EPD : undefined
+    })}`,
+    { signal }
+  );
+}
+
+export function postDrillAnswer(answer: DrillAnswerRequest): Promise<DrillAnswerResponse> {
+  return request<DrillAnswerResponse>("/api/drills/answer", { method: "POST", body: JSON.stringify(answer) });
 }

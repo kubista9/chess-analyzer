@@ -1,8 +1,8 @@
 import { Chess } from "chess.js";
 import { toEpd } from "../../shared/epd.js";
 import { rootMoveLoss } from "../../shared/eval.js";
-import type { EngineLine, EngineTier, PositionEval } from "../../shared/types.js";
-import { ENGINE_PROTOCOL, searchTimeoutMs, tierSpec, type EngineProtocol } from "./protocol.js";
+import type { EngineLine, SearchTier, PositionEval } from "../../shared/types.js";
+import { ENGINE_PROTOCOL, searchTimeoutMs, tierNodeCap, tierSpec, type EngineProtocol } from "./protocol.js";
 import type { SearchRequest, SearchResult } from "./uci.js";
 
 // One position under the search protocol:
@@ -18,7 +18,7 @@ export interface SearchEngine {
 export interface PositionRequest {
   /** UCI moves from the start position to this position. */
   moves: readonly string[];
-  tier: EngineTier;
+  tier: SearchTier;
   /** Moves played from this position that must be scored (e.g. the owner's move here). */
   played?: readonly string[];
   /** A stored eval of this position (same config, tier at least `tier`): only missing moves are searched. */
@@ -48,7 +48,7 @@ export function replayUci(moves: readonly string[]): ReplayedPosition {
   return { chess, epd: toEpd(chess.fen()), legalUci: chess.moves({ verbose: true }).map(uciOf) };
 }
 
-export function terminalEval(epd: string, tier: EngineTier, chess: Chess): PositionEval | null {
+export function terminalEval(epd: string, tier: SearchTier, chess: Chess): PositionEval | null {
   const base = { epd, tier, depth: 0, nodes: 0, lines: [], scored: [], bestUci: null };
   if (chess.isCheckmate()) {
     return { ...base, terminal: "checkmate", score: { cp: null, mate: 0 } };
@@ -83,7 +83,8 @@ export async function analysePosition(
   }
 
   const spec = tierSpec(request.tier, protocol);
-  const timeoutMs = searchTimeoutMs(protocol);
+  const nodeCap = tierNodeCap(request.tier, protocol);
+  const timeoutMs = searchTimeoutMs(protocol, nodeCap);
   let evaluation: PositionEval;
 
   if (request.cached && request.cached.epd === epd && request.cached.lines.length) {
@@ -95,7 +96,7 @@ export async function analysePosition(
       multipv: spec.multipv,
       expectedRanks: Math.min(spec.multipv, legalUci.length),
       depth: spec.depth,
-      nodes: protocol.nodeCap,
+      nodes: nodeCap,
       timeoutMs
     });
     if (!main.lines.length) {
@@ -122,7 +123,7 @@ export async function analysePosition(
       multipv: missing.length,
       expectedRanks: missing.length,
       depth: evaluation.depth,
-      nodes: protocol.nodeCap,
+      nodes: nodeCap,
       searchmoves: missing,
       timeoutMs
     });

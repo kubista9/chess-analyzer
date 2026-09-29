@@ -1,23 +1,13 @@
 import { Link } from "react-router-dom";
-import { ArrowDownRight, ArrowRight, ArrowUpRight, Compass } from "lucide-react";
-import type { EngineHoleItem, FixItem as AnyFixItem, ResultsLeakItem as FixItem, LeakEngineStats } from "../../shared/fixList";
-import type { PlayerColor } from "../../shared/types";
+import { ArrowDownRight, ArrowRight, ArrowUpRight, Compass, GraduationCap, Lightbulb } from "lucide-react";
+import { alternativesHref, explorerHref, trainHref } from "../utils/links";
+import type { EngineHoleItem, FixItem as AnyFixItem, ResultsLeakItem as FixItem, LeakEngineStats, UnpreparedItem } from "../../shared/fixList";
 import type { ExplorerFilters } from "../hooks/useFilters";
 import { formatCount, formatDay, formatDelta, formatPoints, pct, pctOne } from "../utils/formatters";
 import { ScoreWhisker, moveLabel } from "./MoveTable";
 import { coverageText } from "./NodeEngine";
 
-/** The Explorer at `moves`, with the row of `select` (a UCI move from there) highlighted. */
-export function explorerHref(color: PlayerColor, moves: readonly string[], select?: string): string {
-  const params = new URLSearchParams({ color });
-  if (moves.length) {
-    params.set("moves", moves.join(","));
-  }
-  if (select) {
-    params.set("select", select);
-  }
-  return `/explorer?${params}`;
-}
+export { explorerHref } from "../utils/links";
 
 /** "As Black · last 6 months · blitz + rapid · recent games count more". */
 export function scopeText(filters: ExplorerFilters, halfLifeDays: number | null | undefined): string {
@@ -144,8 +134,14 @@ function LeakCard({
       </ul>
 
       <footer className="fix-actions">
+        <Link className="primary-button fix-explore" to={alternativesHref(item.color, parentMoves, lastUci)}>
+          <Lightbulb size={16} aria-hidden="true" /> Try this instead
+        </Link>
         <Link className="secondary-button fix-explore" to={explorerHref(item.color, parentMoves, lastUci)}>
           <Compass size={16} aria-hidden="true" /> Open in Explorer
+        </Link>
+        <Link className="secondary-button fix-explore" to={trainHref({ color: item.color, moves: parentMoves })}>
+          <GraduationCap size={16} aria-hidden="true" /> Drill this
         </Link>
         {item.examples.length ? (
           <div className="fix-examples">
@@ -266,7 +262,89 @@ function HoleCard({ item, rank }: { item: EngineHoleItem; rank?: number }) {
       </ul>
 
       <footer className="fix-actions">
+        <Link className="primary-button fix-explore" to={alternativesHref(item.color, item.moves.slice(0, -1), item.moves[ply - 1])}>
+          <Lightbulb size={16} aria-hidden="true" /> Try this instead
+        </Link>
         <Link className="secondary-button fix-explore" to={explorerHref(item.color, item.moves.slice(0, -1), item.moves[ply - 1])}>
+          <Compass size={16} aria-hidden="true" /> Open in Explorer
+        </Link>
+        <Link className="secondary-button fix-explore" to={trainHref({ color: item.color, moves: item.moves.slice(0, -1) })}>
+          <GraduationCap size={16} aria-hidden="true" /> Drill this
+        </Link>
+        {item.examples.length ? (
+          <div className="fix-examples">
+            <span className="cell-sub">Recent games</span>
+            {item.examples.map((example) => (
+              <Link
+                key={example.id}
+                className={`fix-example fix-example-${resultLetter(example.score)}`}
+                to={`/review/${example.id}?ply=${example.ply}`}
+                title={`Review this game from move ${Math.ceil(example.ply / 2)}`}
+              >
+                <span className="fix-example-result">{resultLetter(example.score)}</span>
+                {formatDay(example.endTime)}
+              </Link>
+            ))}
+          </div>
+        ) : null}
+      </footer>
+    </article>
+  );
+}
+
+/** An opponent reply the repertoire has no answer to yet. */
+function UnpreparedCard({ item, rank }: { item: UnpreparedItem; rank?: number }) {
+  const colorLabel = item.color === "white" ? "As White" : "As Black";
+  const ply = item.moves.length;
+  const reply = moveLabel(ply, item.sans[ply - 1]);
+  return (
+    <article className="fix-card fix-card-unprepared">
+      <header className="fix-card-head">
+        {rank ? <span className="fix-rank">#{rank}</span> : null}
+        <span className="fix-color">
+          <span className={`mover-dot mover-dot-${item.color}`} aria-hidden="true" />
+          {colorLabel}
+        </span>
+        <span className="move-tag move-tag-unprepared" title="Games that followed your repertoire until this reply, which it has no answer to">
+          Unprepared reply
+        </span>
+      </header>
+
+      <h3 className="fix-line">Not prepared: {reply}</h3>
+      <p className="fix-name">
+        after {item.before || "the start"}
+        {item.name ? (
+          <>
+            {" "}
+            · <span className="eco-badge">{item.eco}</span> {item.name}
+          </>
+        ) : null}
+      </p>
+
+      <dl className="fix-stats">
+        <div title="Games that followed your repertoire to this reply">
+          <dt>Games</dt>
+          <dd>{formatCount(item.n)}</dd>
+        </div>
+        <div title="Your raw score in those games">
+          <dt>Score</dt>
+          <dd>{pct(item.score)}</dd>
+        </div>
+        <div title="Recency-weighted points below your Elo expectation in those games">
+          <dt>Points lost</dt>
+          <dd>{formatPoints(-item.pointsLost)}</dd>
+        </div>
+      </dl>
+
+      <ul className="fix-notes">
+        <li>Your repertoire has no move after {reply}. See the suggestions, or pick one in the Explorer with “Set as my move”.</li>
+      </ul>
+
+      <footer className="fix-actions">
+        <Link className="primary-button fix-explore" to={alternativesHref(item.color, item.moves)}>
+          <Lightbulb size={16} aria-hidden="true" /> See suggestions
+        </Link>
+        <Link className="secondary-button fix-explore" to={explorerHref(item.color, item.moves)}>
           <Compass size={16} aria-hidden="true" /> Open in Explorer
         </Link>
         {item.examples.length ? (
@@ -290,7 +368,7 @@ function HoleCard({ item, rank }: { item: EngineHoleItem; rank?: number }) {
   );
 }
 
-/** One fix-list item: a results leak (or watch line) or a theory hole. */
+/** One fix-list item: a results leak (or watch line), a theory hole or an unprepared reply. */
 export function FixCard({
   item,
   rank,
@@ -302,6 +380,9 @@ export function FixCard({
   explainedLines?: string[];
   weighted: boolean;
 }) {
+  if (item.kind === "unprepared") {
+    return <UnpreparedCard item={item} rank={rank} />;
+  }
   return item.kind === "engine-hole" ? (
     <HoleCard item={item} rank={rank} />
   ) : (

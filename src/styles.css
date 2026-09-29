@@ -27,6 +27,8 @@
 
 html {
   min-width: 0;
+  /* Keep scrollIntoView targets (the review stage, the drill board) clear of the sticky mobile top bar. */
+  scroll-padding-top: var(--topbar-offset, 0px);
 }
 
 body {
@@ -685,6 +687,10 @@ select {
 }
 
 @media (max-width: 1180px) {
+  :root {
+    --topbar-offset: 80px;
+  }
+
   .app-shell {
     display: block;
     min-height: 100vh;
@@ -949,6 +955,10 @@ select {
 }
 
 @media (max-width: 520px) {
+  :root {
+    --topbar-offset: 72px;
+  }
+
   .mobile-topbar {
     min-height: 64px;
     padding: 10px 12px;

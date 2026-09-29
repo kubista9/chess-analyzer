@@ -58,11 +58,6 @@ export function getOrCreateEngineConfig(db: Db, key: EngineConfigKey, now = Date
   }).immediate();
 }
 
-export function getEngineConfig(db: Db, id: number): EngineConfig | undefined {
-  const row = db.prepare("SELECT * FROM engine_configs WHERE id = ?").get(id) as EngineConfigRow | undefined;
-  return row ? toConfig(row) : undefined;
-}
-
 export function listEngineConfigs(db: Db): EngineConfig[] {
   return (db.prepare("SELECT * FROM engine_configs ORDER BY id").all() as EngineConfigRow[]).map(toConfig);
 }

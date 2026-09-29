@@ -1,6 +1,7 @@
 import { OPENING_PLY_LIMIT } from "./constants.js";
 import { rootMoveLoss, type EngineScore } from "./eval.js";
 import type { WhiteEvalPoint } from "./openingAnalysis.js";
+import type { Deviation, Unprepared } from "./repertoire.js";
 import type { JobState, MoveCategory, PlayerColor, ReviewLine } from "./types.js";
 
 // The opening review as the API sends it (GET /api/games/:id/analysis): the per-game opening
@@ -76,6 +77,16 @@ export interface GameAnalysisResponse {
   job: JobState<OpeningReview> | null;
   /** Why no engine job runs for a partial review (e.g. Stockfish is not installed). */
   engineError: string | null;
+  /** Where the game left the owner's repertoire (read at request time from the stored entries). */
+  repertoire: ReviewRepertoire;
+}
+
+export interface ReviewRepertoire {
+  /** The colour's entries (0 = no repertoire yet). */
+  entries: number;
+  deviation: Deviation | null;
+  unprepared: Unprepared | null;
+  inRepThrough: number;
 }
 
 /** "3.Nc3" for White's move, "3...Qa5" for Black's. */

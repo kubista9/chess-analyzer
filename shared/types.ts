@@ -1,6 +1,8 @@
 import type { IMPORTED_TIME_CLASSES, MOVE_CATEGORIES, SKIP_REASONS } from "./constants.js";
 import type { FixItem, ResultsLeakItem } from "./fixList.js";
 import type { TreeEdge, TreeNode } from "./openingTree.js";
+import type { ColorRepertoireView, CoverageStat, RepEntry } from "./repertoire.js";
+import type { SeedDiff } from "./repertoireSeed.js";
 import type { ColorSnapshot } from "./repertoireSnapshot.js";
 import type { EdgeEngine, NodeEngine } from "./treeEngine.js";
 import type { GameWindow } from "./window.js";
@@ -11,7 +13,7 @@ export type TimeClass = (typeof IMPORTED_TIME_CLASSES)[number];
 export type PlayerColor = "white" | "black";
 export type GameResult = "win" | "loss" | "draw";
 
-export type JobType = "sync" | "game-review";
+export type JobType = "sync" | "game-review" | "alternatives" | "drill-check";
 export type JobStatus = "queued" | "running" | "completed" | "failed";
 
 export interface JobState<T> {
@@ -33,6 +35,14 @@ export interface JobState<T> {
 export type EngineTier = "owner" | "opponent";
 
 /**
+ * A stored search tier: the protocol's two tiers, plus the lazy "deep" tier of the alternatives
+ * panel (MultiPV 4, higher depth). "deep" is stored under the same engine config but is not part
+ * of ENGINE_PROTOCOL (which would create a new config and re-queue every game), and no owner or
+ * opponent lookup ever answers from it.
+ */
+export type SearchTier = EngineTier | "deep";
+
+/**
  * One engine line, as Stockfish reports it: UCI moves, score from the side to move (exactly
  * one of cp / mate is set; mate <= 0 means the side to move is mated). winPct is the side to
  * move's lichess win% for the score.
@@ -50,7 +60,7 @@ export interface EngineLine {
 /** The engine's verdict on one position under one engine config and tier. */
 export interface PositionEval {
   epd: string;
-  tier: EngineTier;
+  tier: SearchTier;
   /** Depth of the MultiPV iteration the lines come from (0 for a terminal position). */
   depth: number;
   /** Nodes searched for this position (main search plus searchmoves follow-ups). */
@@ -403,6 +413,8 @@ export interface TreeResponse {
   path: TreeBreadcrumb[];
   /** null when no engine config could be resolved (no engine installed). */
   engine: EngineCoverage | null;
+  /** At an owner-to-move node: the repertoire's entry here, or null. */
+  repertoire: RepEntry | null;
 }
 
 /** A game that played one move of the tree, for the Explorer's games drawer. */
@@ -462,6 +474,8 @@ export interface FixListResponse extends RepertoireScope {
   items: FixItem[];
   /** How many of `items` are engine holes. */
   holes: number;
+  /** How many of `items` are unprepared opponent replies. */
+  unprepared: number;
   /** Nominally significant lines that do not survive the multiple-comparison control. */
   watch: ResultsLeakItem[];
   /** null without an engine config. */
@@ -484,4 +498,24 @@ export interface FixListResponse extends RepertoireScope {
 export interface SnapshotResponse extends RepertoireScope {
   white: ColorSnapshot;
   black: ColorSnapshot;
+}
+
+/** GET /api/repertoire: both colours' repertoire lines, coverage and tables in the filters. */
+export interface RepertoireResponse extends RepertoireScope {
+  white: ColorRepertoireView;
+  black: ColorRepertoireView;
+  /** False without an engine config: losses are unknown. */
+  engine: boolean;
+}
+
+/** GET /api/repertoire/coverage: Home's repertoire-coverage line. */
+export interface RepertoireCoverageResponse extends RepertoireScope {
+  white: { entries: number; needsReview: number; coverage: CoverageStat[] };
+  black: { entries: number; needsReview: number; coverage: CoverageStat[] };
+}
+
+/** POST /api/repertoire/seed: what a (re-)seed changes; `applied` when it was written. */
+export interface SeedResponse {
+  applied: boolean;
+  diff: Record<PlayerColor, SeedDiff>;
 }

@@ -226,11 +226,6 @@ export function listMoveGames(db: Db, ids: readonly string[], epdBefore: string,
   });
 }
 
-/** The full PGN of a stored game (the review replays it). */
-export function getGamePgn(db: Db, id: string): string | undefined {
-  return (db.prepare("SELECT pgn FROM games WHERE id = ?").get(id) as { pgn: string } | undefined)?.pgn;
-}
-
 /** The stored opening plies of one game (at most DERIVE_PLY_LIMIT), in order. */
 export function getGamePlies(db: Db, id: string): OpeningPly[] {
   const rows = db

@@ -1,4 +1,4 @@
-import type { EngineTier } from "../../shared/types.js";
+import type { SearchTier } from "../../shared/types.js";
 
 // The engine search protocol. It is part of the engine config key (engine_configs.protocol_json),
 // so any change here creates a new config and re-queues the window's games; old results are
@@ -33,14 +33,27 @@ export const ENGINE_PROTOCOL = {
 
 export type EngineProtocol = typeof ENGINE_PROTOCOL;
 
-export function tierSpec(tier: EngineTier, protocol: EngineProtocol = ENGINE_PROTOCOL): { multipv: number; depth: number } {
-  return protocol.tiers[tier];
+// The lazy deep tier of the alternatives panel, searched on demand at interactive priority when
+// the panel opens at an owner position and stored as positions rows with tier = 'deep' under the
+// SAME engine config. It is deliberately NOT in ENGINE_PROTOCOL: that would change protocol_json,
+// create a new engine config and re-queue every game of the window (the INCREMENTAL RULE).
+// Measured on the owner's M1 (single thread, Hash 64, battery): MultiPV 4 at depth 18 took
+// 0.9-1.9M nodes (1.4-3.1 s) at 1.d4 d5 2.c4, 1.e4 e5 2.Nf3 and 1.c4 c5 (depth 16: 0.4-1.0M).
+export const DEEP_TIER = { multipv: 4, depth: 18, nodeCap: 3_000_000 } as const;
+
+export function tierSpec(tier: SearchTier, protocol: EngineProtocol = ENGINE_PROTOCOL): { multipv: number; depth: number } {
+  return tier === "deep" ? { multipv: DEEP_TIER.multipv, depth: DEEP_TIER.depth } : protocol.tiers[tier];
+}
+
+/** The node cap of one search at `tier`. */
+export function tierNodeCap(tier: SearchTier, protocol: EngineProtocol = ENGINE_PROTOCOL): number {
+  return tier === "deep" ? DEEP_TIER.nodeCap : protocol.nodeCap;
 }
 
 /** Watchdog per search: generous, since depth and the node cap already bound the work. */
-export function searchTimeoutMs(protocol: EngineProtocol = ENGINE_PROTOCOL): number {
+export function searchTimeoutMs(protocol: EngineProtocol = ENGINE_PROTOCOL, nodeCap: number = protocol.nodeCap): number {
   // 5 s plus the node cap at a pessimistic 50k nodes per second.
-  return 5_000 + Math.ceil(protocol.nodeCap / 50);
+  return 5_000 + Math.ceil(nodeCap / 50);
 }
 
 /** Canonical JSON: object keys sorted at every level, so equal protocols give equal strings. */

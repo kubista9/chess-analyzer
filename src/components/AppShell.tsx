@@ -1,20 +1,29 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Link, NavLink, Outlet, useLocation } from "react-router-dom";
-import { Compass, House, Menu, TriangleAlert, X } from "lucide-react";
+import { BookMarked, Compass, GraduationCap, House, Menu, TriangleAlert, X } from "lucide-react";
+import { fetchDrillStats } from "../api/client";
+import { useStoreQuery } from "../hooks/useStoreQuery";
+import "../styles/trainer.css";
 import { OWNER_USERNAME } from "../../shared/constants";
 import { useNow } from "../hooks/useNow";
 import { useWorkspace } from "../hooks/useWorkspace";
 import { formatAgo, formatCount } from "../utils/formatters";
+import { ErrorBoundary } from "./ErrorBoundary";
 import { formatMinutes, searchedPercent } from "./EngineCard";
+
+const COMPACT_QUERY = "(max-width: 1180px)";
+const FOCUSABLE = 'a[href], button:not([disabled]), [tabindex]:not([tabindex="-1"])';
 
 const navItems = [
   { to: "/", label: "Home", icon: House, end: true },
   { to: "/explorer", label: "Explorer", icon: Compass, end: false },
-  { to: "/leaks", label: "Leaks", icon: TriangleAlert, end: false }
+  { to: "/repertoire", label: "Repertoire", icon: BookMarked, end: false },
+  { to: "/leaks", label: "Leaks", icon: TriangleAlert, end: false },
+  { to: "/train", label: "Train", icon: GraduationCap, end: false }
 ];
 
 export function AppShell() {
-  const { status, analysis } = useWorkspace();
+  const { status, analysis, dataVersion } = useWorkspace();
   const engineRunning = analysis?.state === "running" || analysis?.state === "pausing";
   const engineProgress = engineRunning ? analysis?.progress : null;
   const now = useNow();
@@ -26,12 +35,20 @@ export function AppShell() {
       ].join(" · ")
     : OWNER_USERNAME;
   const location = useLocation();
+  // The Train badge: due drills of both kinds, refreshed on navigation and after a sync.
+  const drills = useStoreQuery((signal) => fetchDrillStats(signal), [dataVersion, location.pathname]);
+  const drillsDue = drills.data ? drills.data.due["repertoire-line"] + drills.data.due["own-mistake"] : 0;
   const [isMenuOpen, setIsMenuOpen] = useState(false);
-  const [isCompact, setIsCompact] = useState(false);
-  const isNavAccessible = !isCompact || isMenuOpen;
+  // Read synchronously so the first compact render already hides the closed drawer.
+  const [isCompact, setIsCompact] = useState(() => window.matchMedia(COMPACT_QUERY).matches);
+  const isDrawerOpen = isCompact && isMenuOpen;
+  const isNavHidden = isCompact && !isMenuOpen;
+  const toggleRef = useRef<HTMLButtonElement | null>(null);
+  const sidebarRef = useRef<HTMLElement | null>(null);
+  const wasDrawerOpen = useRef(false);
 
   useEffect(() => {
-    const mediaQuery = window.matchMedia("(max-width: 1180px)");
+    const mediaQuery = window.matchMedia(COMPACT_QUERY);
     const updateCompactLayout = () => setIsCompact(mediaQuery.matches);
 
     updateCompactLayout();
@@ -44,15 +61,43 @@ export function AppShell() {
     setIsMenuOpen(false);
   }, [location.pathname]);
 
+  // Open: focus the first link and keep Tab inside the drawer. Close: focus returns to the toggle.
   useEffect(() => {
-    if (!isCompact || !isMenuOpen) {
+    if (!isDrawerOpen) {
+      if (wasDrawerOpen.current) {
+        wasDrawerOpen.current = false;
+        toggleRef.current?.focus();
+      }
       return undefined;
     }
+    wasDrawerOpen.current = true;
+
+    const sidebar = sidebarRef.current;
+    const focusables = () => (sidebar ? [...sidebar.querySelectorAll<HTMLElement>(FOCUSABLE)] : []);
+    focusables().find((element) => element.matches(".nav-link"))?.focus();
 
     const originalOverflow = document.body.style.overflow;
     const handleKeyDown = (event: KeyboardEvent) => {
       if (event.key === "Escape") {
         setIsMenuOpen(false);
+        return;
+      }
+      if (event.key !== "Tab") {
+        return;
+      }
+      const elements = focusables();
+      if (elements.length === 0) {
+        return;
+      }
+      const first = elements[0];
+      const last = elements[elements.length - 1];
+      const active = document.activeElement;
+      if (event.shiftKey && (active === first || !sidebar?.contains(active))) {
+        event.preventDefault();
+        last.focus();
+      } else if (!event.shiftKey && (active === last || !sidebar?.contains(active))) {
+        event.preventDefault();
+        first.focus();
       }
     };
 
@@ -63,20 +108,21 @@ export function AppShell() {
       document.body.style.overflow = originalOverflow;
       window.removeEventListener("keydown", handleKeyDown);
     };
-  }, [isCompact, isMenuOpen]);
+  }, [isDrawerOpen]);
 
   return (
     <div className={`app-shell${isMenuOpen ? " mobile-menu-open" : ""}`}>
-      <header className="mobile-topbar">
+      <header className="mobile-topbar" inert={isDrawerOpen}>
         <Link className="mobile-brand" to="/" aria-label="Go to home">
           <div className="brand-mark">♟</div>
           <div className="mobile-brand-copy">
             <div className="brand-title">Chess Analyst</div>
-            <div className="brand-subtitle">Local-first review lab</div>
+            <div className="brand-subtitle">Offline opening trainer</div>
           </div>
         </Link>
 
         <button
+          ref={toggleRef}
           className="mobile-menu-button"
           type="button"
           aria-controls="primary-navigation"
@@ -92,18 +138,27 @@ export function AppShell() {
         className="mobile-menu-backdrop"
         type="button"
         aria-label="Close navigation menu"
-        aria-hidden={!isMenuOpen}
-        tabIndex={isMenuOpen ? 0 : -1}
+        aria-hidden="true"
+        tabIndex={-1}
         onClick={() => setIsMenuOpen(false)}
       />
 
-      <aside className="sidebar" id="primary-navigation" aria-hidden={!isNavAccessible}>
+      <aside
+        ref={sidebarRef}
+        className="sidebar"
+        id="primary-navigation"
+        aria-label="Primary navigation"
+        aria-modal={isDrawerOpen || undefined}
+        role={isDrawerOpen ? "dialog" : undefined}
+        aria-hidden={isNavHidden || undefined}
+        inert={isNavHidden}
+      >
         <div className="sidebar-header">
-          <Link className="brand" to="/" aria-label="Go to home" tabIndex={isNavAccessible ? undefined : -1}>
+          <Link className="brand" to="/" aria-label="Go to home">
             <div className="brand-mark">♟</div>
             <div>
               <div className="brand-title">Chess Analyst</div>
-              <div className="brand-subtitle">Local-first review lab</div>
+              <div className="brand-subtitle">Offline opening trainer</div>
             </div>
           </Link>
 
@@ -111,7 +166,6 @@ export function AppShell() {
             className="sidebar-close-button"
             type="button"
             aria-label="Close navigation menu"
-            tabIndex={isMenuOpen ? 0 : -1}
             onClick={() => setIsMenuOpen(false)}
           >
             <X size={20} />
@@ -129,11 +183,16 @@ export function AppShell() {
                 className={({ isActive }) =>
                   `nav-link${isActive ? " nav-link-active" : ""}`
                 }
-                tabIndex={isNavAccessible ? undefined : -1}
+               
                 onClick={() => setIsMenuOpen(false)}
               >
                 <Icon size={18} />
                 <span>{item.label}</span>
+                {item.to === "/train" && drillsDue ? (
+                  <span className="nav-badge" aria-label={`${drillsDue} drills due`}>
+                    {drillsDue}
+                  </span>
+                ) : null}
               </NavLink>
             );
           })}
@@ -143,7 +202,7 @@ export function AppShell() {
           <Link
             className="engine-chip"
             to="/"
-            tabIndex={isNavAccessible ? undefined : -1}
+           
             aria-label="Engine check running, see Home"
             onClick={() => setIsMenuOpen(false)}
           >
@@ -163,8 +222,10 @@ export function AppShell() {
         </div>
       </aside>
 
-      <main className="page-shell">
-        <Outlet />
+      <main className="page-shell" inert={isDrawerOpen}>
+        <ErrorBoundary key={location.pathname}>
+          <Outlet />
+        </ErrorBoundary>
       </main>
     </div>
   );

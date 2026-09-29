@@ -1,0 +1,281 @@
+/* Alternatives (P7b): the panel at one of the owner's positions. */
+
+.alt-panel {
+  display: grid;
+  gap: 16px;
+  min-width: 0;
+}
+
+.alt-head {
+  display: grid;
+  gap: 8px;
+}
+
+.alt-head h2 {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+  font-size: 1.15rem;
+}
+
+.alt-why {
+  margin: 4px 0 0;
+  padding-left: 18px;
+  color: var(--muted);
+  font-size: 0.9rem;
+}
+
+.alt-why .is-flag {
+  color: #f2a7a7;
+}
+
+.alt-engine {
+  margin: 0;
+}
+
+.alt-running {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  border-radius: 10px;
+  background: rgba(129, 182, 76, 0.12);
+  color: var(--lime);
+  font-size: 0.88rem;
+}
+
+.alt-grid {
+  display: grid;
+  grid-template-columns: minmax(260px, 380px) minmax(0, 1fr);
+  gap: 16px;
+  align-items: start;
+}
+
+.alt-board-panel {
+  position: sticky;
+  top: 16px;
+  display: grid;
+  gap: 10px;
+  min-width: 0;
+}
+
+.alt-board {
+  width: 100%;
+  max-width: 360px;
+  margin: 0 auto;
+}
+
+.alt-cards {
+  display: grid;
+  gap: 12px;
+  min-width: 0;
+}
+
+.alt-cards.is-preliminary {
+  opacity: 0.72;
+}
+
+.alt-card {
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+  border: 1px solid var(--panel-line);
+}
+
+.alt-card.is-selected {
+  border-color: rgba(129, 182, 76, 0.55);
+}
+
+.alt-card.is-other {
+  opacity: 0.85;
+}
+
+.alt-card-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.alt-card-title {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--text);
+  font-size: 1.05rem;
+  cursor: pointer;
+  text-align: left;
+}
+
+.alt-rank {
+  color: var(--muted);
+  font-weight: 700;
+  font-size: 0.85rem;
+}
+
+.alt-kind {
+  padding: 1px 7px;
+  border-radius: 999px;
+  font-size: 0.7rem;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.alt-kind-owned {
+  background: rgba(129, 182, 76, 0.18);
+  color: var(--lime);
+}
+
+.alt-kind-book {
+  background: rgba(238, 238, 210, 0.1);
+  color: var(--paper);
+}
+
+.alt-kind-engine-idea {
+  background: rgba(240, 180, 93, 0.16);
+  color: var(--amber);
+}
+
+.alt-eval {
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+.alt-reasons {
+  display: grid;
+  gap: 3px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  font-size: 0.88rem;
+  color: var(--muted);
+}
+
+.alt-reasons li {
+  display: grid;
+  grid-template-columns: 38px minmax(0, 1fr);
+  gap: 6px;
+}
+
+.alt-points {
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+
+.alt-reasons .is-plus .alt-points {
+  color: var(--lime);
+}
+
+.alt-reasons .is-minus .alt-points {
+  color: var(--rose);
+}
+
+.alt-replies {
+  margin: 0;
+}
+
+.alt-lost h2,
+.alt-earlier h2,
+.alt-honesty h2 {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0 0 6px;
+  font-size: 1.05rem;
+}
+
+.alt-lost-rows {
+  display: grid;
+  gap: 8px;
+  margin: 10px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.alt-lost-rows li {
+  display: grid;
+  grid-template-columns: minmax(90px, 150px) minmax(0, 1fr) 60px;
+  align-items: center;
+  gap: 4px 10px;
+}
+
+.alt-lost-bar {
+  height: 10px;
+  border-radius: 5px;
+  background: rgba(238, 238, 210, 0.06);
+  overflow: hidden;
+}
+
+.alt-lost-bar span {
+  display: block;
+  height: 100%;
+  border-radius: 5px;
+}
+
+.alt-lost-bar .is-lost {
+  background: var(--rose);
+}
+
+.alt-lost-bar .is-gained {
+  background: var(--green);
+}
+
+.alt-lost-value {
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+  font-weight: 700;
+}
+
+.alt-lost-answers {
+  grid-column: 1 / -1;
+  padding-left: 12px;
+}
+
+.alt-ancestor {
+  display: grid;
+  gap: 4px;
+  padding: 10px 0;
+  border-top: 1px solid var(--panel-line);
+}
+
+.alt-ancestor p {
+  margin: 0;
+}
+
+.alt-honesty ul {
+  margin: 0;
+  padding-left: 18px;
+  color: var(--muted);
+  font-size: 0.88rem;
+  display: grid;
+  gap: 4px;
+}
+
+@media (max-width: 900px) {
+  .alt-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .alt-board-panel {
+    position: static;
+  }
+}
+
+@media (max-width: 560px) {
+  .alt-lost-rows li {
+    grid-template-columns: minmax(0, 1fr) 56px;
+  }
+
+  .alt-lost-bar {
+    grid-column: 1 / -1;
+    grid-row: 2;
+  }
+}

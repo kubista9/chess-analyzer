@@ -1,9 +1,16 @@
-import type { EngineLine, EngineTier, PositionEval } from "../../shared/types.js";
+import type { EngineLine, EngineTier, PositionEval, SearchTier } from "../../shared/types.js";
 import type { Db } from "./connection.js";
 
 // Engine results per (EPD, engine config, tier). A lookup for a tier accepts a row of that
 // tier or a higher one (an owner-tier MultiPV 3 row answers an opponent-tier request), so a
 // position seen in both roles is never served a lower-tier result.
+//
+// The lazy 'deep' tier (the alternatives panel, see DEEP_TIER) lives in the same table under the
+// same config, but outside TIER_ORDER: only getDeepEval reads it, and the counts, stamps and
+// incremental listings below leave it out, so the tree, review and backfill never see it.
+
+/** The protocol tiers, as SQL, for the queries that must ignore the deep tier. */
+const PROTOCOL_TIERS_SQL = "tier IN ('owner', 'opponent')";
 
 /** Tiers from highest to lowest. */
 export const TIER_ORDER: readonly EngineTier[] = ["owner", "opponent"];
@@ -34,7 +41,7 @@ function toEval(row: PositionRow): PositionEval {
   const stored = JSON.parse(row.lines_json) as StoredLines;
   return {
     epd: row.epd,
-    tier: row.tier as EngineTier,
+    tier: row.tier as SearchTier,
     depth: row.depth,
     nodes: row.nodes,
     lines: stored.lines,
@@ -58,6 +65,14 @@ export function getPositionEval(db: Db, configId: number, epd: string, tier: Eng
     .all(epd, configId, ...tiers) as PositionRow[];
   rows.sort((left, right) => TIER_ORDER.indexOf(left.tier as EngineTier) - TIER_ORDER.indexOf(right.tier as EngineTier));
   return rows[0] ? toEval(rows[0]) : undefined;
+}
+
+/** The stored deep-tier eval of `epd` under a config (the alternatives panel), or undefined. */
+export function getDeepEval(db: Db, configId: number, epd: string): PositionEval | undefined {
+  const row = db
+    .prepare(`SELECT ${SELECT_COLUMNS} FROM positions WHERE epd = ? AND config_id = ? AND tier = 'deep'`)
+    .get(epd, configId) as PositionRow | undefined;
+  return row ? toEval(row) : undefined;
 }
 
 /**
@@ -105,7 +120,7 @@ export function putPositionEval(db: Db, configId: number, evaluation: PositionEv
 
 /** Stored positions under a config, per tier. */
 export function countPositions(db: Db, configId: number): Record<EngineTier, number> {
-  const rows = db.prepare("SELECT tier, COUNT(*) AS n FROM positions WHERE config_id = ? GROUP BY tier").all(configId) as {
+  const rows = db.prepare(`SELECT tier, COUNT(*) AS n FROM positions WHERE config_id = ? AND ${PROTOCOL_TIERS_SQL} GROUP BY tier`).all(configId) as {
     tier: EngineTier;
     n: number;
   }[];
@@ -155,7 +170,7 @@ export function windowPositionCoverage(
 /** Mean nodes per stored position (main search plus follow-ups) per tier, with the row counts. */
 export function averageNodes(db: Db, configId: number): Record<EngineTier, { n: number; mean: number }> {
   const rows = db
-    .prepare("SELECT tier, COUNT(*) AS n, AVG(nodes) AS mean FROM positions WHERE config_id = ? AND nodes > 0 GROUP BY tier")
+    .prepare(`SELECT tier, COUNT(*) AS n, AVG(nodes) AS mean FROM positions WHERE config_id = ? AND nodes > 0 AND ${PROTOCOL_TIERS_SQL} GROUP BY tier`)
     .all(configId) as { tier: EngineTier; n: number; mean: number }[];
   const result: Record<EngineTier, { n: number; mean: number }> = { owner: { n: 0, mean: 0 }, opponent: { n: 0, mean: 0 } };
   for (const row of rows) {
@@ -164,9 +179,9 @@ export function averageNodes(db: Db, configId: number): Record<EngineTier, { n: 
   return result;
 }
 
-/** A cheap change stamp of a config's positions: rows are only ever inserted or upgraded (analyzed_at moves). */
+/** A cheap change stamp of a config's protocol-tier positions: rows are only ever inserted or upgraded (analyzed_at moves). */
 export function positionsStamp(db: Db, configId: number): { count: number; lastAt: number } {
-  const row = db.prepare("SELECT COUNT(*) AS n, MAX(analyzed_at) AS m FROM positions WHERE config_id = ?").get(configId) as {
+  const row = db.prepare(`SELECT COUNT(*) AS n, MAX(analyzed_at) AS m FROM positions WHERE config_id = ? AND ${PROTOCOL_TIERS_SQL}`).get(configId) as {
     n: number;
     m: number | null;
   };
@@ -176,7 +191,7 @@ export function positionsStamp(db: Db, configId: number): { count: number; lastA
 /** Every eval of a config written at or after `sinceMs` (ms since the epoch), for incremental in-memory indexes. */
 export function listPositionEvals(db: Db, configId: number, sinceMs = 0): PositionEval[] {
   const rows = db
-    .prepare(`SELECT ${SELECT_COLUMNS} FROM positions WHERE config_id = ? AND analyzed_at >= ?`)
+    .prepare(`SELECT ${SELECT_COLUMNS} FROM positions WHERE config_id = ? AND analyzed_at >= ? AND ${PROTOCOL_TIERS_SQL}`)
     .all(configId, sinceMs) as PositionRow[];
   return rows.map(toEval);
 }

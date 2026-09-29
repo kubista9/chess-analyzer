@@ -1,0 +1,331 @@
+/* Train page and the two drill kinds. They never share an accent:
+   repertoire line = blue (BookOpen), position from your game = amber (History). */
+
+:root {
+  --drill-line: #5b9bd5;
+  --drill-line-soft: rgba(91, 155, 213, 0.14);
+  --drill-mistake: var(--amber);
+  --drill-mistake-soft: rgba(240, 180, 93, 0.14);
+}
+
+.train-kind-line {
+  color: var(--drill-line);
+}
+
+.train-kind-mistake {
+  color: var(--drill-mistake);
+}
+
+.train-summary {
+  display: grid;
+  gap: 10px;
+  padding: 16px 18px;
+}
+
+.train-due {
+  margin: 0;
+  font-family: var(--font-head);
+  font-size: 1.15rem;
+  font-weight: 600;
+}
+
+.train-counts {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.9rem;
+}
+
+.train-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.train-tab {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 36px;
+  padding: 6px 12px;
+  border: 1px solid var(--panel-line);
+  border-radius: 999px;
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  font-size: 0.9rem;
+  cursor: pointer;
+}
+
+.train-tab-active {
+  background: var(--surface-raised);
+  border-color: var(--muted);
+}
+
+.train-tab:disabled {
+  opacity: 0.55;
+  cursor: default;
+}
+
+.drill-line-icon {
+  color: var(--drill-line);
+}
+
+.drill-mistake-icon {
+  color: var(--drill-mistake);
+}
+
+.train-start {
+  justify-self: start;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.train-summary kbd,
+.drill-card kbd {
+  margin-left: 6px;
+  padding: 0 5px;
+  border: 1px solid currentColor;
+  border-radius: 4px;
+  font-size: 0.72rem;
+  opacity: 0.7;
+}
+
+.train-progress {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.train-progress-bar {
+  flex: 1 1 160px;
+  height: 6px;
+  border-radius: 3px;
+  background: var(--surface-raised);
+  overflow: hidden;
+}
+
+.train-progress-bar > div {
+  height: 100%;
+  background: var(--muted);
+  transition: width 200ms ease-out;
+}
+
+.train-note {
+  color: var(--muted);
+  font-size: 0.9rem;
+}
+
+.train-empty {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  padding: 14px 18px;
+}
+
+.train-empty-line {
+  border-left: 3px solid var(--drill-line);
+}
+
+.train-empty-mistake {
+  border-left: 3px solid var(--drill-mistake);
+}
+
+.train-empties {
+  display: grid;
+  gap: 10px;
+}
+
+.train-stage {
+  min-width: 0;
+}
+
+/* ---- the drill card ---- */
+
+.drill-card {
+  display: grid;
+  gap: 10px;
+  padding: 16px 18px;
+  border: 1px solid var(--panel-line);
+  border-radius: 12px;
+  background: var(--panel);
+}
+
+.drill-card.drill-line {
+  border-top: 4px solid var(--drill-line);
+  background: linear-gradient(180deg, var(--drill-line-soft), transparent 140px), var(--panel);
+}
+
+.drill-card.drill-mistake {
+  border-top: 4px solid var(--drill-mistake);
+  background: linear-gradient(180deg, var(--drill-mistake-soft), transparent 140px), var(--panel);
+}
+
+.drill-card-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.drill-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 9px;
+  border-radius: 4px;
+  font-size: 0.74rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  color: var(--ink);
+}
+
+.drill-line-badge {
+  background: var(--drill-line);
+}
+
+.drill-mistake-badge {
+  background: var(--drill-mistake);
+}
+
+.drill-card-meta {
+  color: var(--muted);
+  font-size: 0.85rem;
+}
+
+.drill-headline {
+  margin: 0;
+  font-size: 1.05rem;
+  line-height: 1.45;
+}
+
+.drill-path {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.85rem;
+}
+
+.drill-body {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 18px;
+  align-items: start;
+}
+
+.drill-board {
+  min-width: 0;
+}
+
+.drill-side {
+  display: grid;
+  gap: 10px;
+  min-width: 0;
+}
+
+.drill-prompt {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+  font-weight: 600;
+}
+
+.drill-prompt-muted {
+  color: var(--muted);
+  font-weight: 400;
+}
+
+.drill-feedback {
+  padding: 10px 12px;
+  border-radius: 8px;
+  line-height: 1.4;
+  background: var(--surface-raised);
+}
+
+.drill-feedback-good {
+  border-left: 3px solid var(--green);
+}
+
+.drill-feedback-bad {
+  border-left: 3px solid var(--rose);
+}
+
+.drill-feedback-info {
+  border-left: 3px solid var(--drill-line);
+}
+
+.drill-feedback-known {
+  border-left: 3px solid var(--muted);
+  color: var(--muted);
+}
+
+.drill-note,
+.drill-accepted {
+  margin: 0;
+  font-size: 0.9rem;
+}
+
+.drill-note {
+  color: var(--muted);
+}
+
+.drill-sources {
+  margin: 0;
+  padding-left: 18px;
+  font-size: 0.88rem;
+  display: grid;
+  gap: 4px;
+}
+
+.drill-continue,
+.drill-review-link {
+  justify-self: start;
+}
+
+.train-summary-card h2 {
+  margin: 0 0 8px;
+}
+
+.train-summary-card ul {
+  margin: 0 0 8px;
+  padding: 0;
+  list-style: none;
+  display: grid;
+  gap: 8px;
+}
+
+.home-train {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+
+.home-train-link {
+  color: var(--text);
+}
+
+.nav-badge {
+  margin-left: auto;
+  min-width: 20px;
+  padding: 0 6px;
+  border-radius: 999px;
+  background: var(--drill-line);
+  color: var(--ink);
+  font-size: 0.75rem;
+  font-weight: 700;
+  text-align: center;
+}
+
+@media (max-width: 899px) {
+  .drill-body {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .drill-card {
+    padding: 12px;
+  }
+}

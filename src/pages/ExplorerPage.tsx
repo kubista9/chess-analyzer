@@ -1,22 +1,26 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { useSearchParams } from "react-router-dom";
+import { Link, useSearchParams } from "react-router-dom";
 import { Chess } from "chess.js";
 import { Chessboard } from "react-chessboard";
 import type { Arrow, CustomSquareStyles, Piece, Square } from "react-chessboard/dist/chessboard/types";
 import { ChevronLeft, ChevronRight, RotateCcw } from "lucide-react";
 import { OPENING_PLY_LIMIT } from "../../shared/constants";
+import { REPERTOIRE_MAX_PLY, repTag } from "../../shared/repertoire";
+import { tagText } from "../components/RepTag";
 import type { PlayerColor, TreeEdgeView } from "../../shared/types";
-import { fetchTreeNode, type TreeQuery } from "../api/client";
+import { fetchTreeNode, putRepEntry, type TreeQuery } from "../api/client";
 import { boardColors, boardTheme } from "../components/boardTheme";
 import { FilterBar } from "../components/FilterBar";
 import { GamesDrawer, type DrawerMove } from "../components/GamesDrawer";
 import { MoveTable, moveLabel } from "../components/MoveTable";
 import { NodeEngine } from "../components/NodeEngine";
+import { alternativesHref } from "../components/AlternativesPanel";
 import { useFilters } from "../hooks/useFilters";
 import { useStoreQuery } from "../hooks/useStoreQuery";
 import { useWorkspace } from "../hooks/useWorkspace";
 import { formatCount } from "../utils/formatters";
 import "../styles/explorer.css";
+import "../styles/repertoire.css";
 
 interface ReplayedLine {
   /** The legal prefix of the requested UCI moves. */
@@ -58,9 +62,12 @@ export function ExplorerPage() {
     () => ({ color, window: filters.window, timeClass: filters.timeClass ?? undefined, weighted: filters.weighted }),
     [color, filters.window, filters.timeClass, filters.weighted]
   );
+  // Bumped after a repertoire edit, so the node's entry is read again.
+  const [repVersion, setRepVersion] = useState(0);
+  const [repBusy, setRepBusy] = useState(false);
   const { data, error, loading } = useStoreQuery(
     (signal) => fetchTreeNode(tree, line.moves, signal),
-    [tree, movesKey, dataVersion]
+    [tree, movesKey, dataVersion, repVersion]
   );
   // The furthest line walked from here, so Forward can retrace it after Back.
   const [forwardLine, setForwardLine] = useState<string[]>(line.moves);
@@ -82,6 +89,27 @@ export function ExplorerPage() {
   const node = data && !error ? data.node : null;
   const edges = fresh && node ? node.edges : [];
   const ply = line.moves.length + 1;
+  const repEntry = fresh ? data?.repertoire ?? null : null;
+
+  // "Set as my move": an edited, locked repertoire entry for this position.
+  const setAsMyMove = useCallback(
+    async (edge: TreeEdgeView) => {
+      if (!node) {
+        return;
+      }
+      setRepBusy(true);
+      try {
+        await putRepEntry({ color, epd: node.epd, uci: edge.uci, ply });
+        setNotice(`${moveLabel(ply, edge.san)} is now your repertoire move here.`);
+        setRepVersion((version) => version + 1);
+      } catch (caught) {
+        setNotice(`Could not set the move: ${caught instanceof Error ? caught.message : String(caught)}`);
+      } finally {
+        setRepBusy(false);
+      }
+    },
+    [color, node, ply]
+  );
 
   // An illegal or over-long ?moves= is trimmed to its legal prefix.
   useEffect(() => {
@@ -388,6 +416,20 @@ export function ExplorerPage() {
                 ) : null}
               </dl>
               <NodeEngine node={node} coverage={data?.engine ?? null} color={color} />
+              {node.ownerToMove && ply <= REPERTOIRE_MAX_PLY ? (
+                <p className="rep-node-note">
+                  {repEntry ? (
+                    <>
+                      Repertoire: <strong>{moveLabel(ply, repEntry.san)}</strong> ({tagText(repTag(repEntry), repEntry.ply)}
+                      {repEntry.status === "needs-review" ? ", needs review" : ""}).{" "}
+                    </>
+                  ) : (
+                    "No repertoire move here yet. "
+                  )}
+                  <Link to={`/repertoire?color=${color}`}>Open the repertoire</Link> ·{" "}
+                  <Link to={alternativesHref(color, line.moves, repEntry?.uci ?? null)}>See alternatives</Link>
+                </p>
+              ) : null}
             </div>
           ) : null}
 
@@ -433,6 +475,11 @@ export function ExplorerPage() {
             onShowGames={showGames}
             weighted={weighted}
             maxPly={data?.maxPly ?? OPENING_PLY_LIMIT}
+            repertoire={
+              node.ownerToMove && ply <= REPERTOIRE_MAX_PLY
+                ? { uci: repEntry?.uci ?? null, busy: repBusy || !fresh, onSet: setAsMyMove, alternativesHref: (edge) => alternativesHref(color, line.moves, edge.uci) }
+                : undefined
+            }
           />
         ) : (
           <p className="move-table-empty">{loading ? "Loading the tree…" : "No data."}</p>

@@ -21,26 +21,39 @@ export interface MoveListProps {
   /** Moves after the reviewed window, greyed. */
   later: readonly { ply: number; san: string }[];
   gameUrl: string | null;
+  /** The ply where the game left the owner's repertoire, and how. */
+  repMark?: { ply: number; kind: "deviation" | "unprepared" } | null;
 }
 
-function MoveCell({ ply, selected, onSelect }: { ply: ReviewPly; selected: boolean; onSelect: (ply: number) => void }) {
+function MoveCell({
+  ply,
+  selected,
+  onSelect,
+  repMark
+}: {
+  ply: ReviewPly;
+  selected: boolean;
+  onSelect: (ply: number) => void;
+  repMark?: "deviation" | "unprepared";
+}) {
   // The owner's moves carry their class; the opponent's (approximate) only an error mark.
   const cls = ply.owner ? ply.cls : ply.loss !== null && ply.loss >= OPPONENT_ERROR_LOSS ? "mistake" : null;
   const mark = cls ? CLASS_LABELS[cls].mark : "";
   const title = ply.owner
     ? ply.cls
-      ? `${CLASS_LABELS[ply.cls].label}${ply.loss !== null ? `, ${ply.loss.toFixed(1)}% win chance lost` : ""}`
+      ? `${CLASS_LABELS[ply.cls].label}${ply.loss !== null && ply.cls !== "best" ? `, ${ply.loss.toFixed(1)}% win chance lost` : ""}`
       : "Engine data pending"
     : ply.loss !== null
       ? `Your opponent's move (about ${ply.loss.toFixed(1)}% win chance lost)`
       : "Your opponent's move";
+  const repText = repMark === "deviation" ? "You left your repertoire here" : repMark === "unprepared" ? "Your repertoire has no answer to this" : "";
   return (
     <button
       type="button"
-      className={`move-cell${ply.owner ? " move-cell-owner" : ""}${cls ? ` move-cell-${cls}` : ""}${selected ? " move-cell-active" : ""}`}
+      className={`move-cell${ply.owner ? " move-cell-owner" : ""}${cls ? ` move-cell-${cls}` : ""}${selected ? " move-cell-active" : ""}${repMark ? ` move-cell-rep move-cell-rep-${repMark}` : ""}`}
       aria-current={selected ? "step" : undefined}
-      aria-label={`${ply.moveNumber}${ply.color === "black" ? "..." : "."}${ply.san}. ${title}${ply.inBook ? ", book" : ""}`}
-      title={title}
+      aria-label={`${ply.moveNumber}${ply.color === "black" ? "..." : "."}${ply.san}. ${title}${ply.inBook ? ", book" : ""}${repText ? `. ${repText}` : ""}`}
+      title={repText ? `${title}. ${repText}` : title}
       onClick={() => onSelect(ply.ply)}
     >
       {ply.owner && ply.cls ? <span className={`class-dot class-dot-${ply.cls}`} aria-hidden="true" /> : null}
@@ -54,7 +67,8 @@ function MoveCell({ ply, selected, onSelect }: { ply: ReviewPly; selected: boole
 }
 
 /** The reviewed moves in pairs, coloured by class, with Book tags, the out-of-book divider and the greyed rest. */
-export function MoveList({ plies, selectedPly, onSelect, divider, later, gameUrl }: MoveListProps) {
+export function MoveList({ plies, selectedPly, onSelect, divider, later, gameUrl, repMark }: MoveListProps) {
+  const markOf = (ply: ReviewPly) => (repMark && repMark.ply === ply.ply ? repMark.kind : undefined);
   const rows: { number: number; white?: ReviewPly; black?: ReviewPly }[] = [];
   for (const ply of plies) {
     const row = rows[ply.moveNumber - 1] ?? (rows[ply.moveNumber - 1] = { number: ply.moveNumber });
@@ -69,8 +83,8 @@ export function MoveList({ plies, selectedPly, onSelect, divider, later, gameUrl
           <li key={row.number} className="move-list-item">
             <div className="move-list-row">
               <span className="move-list-number">{row.number}.</span>
-              {row.white ? <MoveCell ply={row.white} selected={row.white.ply === selectedPly} onSelect={onSelect} /> : <span />}
-              {row.black ? <MoveCell ply={row.black} selected={row.black.ply === selectedPly} onSelect={onSelect} /> : <span />}
+              {row.white ? <MoveCell ply={row.white} selected={row.white.ply === selectedPly} onSelect={onSelect} repMark={markOf(row.white)} /> : <span />}
+              {row.black ? <MoveCell ply={row.black} selected={row.black.ply === selectedPly} onSelect={onSelect} repMark={markOf(row.black)} /> : <span />}
             </div>
             {divider && dividerRow === row.number ? (
               <div className="move-list-divider" role="separator">
