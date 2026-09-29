@@ -92,9 +92,9 @@ export interface DrillDeps {
 const counts = (): DrillCounts => ({ "repertoire-line": 0, "own-mistake": 0 });
 
 /** Each game's first owner error (loss >= 5 in the first 20 plies), where every earlier owner move is scored. */
-export function firstErrors(db: Db, built: BuiltTree, engine: EngineView): MistakeOccurrence[] {
+export function firstErrors(db: Db, games: readonly TreeGame[], engine: Pick<EngineView, "analysisOf">): MistakeOccurrence[] {
   const out: MistakeOccurrence[] = [];
-  for (const game of built.games) {
+  for (const game of games) {
     const analysis = engine.analysisOf(game);
     for (const move of analysis.ownerMoves) {
       if (move.status === "pending") {
@@ -166,7 +166,7 @@ export function createDrillService(deps: DrillDeps) {
     }
     const built = builtTrees(nowMs);
     const graphs = graphsFor(db);
-    const occurrences = engine ? [...firstErrors(db, built.white, engine), ...firstErrors(db, built.black, engine)] : [];
+    const occurrences = engine ? [...firstErrors(db, built.white.games, engine), ...firstErrors(db, built.black.games, engine)] : [];
     const trees: Record<PlayerColor, OpeningTree> = { white: built.white.tree, black: built.black.tree };
     const drafts = generateCards({
       graphs,
@@ -216,7 +216,12 @@ export function createDrillService(deps: DrillDeps) {
       .filter((card) => card.kind === "repertoire-line" && card.srs.box === 0)
       .map((card) => ({ card, fresh: nowMs - (getRepEntry(db, deps.owner, card.color, card.epd)?.updatedAt ?? 0) < FRESH_EDIT_MS }))
       .filter((item) => item.card.primary);
-    lineNew.sort((left, right) => Number(right.fresh) - Number(left.fresh) || left.card.ply - right.card.ply || right.card.weight - left.card.weight || left.card.id.localeCompare(right.card.id));
+    // Fresh edits first, then the most-reached positions (a child is never reached more than its
+    // parent, so the lines are learnt from move 1 down).
+    lineNew.sort(
+      (left, right) =>
+        Number(right.fresh) - Number(left.fresh) || right.card.weight - left.card.weight || left.card.ply - right.card.ply || left.card.id.localeCompare(right.card.id)
+    );
     let lineSlots = newSlots("repertoire-line", introducedToday(cards, "repertoire-line", nowMs));
     for (const { card, fresh } of lineNew) {
       const isFocus = focus?.id === card.id;

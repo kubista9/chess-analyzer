@@ -85,6 +85,15 @@ export function cardId(kind: DrillKind, color: PlayerColor, epd: string): string
   return `${kind}|${color}|${epd}`;
 }
 
+/** The EPD after UCI `moves` from the start; throws on an illegal move. */
+export function epdAfterMoves(moves: readonly string[]): string {
+  const chess = new Chess();
+  for (const uci of moves) {
+    chess.move({ from: uci.slice(0, 2), to: uci.slice(2, 4), promotion: uci[4] });
+  }
+  return toEpd(chess.fen());
+}
+
 // ---- the repertoire graph ----
 
 export interface RepGraphNode {
