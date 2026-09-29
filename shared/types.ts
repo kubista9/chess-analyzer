@@ -13,7 +13,7 @@ export type TimeClass = (typeof IMPORTED_TIME_CLASSES)[number];
 export type PlayerColor = "white" | "black";
 export type GameResult = "win" | "loss" | "draw";
 
-export type JobType = "sync" | "game-review" | "alternatives";
+export type JobType = "sync" | "game-review" | "alternatives" | "drill-check";
 export type JobStatus = "queued" | "running" | "completed" | "failed";
 
 export interface JobState<T> {

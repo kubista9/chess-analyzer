@@ -22,6 +22,7 @@ import { Chess } from "chess.js";
 import type { GameAnalysisResponse, OpeningReview, RetryResult } from "../shared/review.js";
 import type { RepEntry } from "../shared/repertoire.js";
 import type { AlternativesResponse } from "../shared/alternatives.js";
+import type { DrillAnswerResponse, DrillSessionResponse, DrillStats, LineRunItem, MistakeItem } from "../shared/training/api.js";
 import { getDeepEval } from "./db/positions.js";
 import { legalFakePool } from "../test/fakeEngine.js";
 import { loadOwnerGames } from "../test/loadFixtures.js";
@@ -612,5 +613,86 @@ describe("repertoire API", () => {
       unprepared: null,
       inRepThrough: 0
     });
+  });
+});
+
+describe("drills API", () => {
+  async function waitFor(jobs: JobStore, id: string) {
+    for (let tries = 0; tries < 200 && jobs.get(id)?.status !== "completed" && jobs.get(id)?.status !== "failed"; tries += 1) {
+      await new Promise((resolve) => setTimeout(resolve, 20));
+    }
+    expect(jobs.get(id)?.status).toBe("completed");
+  }
+
+  it("drills a repertoire line and a position from a game, grades the first try only, and regenerates idempotently", async () => {
+    const { call, db, jobs, backfill } = await startApi();
+    const empty = await call<DrillStats>("/drills/stats");
+    expect(empty.status).toBe(200);
+    expect(empty.body).toMatchObject({ repertoireEntries: 0, total: { "repertoire-line": 0, "own-mistake": 0 }, engine: true });
+
+    await call("/analysis/backfill", { method: "POST", body: JSON.stringify({ allowBattery: true }) });
+    await backfill.idle();
+    const put = await call("/repertoire/entry", { method: "PUT", body: JSON.stringify({ color: "white", epd: START_EPD, uci: "e2e4", ply: 1 }) });
+    expect(put.status).toBe(200);
+
+    // An adopted (edited) entry is a due line card at once.
+    const lines = await call<DrillSessionResponse>("/drills/due?kind=repertoire-line");
+    expect(lines.status).toBe(200);
+    const run = lines.body.items[0] as LineRunItem;
+    expect(run).toMatchObject({ type: "line-run", color: "white" });
+    expect(run.steps[0]).toMatchObject({ ply: 1, mover: "owner", uci: "e2e4", graded: true });
+    const id = `repertoire-line|white|${START_EPD}`;
+    expect(run.cards[START_EPD]).toMatchObject({ id, kind: "repertoire-line", primary: { san: "e4" } });
+    expect(lines.body.stats.due["repertoire-line"]).toBe(1);
+
+    const right = await call<DrillAnswerResponse>("/drills/answer", { method: "POST", body: JSON.stringify({ id, uci: "e2e4", attempts: 1, ms: 900 }) });
+    expect(right.body).toMatchObject({ verdict: "correct", correct: true, graded: true, box: 2 });
+    expect(Math.abs(right.body.nextDue! - (NOW + 86_400_000))).toBeLessThanOrEqual(0.05 * 86_400_000);
+    const other = await call<DrillAnswerResponse>("/drills/answer", { method: "POST", body: JSON.stringify({ id, uci: "g2g4", attempts: 2 }) });
+    expect(other.body.verdict).not.toBe("correct");
+    expect(other.body).toMatchObject({ graded: false, repertoire: { san: "e4" }, box: 2 });
+    const illegal = await call("/drills/answer", { method: "POST", body: JSON.stringify({ id, uci: "e2e5", attempts: 1 }) });
+    expect(illegal.status).toBe(400);
+
+    // Mistake cards: today's new ones get their deep check as one job, then drill.
+    const first = await call<DrillSessionResponse>("/drills/due?kind=own-mistake");
+    expect(first.status).toBe(200);
+    if (first.body.job) {
+      expect(first.body.job).toMatchObject({ key: "drills:check", type: "drill-check" });
+      await waitFor(jobs, first.body.job.id);
+    }
+    const mistakes = await call<DrillSessionResponse>("/drills/due?kind=own-mistake");
+    const items = mistakes.body.items as MistakeItem[];
+    expect(items.length).toBeGreaterThan(0);
+    expect(items.length).toBeLessThanOrEqual(5);
+    const card = items[0].card;
+    expect(card).toMatchObject({ kind: "own-mistake", primary: null, box: 1 });
+    expect(card.sources.length).toBeGreaterThan(0);
+    const wrong = await call<DrillAnswerResponse>("/drills/answer", {
+      method: "POST",
+      body: JSON.stringify({ id: card.id, uci: card.sources[0].playedUci, attempts: 1 })
+    });
+    expect(wrong.body).toMatchObject({ verdict: "wrong", graded: true, box: 1, nextDue: NOW + 86_400_000 });
+    expect(wrong.body.acceptable.map((move) => move.uci)).toContain(wrong.body.best!.uci);
+    const best = await call<DrillAnswerResponse>("/drills/answer", {
+      method: "POST",
+      body: JSON.stringify({ id: card.id, uci: wrong.body.best!.uci, attempts: 2 })
+    });
+    expect(best.body).toMatchObject({ verdict: "best", correct: true, graded: false });
+
+    const stats = await call<DrillStats>("/drills/stats");
+    expect(stats.body.reviewedToday["repertoire-line"]).toEqual({ correct: 1, wrong: 0 });
+    expect(stats.body.reviewedToday["own-mistake"]).toEqual({ correct: 0, wrong: 1 });
+    const logged = db.prepare("SELECT COUNT(*) AS n FROM drill_reviews").get() as { n: number };
+    expect(logged.n).toBe(4);
+
+    // One card per (colour, EPD), and a forced regeneration writes nothing new.
+    const dupes = db.prepare("SELECT color, epd, COUNT(*) AS n FROM drill_cards WHERE status = 'active' GROUP BY color, epd HAVING n > 1").all();
+    expect(dupes).toEqual([]);
+    const regen = await call<{ written: number }>("/drills/regenerate", { method: "POST", body: "{}" });
+    expect(regen.body.written).toBe(0);
+    const focus = await call<DrillSessionResponse>(`/drills/due?color=white&moves=h2h3,h7h6`);
+    expect(focus.status).toBe(200);
+    expect(focus.body.focusNote).toMatch(/no drill for this position/);
   });
 });

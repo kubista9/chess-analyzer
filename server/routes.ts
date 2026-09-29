@@ -57,6 +57,8 @@ import { buildImportStatus } from "./services/importStatus.js";
 import { getOpeningBook } from "./services/openingBook.js";
 import { createAnalysisIndex, type EngineView } from "./services/analysisIndex.js";
 import { ReviewInputError, completeReview, retryMove, reviewFromStore } from "./services/review.js";
+import { DrillInputError, createDrillService } from "./services/drillService.js";
+import type { DrillAnswerResponse, DrillSessionResponse, DrillStats } from "../shared/training/api.js";
 import type { GameAnalysisResponse, OpeningReview, RetryResult } from "../shared/review.js";
 import { BackfillService, BackfillStartError } from "./services/backfillService.js";
 import { readPowerState } from "./services/power.js";
@@ -165,6 +167,27 @@ const treeGamesQuerySchema = treeQuerySchema.extend({
   size: z.coerce.number().int().min(1).max(100).optional()
 });
 
+const drillQuerySchema = z.object({
+  kind: z.enum(["all", "repertoire-line", "own-mistake"]).optional(),
+  // A card to put first: its id, or a (colour, position) by moves= or epd=.
+  focus: z.string().max(200).optional(),
+  color: colorSchema.optional(),
+  epd: epdSchema.optional(),
+  moves: z
+    .string()
+    .transform((value) => (value ? value.split(",") : []))
+    .pipe(z.array(z.string().regex(UCI_PATTERN, "UCI moves, comma-separated")).max(OPENING_PLY_LIMIT))
+    .optional()
+});
+
+// The card id holds the EPD ('/' and spaces), so it travels in the body, never in a path segment.
+const drillAnswerSchema = z.object({
+  id: z.string().min(1).max(200),
+  uci: z.string().regex(UCI_PATTERN, "a UCI move"),
+  ms: z.number().int().min(0).max(3_600_000).optional(),
+  attempts: z.number().int().min(1).max(50)
+});
+
 /** Games per page in GET /api/tree/games by default. */
 export const TREE_GAMES_PAGE_SIZE = 20;
 
@@ -188,7 +211,9 @@ async function withReviewErrors<T>(run: () => Promise<T>): Promise<T> {
   try {
     return await run();
   } catch (error) {
-    throw error instanceof ReviewInputError || error instanceof RepertoireInputError ? new HttpError(error.status, error.message) : error;
+    throw error instanceof ReviewInputError || error instanceof RepertoireInputError || error instanceof DrillInputError
+      ? new HttpError(error.status, error.message)
+      : error;
   }
 }
 
@@ -324,6 +349,13 @@ export function createApiRouter(deps: ApiDeps): express.Router {
     return selection;
   };
 
+  // Drill cards regenerate whenever their inputs changed; the repertoire routes also refresh
+  // them right after a write.
+  const drills = createDrillService({ db: deps.db, owner: deps.owner, trees, book: deps.book, engineView, pool: deps.pool, jobs: deps.jobs });
+  const refreshDrills = () => {
+    void drills.regenerate(deps.now()).catch((error: unknown) => console.warn(`Drill regeneration failed: ${String(error)}`));
+  };
+
   router.get("/health", (_request, response) => {
     response.json({ ok: true });
   });
@@ -344,6 +376,7 @@ export function createApiRouter(deps: ApiDeps): express.Router {
       });
       // AUTO_BACKFILL: analyse the new games right away (Home offers the button otherwise).
       deps.backfill.autoStart();
+      await drills.regenerate(deps.now());
       return { summary, status: buildImportStatus(deps.db(), deps.owner, deps.now()) };
     });
     response.status(202).json(job);
@@ -580,6 +613,9 @@ export function createApiRouter(deps: ApiDeps): express.Router {
       deps.now(),
       deps.book()
     );
+    if (apply === true) {
+      refreshDrills();
+    }
     response.json({ applied: apply === true, diff } satisfies SeedResponse);
   });
 
@@ -588,6 +624,7 @@ export function createApiRouter(deps: ApiDeps): express.Router {
   router.put("/repertoire/entry", async (request, response) => {
     const edit = repEntrySchema.parse(request.body);
     const entry = await withReviewErrors(async () => editEntry(deps.db(), deps.owner, edit, deps.now()));
+    refreshDrills();
     response.json({ entry });
   });
 
@@ -605,6 +642,7 @@ export function createApiRouter(deps: ApiDeps): express.Router {
     if (!deleteRepEntry(deps.db(), deps.owner, color, epd)) {
       throw new HttpError(404, `No ${color} entry at ${epd}.`);
     }
+    refreshDrills();
     response.status(204).end();
   });
 
@@ -682,6 +720,50 @@ export function createApiRouter(deps: ApiDeps): express.Router {
       }
     );
     response.status(202).json({ status: "preliminary", result: state.preliminary, job, engineError: null, cost: null } satisfies AlternativesResponse);
+  });
+
+  // Drills: today's due counts (introducing the day's new cards within the caps).
+  router.get("/drills/stats", async (_request, response) => {
+    response.json((await drills.stats(deps.now())) satisfies DrillStats);
+  });
+
+  // A session: line runs from move 1 and positions from the owner's games, due first (optionally
+  // one kind, or a focused card first). Starts the deep check of today's new mistake cards as the
+  // job "drills:check" when they need one.
+  router.get("/drills/due", async (request, response) => {
+    const query = drillQuerySchema.parse(request.query);
+    if (query.moves && query.epd) {
+      throw new HttpError(400, "Pass either moves= or epd=, not both.");
+    }
+    let epd = query.epd;
+    if (query.moves) {
+      epd = START_EPD;
+      for (const uci of query.moves) {
+        const move = legalMove(epd, { uci });
+        if (!move) {
+          throw new HttpError(400, `${uci} is not a legal move after ${query.moves.slice(0, query.moves.indexOf(uci)).join(",") || "the start"}.`);
+        }
+        epd = move.toEpd;
+      }
+    }
+    if (epd && !query.color) {
+      throw new HttpError(400, "A position needs its colour (color=white|black).");
+    }
+    const result = await drills.session(deps.now(), { kind: query.kind ?? "all", focus: { id: query.focus, color: query.color, epd } });
+    response.json(result satisfies DrillSessionResponse);
+  });
+
+  // Judges and grades one answer {id, uci, ms, attempts}; only the first graded try changes the schedule.
+  router.post("/drills/answer", async (request, response) => {
+    const body = drillAnswerSchema.parse(request.body);
+    const result = await withReviewErrors(() => drills.answer(deps.now(), body));
+    response.json(result satisfies DrillAnswerResponse);
+  });
+
+  // Rebuilds the cards now (they also regenerate on their own when the inputs change).
+  router.post("/drills/regenerate", async (_request, response) => {
+    const result = await drills.regenerate(deps.now(), true);
+    response.json({ ...result, stats: await drills.stats(deps.now()) });
   });
 
   // Before /jobs/:jobId, which would otherwise match "active".
