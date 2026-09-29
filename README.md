@@ -108,6 +108,16 @@ The Explorer colours a row only when it has at least 8 raw games and an effectiv
 - `GET /api/repertoire/coverage` gives Home's "stayed in it through move 4 / 6" line.
 - `npx tsx scripts/verify/verify-alternatives.ts --asof 2026-09-26 [--cached]` prints the panel for the main leaks and checks the Albin and 2...Bc5 lines; it runs the missing deep searches (and stores them) unless `--cached`.
 
+## Drills (Train)
+
+- `/train` (nav: Train, with a due badge; Home: "Train: N due"; fix cards: "Drill this"; the alternatives panel: "Drill it now" after Set as my move) has two drill kinds that never share wording or styling:
+  - **Your repertoire line** (blue, BookOpen): a run from move 1 through your repertoire. Your opponents' replies are sampled by their recency-weighted frequency in your games (only replies you have an answer to; the book's reply without game data), preferring branches with a due card. Due and new moves are graded, the others are played for you ("Known"). Only the repertoire move is correct; another sound move (loss < 5) is "sound, but not your repertoire move" and changes nothing.
+  - **Position from your game** (amber, History): the position before a game's first opening error (the first owner move losing 5+ win% in the first 20 plies). The engine's best, any move within 3 win% of it, or a sound repertoire move is accepted. The answer shows the engine line, the accepted moves and links to the games' reviews.
+- Cards live in SQLite (`drill_cards`, one per kind|colour|EPD; a mistake site that is also a line node is one line card carrying the games), with an append-only `drill_reviews` log. They regenerate lazily whenever the games, the owner-tier cache, the repertoire or the day changed (after a sync, a backfill or a repertoire edit); regeneration keeps the Leitner state and brings a card back (due now, one more lapse) when its mistake recurs in a newer game.
+- One Leitner scheduler (`shared/training/scheduler.ts`): line cards 1/3/7/16/35/60 days, mistake cards 2/5/14/30/90 days (retired after 3 correct in a row once the interval reaches 21 days), a wrong answer due tomorrow, ±5% fuzz, and at most 5 new cards per kind and day (a move you set yourself skips the cap). A new mistake card is confirmed by the deep tier only when it is about to be introduced, as the job `drills:check`.
+- API: `GET /api/drills/stats`, `GET /api/drills/due?kind=all|repertoire-line|own-mistake&focus=<id>|color=&moves=`, `POST /api/drills/answer {id, uci, ms, attempts}` (the id travels in the body), `POST /api/drills/regenerate`.
+- `npx tsx scripts/verify/verify-cards.ts --asof 2026-09-26` prints the cards by kind and colour and today's due list (seeding the repertoire in memory when the store's is empty).
+
 ## Production build
 
 ```bash
@@ -125,7 +135,7 @@ npm run check       # typecheck, then test, then build:web
 
 `npm run build` also runs the typecheck first, because `vite build` does not type-check `src/`.
 
-Verify scripts live in `scripts/verify/` and are read-only (except `verify-analysis.ts`, which may store the evals of two targeted lines, and `verify-alternatives.ts`, which may store the deep searches of its positions). They take `--asof YYYY-MM-DD`, meaning the end of that UTC day, inclusive (see `scripts/verify/_lib.ts`). `verify-import.ts` recounts the stored months, `verify-tree.ts` checks the opening tree's golden numbers and path counts, and `verify-fixlist.ts` checks the fix list and its null simulation, `verify-analysis.ts` the engine insights, `verify-repertoire.ts` the repertoire seed, and `verify-alternatives.ts` the alternatives (it may store deep-tier rows; `--cached` makes it read-only). `engine-smoke.ts` and `verify-evals.ts` (below) are the opt-in real-engine checks.
+Verify scripts live in `scripts/verify/` and are read-only (except `verify-analysis.ts`, which may store the evals of two targeted lines, and `verify-alternatives.ts`, which may store the deep searches of its positions). They take `--asof YYYY-MM-DD`, meaning the end of that UTC day, inclusive (see `scripts/verify/_lib.ts`). `verify-import.ts` recounts the stored months, `verify-tree.ts` checks the opening tree's golden numbers and path counts, and `verify-fixlist.ts` checks the fix list and its null simulation, `verify-analysis.ts` the engine insights, `verify-repertoire.ts` the repertoire seed, `verify-cards.ts` the drill cards, and `verify-alternatives.ts` the alternatives (it may store deep-tier rows; `--cached` makes it read-only). `engine-smoke.ts` and `verify-evals.ts` (below) are the opt-in real-engine checks.
 
 ## Jobs
 
