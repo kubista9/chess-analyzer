@@ -117,7 +117,7 @@ export function AppShell() {
           <div className="brand-mark">♟</div>
           <div className="mobile-brand-copy">
             <div className="brand-title">Chess Analyst</div>
-            <div className="brand-subtitle">Local-first review lab</div>
+            <div className="brand-subtitle">Offline opening trainer</div>
           </div>
         </Link>
 
@@ -158,7 +158,7 @@ export function AppShell() {
             <div className="brand-mark">♟</div>
             <div>
               <div className="brand-title">Chess Analyst</div>
-              <div className="brand-subtitle">Local-first review lab</div>
+              <div className="brand-subtitle">Offline opening trainer</div>
             </div>
           </Link>
 
