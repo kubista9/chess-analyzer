@@ -1,5 +1,6 @@
 import { useMemo } from "react";
-import { fetchFixList, fetchRepertoireCoverage, fetchSnapshot, type RepertoireQuery } from "../api/client";
+import { fetchDrillStats, fetchFixList, fetchRepertoireCoverage, fetchSnapshot, type RepertoireQuery } from "../api/client";
+import { TrainCard } from "../components/TrainCard";
 import { CoverageLine } from "../components/CoverageLine";
 import { scopeText } from "../components/FixCard";
 import { EngineCard } from "../components/EngineCard";
@@ -22,6 +23,7 @@ export function HomePage() {
   const fixList = useStoreQuery((signal) => fetchFixList(query, signal), [query, dataVersion]);
   const snapshot = useStoreQuery((signal) => fetchSnapshot(query, signal), [query, dataVersion]);
   const coverage = useStoreQuery((signal) => fetchRepertoireCoverage(query, signal), [query, dataVersion]);
+  const drills = useStoreQuery((signal) => fetchDrillStats(signal), [dataVersion]);
   const leakIds = useMemo(() => new Set(fixList.data?.items.map((item) => item.id) ?? []), [fixList.data]);
   const halfLife = fixList.data?.halfLifeDays ?? snapshot.data?.halfLifeDays;
 
@@ -34,6 +36,7 @@ export function HomePage() {
           {scopeText(filters, halfLife)} · the Explorer's filters
         </p>
       ) : null}
+      <TrainCard data={drills.data} error={drills.error} />
       <LeaksCard data={fixList.data} error={fixList.error} />
       <CoverageLine data={coverage.data} error={coverage.error} />
       <RepertoireCard data={snapshot.data} error={snapshot.error} leakIds={leakIds} />

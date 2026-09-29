@@ -1,6 +1,9 @@
 import { useEffect, useState } from "react";
 import { Link, NavLink, Outlet, useLocation } from "react-router-dom";
-import { BookMarked, Compass, House, Menu, TriangleAlert, X } from "lucide-react";
+import { BookMarked, Compass, GraduationCap, House, Menu, TriangleAlert, X } from "lucide-react";
+import { fetchDrillStats } from "../api/client";
+import { useStoreQuery } from "../hooks/useStoreQuery";
+import "../styles/trainer.css";
 import { OWNER_USERNAME } from "../../shared/constants";
 import { useNow } from "../hooks/useNow";
 import { useWorkspace } from "../hooks/useWorkspace";
@@ -11,11 +14,12 @@ const navItems = [
   { to: "/", label: "Home", icon: House, end: true },
   { to: "/explorer", label: "Explorer", icon: Compass, end: false },
   { to: "/repertoire", label: "Repertoire", icon: BookMarked, end: false },
-  { to: "/leaks", label: "Leaks", icon: TriangleAlert, end: false }
+  { to: "/leaks", label: "Leaks", icon: TriangleAlert, end: false },
+  { to: "/train", label: "Train", icon: GraduationCap, end: false }
 ];
 
 export function AppShell() {
-  const { status, analysis } = useWorkspace();
+  const { status, analysis, dataVersion } = useWorkspace();
   const engineRunning = analysis?.state === "running" || analysis?.state === "pausing";
   const engineProgress = engineRunning ? analysis?.progress : null;
   const now = useNow();
@@ -27,6 +31,9 @@ export function AppShell() {
       ].join(" · ")
     : OWNER_USERNAME;
   const location = useLocation();
+  // The Train badge: due drills of both kinds, refreshed on navigation and after a sync.
+  const drills = useStoreQuery((signal) => fetchDrillStats(signal), [dataVersion, location.pathname]);
+  const drillsDue = drills.data ? drills.data.due["repertoire-line"] + drills.data.due["own-mistake"] : 0;
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const [isCompact, setIsCompact] = useState(false);
   const isNavAccessible = !isCompact || isMenuOpen;
@@ -135,6 +142,11 @@ export function AppShell() {
               >
                 <Icon size={18} />
                 <span>{item.label}</span>
+                {item.to === "/train" && drillsDue ? (
+                  <span className="nav-badge" aria-label={`${drillsDue} drills due`}>
+                    {drillsDue}
+                  </span>
+                ) : null}
               </NavLink>
             );
           })}

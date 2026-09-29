@@ -23,3 +23,15 @@ export function alternativesHref(color: PlayerColor, moves: readonly string[], u
   }
   return `/alternatives?${params}`;
 }
+
+/** The Train page with one card first: by its id, or by a colour and the moves to its position (fix cards). */
+export function trainHref(focus: { color: PlayerColor; moves: readonly string[] } | { id: string }): string {
+  const params = new URLSearchParams();
+  if ("id" in focus) {
+    params.set("focus", focus.id);
+  } else {
+    params.set("color", focus.color);
+    params.set("moves", focus.moves.join(","));
+  }
+  return `/train?${params}`;
+}

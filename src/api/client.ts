@@ -18,6 +18,8 @@ import type { GameAnalysisResponse, RetryRequest, RetryResult } from "../../shar
 import type { RepEntry, RepStatus } from "../../shared/repertoire";
 import type { AlternativesResponse } from "../../shared/alternatives";
 import type { GameWindow } from "../../shared/window";
+import { START_EPD } from "../../shared/epd";
+import type { DrillAnswerRequest, DrillAnswerResponse, DrillFilter, DrillSessionResponse, DrillStats } from "../../shared/training/api";
 
 /** A non-2xx API answer. `status` lets the polling loop tell a lost job (404) from a blip. */
 export class ApiError extends Error {
@@ -201,4 +203,32 @@ export function startBackfill(allowBattery = false): Promise<AnalysisStatus> {
 
 export function pauseBackfill(): Promise<AnalysisStatus> {
   return request<AnalysisStatus>("/api/analysis/pause", { method: "POST", body: "{}" });
+}
+
+export function fetchDrillStats(signal?: AbortSignal): Promise<DrillStats> {
+  return request<DrillStats>("/api/drills/stats", { signal });
+}
+
+/** A card to put first: its id, or a colour and a position by its moves from the start. */
+export interface DrillFocus {
+  id?: string;
+  color?: PlayerColor;
+  moves?: readonly string[];
+}
+
+export function fetchDrillSession(kind: DrillFilter, focus: DrillFocus | null, signal?: AbortSignal): Promise<DrillSessionResponse> {
+  return request<DrillSessionResponse>(
+    `/api/drills/due${query({
+      kind,
+      focus: focus?.id,
+      color: focus?.moves ? focus.color : undefined,
+      moves: focus?.moves?.length ? focus.moves.join(",") : undefined,
+      epd: focus?.moves && !focus.moves.length ? START_EPD : undefined
+    })}`,
+    { signal }
+  );
+}
+
+export function postDrillAnswer(answer: DrillAnswerRequest): Promise<DrillAnswerResponse> {
+  return request<DrillAnswerResponse>("/api/drills/answer", { method: "POST", body: JSON.stringify(answer) });
 }

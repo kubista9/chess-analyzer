@@ -14,7 +14,7 @@ import { useStoreQuery } from "../hooks/useStoreQuery";
 import { formatCount, pct } from "../utils/formatters";
 import { boardColors, boardTheme } from "./boardTheme";
 import { evalLabel } from "./EvalBar";
-import { alternativesHref, explorerHref } from "../utils/links";
+import { alternativesHref, explorerHref, trainHref } from "../utils/links";
 import { moveLabel } from "./MoveTable";
 
 export { alternativesHref } from "../utils/links";
@@ -72,6 +72,8 @@ export function AlternativesPanel({ color, moves, uci, tree }: AlternativesPanel
   const [step, setStep] = useState(1);
   const [busy, setBusy] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
+  // The line card of the move just set: "Adopt + drill".
+  const [adopted, setAdopted] = useState<string | null>(null);
 
   useEffect(() => {
     setJob(data?.job ?? null);
@@ -110,9 +112,11 @@ export function AlternativesPanel({ color, moves, uci, tree }: AlternativesPanel
       try {
         await putRepEntry({ color, epd: target.epd, uci: target.uci, ply: target.ply, replaces: target.replaces });
         setNotice(`${moveLabel(target.ply, target.san)} is now your repertoire move there (edited, locked).`);
+        setAdopted(`repertoire-line|${color}|${target.epd}`);
         setVersion((value) => value + 1);
       } catch (caught) {
         setNotice(`Could not set the move: ${caught instanceof Error ? caught.message : String(caught)}`);
+        setAdopted(null);
       } finally {
         setBusy(false);
       }
@@ -213,6 +217,12 @@ export function AlternativesPanel({ color, moves, uci, tree }: AlternativesPanel
         {notice ? (
           <p className="explorer-notice" role="status">
             {notice}
+            {adopted ? (
+              <>
+                {" "}
+                <Link to={trainHref({ id: adopted })}>Drill it now</Link>
+              </>
+            ) : null}
           </p>
         ) : null}
       </header>

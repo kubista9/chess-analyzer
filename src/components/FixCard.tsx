@@ -1,6 +1,6 @@
 import { Link } from "react-router-dom";
-import { ArrowDownRight, ArrowRight, ArrowUpRight, Compass, Lightbulb } from "lucide-react";
-import { alternativesHref, explorerHref } from "../utils/links";
+import { ArrowDownRight, ArrowRight, ArrowUpRight, Compass, GraduationCap, Lightbulb } from "lucide-react";
+import { alternativesHref, explorerHref, trainHref } from "../utils/links";
 import type { EngineHoleItem, FixItem as AnyFixItem, ResultsLeakItem as FixItem, LeakEngineStats, UnpreparedItem } from "../../shared/fixList";
 import type { PlayerColor } from "../../shared/types";
 import type { ExplorerFilters } from "../hooks/useFilters";
@@ -141,6 +141,9 @@ function LeakCard({
         <Link className="secondary-button fix-explore" to={explorerHref(item.color, parentMoves, lastUci)}>
           <Compass size={16} aria-hidden="true" /> Open in Explorer
         </Link>
+        <Link className="secondary-button fix-explore" to={trainHref({ color: item.color, moves: parentMoves })}>
+          <GraduationCap size={16} aria-hidden="true" /> Drill this
+        </Link>
         {item.examples.length ? (
           <div className="fix-examples">
             <span className="cell-sub">{item.examples.some((example) => example.score === 0) ? "Recent losses" : "Recent games"}</span>
@@ -265,6 +268,9 @@ function HoleCard({ item, rank }: { item: EngineHoleItem; rank?: number }) {
         </Link>
         <Link className="secondary-button fix-explore" to={explorerHref(item.color, item.moves.slice(0, -1), item.moves[ply - 1])}>
           <Compass size={16} aria-hidden="true" /> Open in Explorer
+        </Link>
+        <Link className="secondary-button fix-explore" to={trainHref({ color: item.color, moves: item.moves.slice(0, -1) })}>
+          <GraduationCap size={16} aria-hidden="true" /> Drill this
         </Link>
         {item.examples.length ? (
           <div className="fix-examples">
