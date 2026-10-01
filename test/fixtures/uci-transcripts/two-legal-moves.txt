@@ -1,6 +1,0 @@
-# MultiPV 3 asked, but the position has only two legal moves: each iteration has 2 ranks.
-info depth 9 seldepth 9 multipv 1 score cp -20 nodes 9000 nps 500000 hashfull 1 tbhits 0 time 18 pv e8f8 d1d8
-info depth 9 seldepth 9 multipv 2 score cp -350 nodes 9000 nps 500000 hashfull 1 tbhits 0 time 18 pv e8e7 d1d8
-info depth 10 seldepth 11 multipv 1 score cp -25 nodes 14000 nps 500000 hashfull 2 tbhits 0 time 28 pv e8f8 d1d8
-info depth 10 seldepth 12 multipv 2 score cp -380 nodes 14000 nps 500000 hashfull 2 tbhits 0 time 28 pv e8e7 d1d8
-bestmove e8f8
