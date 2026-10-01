@@ -1,8 +1,0 @@
-# 1.e4 e5 2.Nf3, Black to move, MultiPV 3 to depth 15.
-info depth 14 seldepth 18 multipv 1 score cp -40 nodes 250000 nps 580000 hashfull 60 tbhits 0 time 431 pv b8c6 f1b5 g8f6
-info depth 14 seldepth 19 multipv 2 score cp -47 nodes 250000 nps 580000 hashfull 60 tbhits 0 time 431 pv g8f6 f3e5 d7d6
-info depth 14 seldepth 17 multipv 3 score cp -60 nodes 250000 nps 580000 hashfull 60 tbhits 0 time 431 pv d7d6 d2d4 e5d4
-info depth 15 seldepth 20 multipv 1 score cp -42 nodes 351234 nps 580000 hashfull 75 tbhits 0 time 605 pv b8c6 f1b5 g8f6 e1g1 f6e4
-info depth 15 seldepth 21 multipv 2 score cp -50 nodes 351234 nps 580000 hashfull 75 tbhits 0 time 605 pv g8f6 f3e5 d7d6 e5f3 f6e4
-info depth 15 seldepth 19 multipv 3 score cp -55 nodes 351234 nps 580000 hashfull 75 tbhits 0 time 605 pv d7d6 d2d4 e5d4 f3d4 g8f6
-bestmove b8c6 ponder f1b5

@@ -1,3 +1,0 @@
-# A checkmated position: Stockfish prints no pv and bestmove (none).
-info depth 0 score mate 0
-bestmove (none)

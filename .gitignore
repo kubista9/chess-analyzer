@@ -2,11 +2,9 @@ node_modules
 dist
 .DS_Store
 .env
+.env.*
 *.log
-storage/cache
-storage/engines
-storage/tmp
-!storage/.gitkeep
-storage/chess.db
-storage/chess.db-*
-storage/backfill.lock*
+coverage
+# Local files from the previous version of this repository (an SQLite store, a native engine,
+# caches). Nothing in the trainer reads them; delete the folder by hand when you no longer need it.
+storage/
