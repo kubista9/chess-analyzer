@@ -73,6 +73,99 @@ describe("parseContentFile", () => {
     const file = { ...fixtureFile("white-english-e5"), schemaVersion: 2 };
     expect(messages(parseContentFile(file).issues)).toEqual([expect.stringMatching(/^schemaVersion: /)]);
   });
+
+  it("reports every misspelt or unknown field with its path instead of dropping it silently", () => {
+    const file = fixtureFile("white-english-e5") as unknown as Record<string, unknown> & ContentFileInput;
+    const closed = file.lines[1] as unknown as Record<string, unknown>;
+    closed.defaultEnable = false;
+    closed.recal = { ply: 1 };
+    closed.checkpoint = [{ ply: 1, fen: "garbage" }];
+    (file.lines[2].checkpoints![0] as unknown as Record<string, unknown>).lable = "Typo";
+    (file.lines[0].traps![0] as unknown as Record<string, unknown>).sides = "for";
+    (file.notes!["1.c4"] as unknown as Record<string, unknown>).hnt = "A hint under the wrong name.";
+    (file.notes!["1.c4"].alternatives![0] as unknown as Record<string, unknown>).transpose = true;
+    (file.review as unknown as Record<string, unknown>).checkedBy = ["me"];
+    file.author = "Someone";
+    const { file: result, issues } = parseContentFile(file, "white/e5.json");
+    // In the order the fields appear in the file.
+    expect(issues).toEqual([
+      {
+        level: "error",
+        fileId: "white-english-e5",
+        path: "review.checkedBy",
+        message: "review.checkedBy: unknown field; it is ignored"
+      },
+      {
+        level: "error",
+        fileId: "white-english-e5",
+        path: 'notes."1.c4".alternatives.0.transpose',
+        message: 'notes."1.c4".alternatives.0.transpose: unknown field (did you mean "transposes"?); it is ignored'
+      },
+      {
+        level: "error",
+        fileId: "white-english-e5",
+        path: 'notes."1.c4".hnt',
+        message: 'notes."1.c4".hnt: unknown field (did you mean "hint"?); it is ignored'
+      },
+      {
+        level: "error",
+        fileId: "white-english-e5",
+        lineId: "eng-e5-bc5",
+        path: "lines.0.traps.0.sides",
+        message: 'lines.0.traps.0.sides: unknown field (did you mean "side"?); it is ignored'
+      },
+      {
+        level: "error",
+        fileId: "white-english-e5",
+        lineId: "eng-e5-closed",
+        path: "lines.1.defaultEnable",
+        message: 'lines.1.defaultEnable: unknown field (did you mean "defaultEnabled"?); it is ignored'
+      },
+      {
+        level: "error",
+        fileId: "white-english-e5",
+        lineId: "eng-e5-closed",
+        path: "lines.1.recal",
+        message: 'lines.1.recal: unknown field (did you mean "recall"?); it is ignored'
+      },
+      {
+        level: "error",
+        fileId: "white-english-e5",
+        lineId: "eng-e5-closed",
+        path: "lines.1.checkpoint",
+        message: 'lines.1.checkpoint: unknown field (did you mean "checkpoints"?); it is ignored'
+      },
+      {
+        level: "error",
+        fileId: "white-english-e5",
+        lineId: "eng-e5-four-knights",
+        path: "lines.2.checkpoints.0.lable",
+        message: 'lines.2.checkpoints.0.lable: unknown field (did you mean "label"?); it is ignored'
+      },
+      { level: "error", fileId: "white-english-e5", path: "author", message: "author: unknown field; it is ignored" }
+    ]);
+    // Otherwise the file is valid, so it still loads (with the fields ignored), but content:check fails.
+    expect(result?.lines[1]).toMatchObject({ id: "eng-e5-closed", defaultEnabled: true });
+    expect(result?.lines[1]).not.toHaveProperty("defaultEnable");
+  });
+
+  it("reports unknown fields next to the schema errors of a file that does not validate", () => {
+    const file = fixtureFile("white-english-e5");
+    delete (file as Partial<ContentFileInput>).summary;
+    (file as unknown as Record<string, unknown>).sumary = "Misspelt.";
+    const { file: result, issues } = parseContentFile(file);
+    expect(result).toBeNull();
+    expect(issues.map((issue) => issue.path)).toEqual(["summary", "sumary"]);
+    expect(issues[1].message).toBe('sumary: unknown field (did you mean "summary"?); it is ignored');
+  });
+
+  it("does not look for unknown fields inside values of the wrong type", () => {
+    const file = fixtureFile("white-english-e5") as unknown as Record<string, unknown>;
+    file.lines = "not a list";
+    file.notes = ["not", "a", "map"];
+    const paths = parseContentFile(file).issues.map((issue) => issue.path);
+    expect(paths).toEqual(["notes", "lines"]);
+  });
 });
 
 describe("compileChapter: lines", () => {

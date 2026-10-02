@@ -1,4 +1,5 @@
 import { Chess } from "chess.js";
+import { z } from "zod";
 import { formatLine, moveLabel, parseMovetext, pathKey } from "../chess/format";
 import { IllegalMoveError, START_EPD, applyMove, fenOf, replayMoves, toEpd, type AppliedMove, type Color } from "../chess/position";
 import type { CustomLineRecord } from "../training/types";
@@ -67,31 +68,102 @@ function rawField(json: unknown, key: string): unknown {
   return json !== null && typeof json === "object" ? (json as Record<string, unknown>)[key] : undefined;
 }
 
+/** Largest edit distance (in characters) at which an unknown field gets a "did you mean" suggestion. */
+export const FIELD_SUGGESTION_DISTANCE = 2;
+
+/** Levenshtein distance between two short strings. */
+function editDistance(left: string, right: string): number {
+  let previous = Array.from({ length: right.length + 1 }, (_, index) => index);
+  for (let i = 1; i <= left.length; i += 1) {
+    const current = [i];
+    for (let j = 1; j <= right.length; j += 1) {
+      const cost = left[i - 1] === right[j - 1] ? 0 : 1;
+      current.push(Math.min(previous[j] + 1, current[j - 1] + 1, previous[j - 1] + cost));
+    }
+    previous = current;
+  }
+  return previous[right.length];
+}
+
+/** The known field closest to `key` within FIELD_SUGGESTION_DISTANCE (ties: alphabetical), or null. */
+function closestField(key: string, known: readonly string[]): string | null {
+  let best: { field: string; distance: number } | null = null;
+  for (const field of [...known].sort()) {
+    const distance = editDistance(key.toLowerCase(), field.toLowerCase());
+    if (distance <= FIELD_SUGGESTION_DISTANCE && (best === null || distance < best.distance)) {
+      best = { field, distance };
+    }
+  }
+  return best?.field ?? null;
+}
+
+/** A field the schema does not know: zod would drop it without a word. */
+interface UnknownField {
+  path: PropertyKey[];
+  suggestion: string | null;
+}
+
+const isRecord = (value: unknown): value is Record<string, unknown> => value !== null && typeof value === "object" && !Array.isArray(value);
+
+/**
+ * Every field of `json` that `schema` does not define, in document order. Values of the wrong
+ * type are skipped (zod reports those).
+ */
+function unknownFields(schema: z.core.$ZodType, json: unknown, path: PropertyKey[] = [], found: UnknownField[] = []): UnknownField[] {
+  let inner = schema;
+  while (inner instanceof z.ZodOptional || inner instanceof z.ZodDefault || inner instanceof z.ZodNullable) {
+    inner = inner.unwrap();
+  }
+  if (inner instanceof z.ZodObject && isRecord(json)) {
+    const shape: Record<string, z.core.$ZodType> = inner.shape;
+    for (const [key, value] of Object.entries(json)) {
+      if (Object.hasOwn(shape, key)) {
+        unknownFields(shape[key], value, [...path, key], found);
+      } else {
+        found.push({ path: [...path, key], suggestion: closestField(key, Object.keys(shape)) });
+      }
+    }
+  } else if (inner instanceof z.ZodRecord && isRecord(json)) {
+    for (const [key, value] of Object.entries(json)) {
+      unknownFields(inner.valueType, value, [...path, key], found);
+    }
+  } else if (inner instanceof z.ZodArray && Array.isArray(json)) {
+    json.forEach((value, index) => unknownFields(inner.element, value, [...path, index], found));
+  }
+  return found;
+}
+
 /**
  * Validates one content file with the zod schema. Issue messages read "path: message"; an issue's
- * fileId is the file's own `id` when it has one, else `fileName`.
+ * fileId is the file's own `id` when it has one, else `fileName`. A field the schema does not
+ * know is an error too, since zod would drop it silently and a misspelt optional field
+ * ("defaultEnable", "recal", "hnt") changes what is taught; the file is still returned when it
+ * otherwise validates, with such fields ignored.
  */
 export function parseContentFile(json: unknown, fileName?: string): ParsedContentFile {
   const result = contentFileSchema.safeParse(json);
-  if (result.success) {
-    return { file: result.data, issues: [] };
-  }
   const rawId = rawField(json, "id");
   const fileId = typeof rawId === "string" && rawId.trim() !== "" ? rawId : fileName;
   const rawLines = rawField(json, "lines");
-  const issues = result.error.issues.map((issue): ContentIssue => {
-    const path = formatPath(issue.path);
-    const lineIndex = issue.path[0] === "lines" && typeof issue.path[1] === "number" ? issue.path[1] : null;
+  const issueAt = (issuePath: readonly PropertyKey[], message: string): ContentIssue => {
+    const path = formatPath(issuePath);
+    const lineIndex = issuePath[0] === "lines" && typeof issuePath[1] === "number" ? issuePath[1] : null;
     const lineId = lineIndex !== null && Array.isArray(rawLines) ? rawField(rawLines[lineIndex], "id") : undefined;
     return {
       level: "error",
       ...(fileId !== undefined ? { fileId } : {}),
       ...(typeof lineId === "string" ? { lineId } : {}),
       ...(path ? { path } : {}),
-      message: `${path || "(file)"}: ${issue.message}`
+      message: `${path || "(file)"}: ${message}`
     };
-  });
-  return { file: null, issues };
+  };
+  const issues = [
+    ...(result.success ? [] : result.error.issues.map((issue) => issueAt(issue.path, issue.message))),
+    ...unknownFields(contentFileSchema, json).map(({ path, suggestion }) =>
+      issueAt(path, `unknown field${suggestion ? ` (did you mean "${suggestion}"?)` : ""}; it is ignored`)
+    )
+  ];
+  return { file: result.success ? result.data : null, issues };
 }
 
 /** The EPD of a FEN as chess.js writes it (an en-passant square only when the capture is legal), or null. */
