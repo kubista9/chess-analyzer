@@ -7,4 +7,4 @@ dist
 coverage
 # Local files from the previous version of this repository (an SQLite store, a native engine,
 # caches). Nothing in the trainer reads them; delete the folder by hand when you no longer need it.
-storage/
+/storage/
