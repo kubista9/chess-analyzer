@@ -19,8 +19,15 @@ import { mergeSettings } from "./settings";
 
 // The backup file: everything the store holds, as one JSON document the user can save and import
 // again (on this device or another). A file is validated completely before anything is written,
-// so a damaged or foreign file never leaves half an import behind. Settings are the one lenient
-// part: they go through mergeSettings (clamped, defaults filled in) instead of being rejected.
+// so a damaged or foreign file never leaves half an import behind.
+//
+// Export and import agree: an export goes through the same schema as an import (prepareBackup),
+// so a file this app writes always imports again. The schema is lenient where the store's types
+// are: settings go through mergeSettings, and a number the types allow but the format does not (a
+// negative duration after a clock change, a fractional or negative count, a mastery of
+// 1.0000000002, a NaN) is repaired instead of rejected, so one odd value never blocks a restore.
+// Anything else that does not fit (a wrong type, an unknown choice, an empty id, a malformed day)
+// is an error: a damaged file is refused, and a damaged store cannot be exported.
 
 /** The `app` value of every backup file. */
 export const BACKUP_APP = "opening-trainer";
@@ -54,7 +61,7 @@ export interface ImportSummary {
   lineStates: number;
 }
 
-/** A file that cannot be imported. The message is a complete sentence for the user. */
+/** A backup that cannot be imported (or made). The message is a complete sentence for the user. */
 export class BackupError extends Error {
   /** Every problem found, as "path: message" (empty when the file is not a backup at all). */
   readonly issues: string[];
@@ -79,18 +86,42 @@ const lineStatusSchema = z.enum(choices<LineStatus>({ learning: true, reviewing:
 
 /** ms since the epoch. */
 const timeSchema = z.number();
-const countSchema = z.number().int().nonnegative();
+/** ms since the epoch, or null; a non-finite time (which JSON would write as null anyway) becomes null. */
+const nullableTimeSchema = z.preprocess(
+  repairNumber((value) => (Number.isFinite(value) ? value : null)),
+  timeSchema.nullable()
+);
+/** A whole number of things: rounded and at least 0; a non-finite count is 0. */
+const countSchema = z.preprocess(
+  repairNumber((value) => (Number.isFinite(value) ? Math.max(0, Math.round(value)) : 0)),
+  z.number().int().nonnegative()
+);
+/** A fraction, 0..1 (clamped); a non-finite one is 0. */
+const fractionSchema = z.preprocess(
+  repairNumber((value) => (Number.isFinite(value) ? clamp(value, 0, 1) : 0)),
+  z.number().min(0).max(1)
+);
+/** Hints shown in one exercise, 0..2 (rounded and clamped); a non-finite count is 0. */
+const hintsShownSchema = z.preprocess(
+  repairNumber((value) => (Number.isFinite(value) ? clamp(Math.round(value), 0, 2) : 0)),
+  z.union([z.literal(0), z.literal(1), z.literal(2)])
+);
+/** ms, or null when unknown; a negative or non-finite duration (the clock changed) is unknown. */
+const durationSchema = z.preprocess(
+  repairNumber((value) => (Number.isFinite(value) && value >= 0 ? value : null)),
+  z.number().nonnegative().nullable()
+);
 const idSchema = z.string().min(1);
 const DAY_KEY = /^\d{4}-\d{2}-\d{2}$/;
 
 export const srsStateSchema = z.object({
   box: countSchema,
-  dueAt: timeSchema.nullable(),
-  introducedAt: timeSchema.nullable(),
+  dueAt: nullableTimeSchema,
+  introducedAt: nullableTimeSchema,
   lapses: countSchema,
   streak: countSchema,
   reviews: countSchema,
-  lastReviewAt: timeSchema.nullable()
+  lastReviewAt: nullableTimeSchema
 }) satisfies z.ZodType<SrsState>;
 
 export const positionProgressSchema = z
@@ -104,11 +135,11 @@ export const positionProgressSchema = z
     wrongTries: countSchema,
     hintsUsed: countSchema,
     reveals: countSchema,
-    firstSeenAt: timeSchema.nullable(),
-    lastPracticedAt: timeSchema.nullable(),
+    firstSeenAt: nullableTimeSchema,
+    lastPracticedAt: nullableTimeSchema,
     lastResult: resultSchema.nullable(),
     recent: z.array(resultSchema),
-    mastery: z.number().min(0).max(1),
+    mastery: fractionSchema,
     srs: srsStateSchema,
     weakMoves: z.array(z.object({ san: idSchema, count: countSchema, lastAt: timeSchema }))
   })
@@ -128,7 +159,7 @@ export const lineProgressSchema = z.object({
   reveals: countSchema,
   recallAttempts: countSchema,
   recallCorrect: countSchema,
-  lastPracticedAt: timeSchema.nullable(),
+  lastPracticedAt: nullableTimeSchema,
   lastResult: resultSchema.nullable(),
   srs: srsStateSchema
 }) satisfies z.ZodType<LineProgress>;
@@ -137,7 +168,7 @@ export const lineStateSchema = z.object({
   lineId: idSchema,
   enabled: z.boolean(),
   status: lineStatusSchema,
-  statusSetAt: timeSchema.nullable(),
+  statusSetAt: nullableTimeSchema,
   updatedAt: timeSchema
 }) satisfies z.ZodType<LineState>;
 
@@ -152,10 +183,10 @@ export const attemptRecordSchema = z.object({
   epd: idSchema.nullable(),
   expected: z.array(z.string()),
   tries: z.array(z.object({ san: z.string(), verdict: verdictSchema })),
-  hintsShown: z.union([z.literal(0), z.literal(1), z.literal(2)]),
+  hintsShown: hintsShownSchema,
   revealed: z.boolean(),
   result: resultSchema,
-  durationMs: z.number().nonnegative().nullable()
+  durationMs: durationSchema
 }) satisfies z.ZodType<AttemptRecord>;
 
 export const customLineRecordSchema = z.object({
@@ -229,10 +260,20 @@ export function parseBackup(input: unknown): BackupFile {
   }
   const parsed = backupSchema.safeParse(data);
   if (!parsed.success) {
-    const issues = parsed.error.issues.map((issue) => `${formatPath(issue.path)}: ${issue.message.replace(/^Invalid input: /, "")}`);
-    const shown = issues.slice(0, BACKUP_ISSUES_SHOWN).join("; ");
-    const more = issues.length > BACKUP_ISSUES_SHOWN ? ` (and ${issues.length - BACKUP_ISSUES_SHOWN} more)` : "";
-    throw new BackupError(`This backup is damaged or incomplete, so it cannot be imported: ${shown}${more}.`, issues);
+    throw damaged("This backup is damaged or incomplete, so it cannot be imported", parsed.error);
+  }
+  return parsed.data;
+}
+
+/**
+ * The file to write for the store's contents, repaired exactly as an import repairs them, so it
+ * imports again unchanged. Throws BackupError when a record is damaged beyond repair, so a backup
+ * that could not be restored is never handed out.
+ */
+export function prepareBackup(contents: BackupFile): BackupFile {
+  const parsed = backupSchema.safeParse(contents);
+  if (!parsed.success) {
+    throw damaged("Some saved data is damaged, so a backup cannot be made", parsed.error);
   }
   return parsed.data;
 }
@@ -240,6 +281,23 @@ export function parseBackup(input: unknown): BackupFile {
 /** The suggested file name for a backup made at `now`, e.g. "opening-trainer-backup-2026-10-02.json" (local day). */
 export function backupFileName(now: number): string {
   return `opening-trainer-backup-${dayKey(now)}.json`;
+}
+
+/** A BackupError that starts with `lead` and quotes the first problems. */
+function damaged(lead: string, error: z.ZodError): BackupError {
+  const issues = error.issues.map((issue) => `${formatPath(issue.path)}: ${issue.message.replace(/^Invalid input: /, "")}`);
+  const shown = issues.slice(0, BACKUP_ISSUES_SHOWN).join("; ");
+  const more = issues.length > BACKUP_ISSUES_SHOWN ? ` (and ${issues.length - BACKUP_ISSUES_SHOWN} more)` : "";
+  return new BackupError(`${lead}: ${shown}${more}.`, issues);
+}
+
+/** A preprocess step that repairs numbers and passes anything else on to be checked. */
+function repairNumber(repair: (value: number) => number | null): (value: unknown) => unknown {
+  return (value) => (typeof value === "number" ? repair(value) : value);
+}
+
+function clamp(value: number, min: number, max: number): number {
+  return Math.min(max, Math.max(min, value));
 }
 
 function formatPath(path: readonly PropertyKey[]): string {

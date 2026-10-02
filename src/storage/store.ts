@@ -1,7 +1,7 @@
 import type { IDBPObjectStore, IDBPTransaction } from "idb";
 import type { AttemptRecord, CustomLineRecord, LineProgress, LineState, PositionProgress, Settings } from "../core/training/types";
 import { DAY_MS } from "../core/util/time";
-import { BACKUP_APP, BACKUP_FORMAT, parseBackup, type BackupFile, type ImportSummary } from "./backup";
+import { BACKUP_APP, BACKUP_FORMAT, parseBackup, prepareBackup, type BackupFile, type ImportSummary } from "./backup";
 import {
   ALL_STORES,
   DATA_STORES,
@@ -67,9 +67,15 @@ export interface TrainerStore {
   practiceDays(): Promise<string[]>;
   putCustomLine(record: CustomLineRecord): Promise<void>;
   deleteCustomLine(id: string): Promise<void>;
+  /**
+   * Everything, checked against the format an import reads, so the file always imports again:
+   * out-of-range numbers are repaired as an import repairs them (see backup.ts); a record damaged
+   * beyond repair throws BackupError instead of producing a file that could not be restored.
+   */
   exportBackup(now: number): Promise<BackupFile>;
   /**
-   * Validates first (throws BackupError, writing nothing), then writes in one transaction.
+   * Validates first (throws BackupError, writing nothing; out-of-range numbers are repaired, not
+   * refused), then writes in one transaction.
    * replace: clears every data store, then writes the backup (attempt ids kept).
    * merge: per record the newer one wins (lastPracticedAt for progress, updatedAt for line states
    * and custom lines; a tie keeps the local record); attempts not already present are added with
@@ -206,7 +212,7 @@ class IdbTrainerStore implements TrainerStore {
       tx.objectStore("customLines").getAll(),
       tx.done
     ]);
-    return {
+    return prepareBackup({
       app: BACKUP_APP,
       format: BACKUP_FORMAT,
       exportedAt: now,
@@ -216,7 +222,7 @@ class IdbTrainerStore implements TrainerStore {
       lineProgress,
       attempts,
       customLines
-    };
+    });
   }
 
   async importBackup(input: unknown, options: { mode: "replace" | "merge" }): Promise<ImportSummary> {

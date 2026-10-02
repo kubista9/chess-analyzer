@@ -482,6 +482,61 @@ describe("exportBackup", () => {
       customLines: []
     });
   });
+
+  /** Writes records the types allow but the file format does not: what a clock change or a rounding bug leaves behind. */
+  async function populateOutOfRange(store: TrainerStore): Promise<void> {
+    await populate(store);
+    await store.record({
+      attempt: attempt({ at: NOW + 1, durationMs: -3 }),
+      positions: [position("epd-c", { mastery: 1 + 1e-12, attempts: 2.6, srs: srs({ box: -1, dueAt: Number.NaN }) })],
+      lines: [lineProgress("odd-line", { runs: -2, cleanRuns: Number.NaN, lastPracticedAt: Number.POSITIVE_INFINITY })]
+    });
+    await store.record({ attempt: attempt({ at: NOW + 2, durationMs: Number.NaN, hintsShown: 3 as AttemptRecord["hintsShown"] }) });
+    await store.record({ positions: [position("epd-d", { mastery: Number.NaN })] });
+  }
+
+  it("repairs out-of-range values so the file imports again, and loses no record", async () => {
+    const source = await freshStore();
+    await populateOutOfRange(source);
+    const backup = await source.exportBackup(NOW);
+    const text = JSON.stringify(backup);
+
+    for (const mode of ["replace", "merge"] as const) {
+      const target = await freshStore();
+      expect(await target.importBackup(text, { mode })).toEqual({ positions: 4, lines: 3, attempts: 5, customLines: 1, lineStates: 2 });
+      expect(await target.exportBackup(NOW)).toEqual(backup);
+    }
+
+    const byEpd = Object.fromEntries(backup.positionProgress.map((progress) => [progress.epd, progress]));
+    expect(byEpd["epd-c"]).toMatchObject({ mastery: 1, attempts: 3, srs: { box: 0, dueAt: null } });
+    expect(byEpd["epd-d"].mastery).toBe(0);
+    expect(backup.lineProgress.find((progress) => progress.lineId === "odd-line")).toMatchObject({ runs: 0, cleanRuns: 0, lastPracticedAt: null });
+    expect(backup.attempts.slice(-2).map((record) => [record.durationMs, record.hintsShown])).toEqual([
+      [null, 0],
+      [null, 2]
+    ]);
+    // The valid records come out exactly as they were saved.
+    expect(byEpd["epd-a"]).toEqual(position("epd-a", { lastPracticedAt: NOW - 2 * DAY_MS }));
+  });
+
+  it("refuses to make a backup that could not be imported again", async () => {
+    const name = freshName();
+    const store = await freshStore(name);
+    await populate(store);
+    await store.record({ attempt: attempt({ day: "1 October" }) });
+    await store.putCustomLine(customLine(""));
+    const error: unknown = await store.exportBackup(NOW).then(
+      () => null,
+      (reason: unknown) => reason
+    );
+    expect(error).toBeInstanceOf(BackupError);
+    expect((error as BackupError).message).toBe(
+      "Some saved data is damaged, so a backup cannot be made: attempts[3].day: expected a day as YYYY-MM-DD; customLines[0].id: Too small: expected string to have >=1 characters."
+    );
+    expect((error as BackupError).issues).toHaveLength(2);
+    // Nothing is lost: the store still holds every record.
+    expect((await rawCounts(name)).attempts).toBe(4);
+  });
 });
 
 describe("importBackup (replace)", () => {

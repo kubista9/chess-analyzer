@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { DEFAULT_SETTINGS, type SrsState } from "../core/training/types";
-import { BACKUP_APP, BACKUP_FORMAT, BACKUP_ISSUES_SHOWN, BackupError, backupFileName, parseBackup, type BackupFile } from "./backup";
+import { BACKUP_APP, BACKUP_FORMAT, BACKUP_ISSUES_SHOWN, BackupError, backupFileName, parseBackup, prepareBackup, type BackupFile } from "./backup";
 
 const NOW = Date.UTC(2026, 9, 2, 12);
 const SRS: SrsState = { box: 2, dueAt: NOW, introducedAt: NOW, lapses: 1, streak: 0, reviews: 3, lastReviewAt: NOW };
@@ -212,14 +212,52 @@ describe("parseBackup", () => {
   });
 
   it.each([
-    ["a negative count", patched("lineProgress", { runs: -1 }), "lineProgress[0].runs"],
-    ["a fractional count", patched("positionProgress", { attempts: 1.5 }), "positionProgress[0].attempts"],
-    ["mastery above 1", patched("positionProgress", { mastery: 1.2 }), "positionProgress[0].mastery"],
+    ["a negative count", "lineProgress", { runs: -1 }, { runs: 0 }],
+    ["a fractional count", "positionProgress", { attempts: 1.5 }, { attempts: 2 }],
+    ["a count just below a whole number", "lineProgress", { movesPlayed: 11.999999 }, { movesPlayed: 12 }],
+    ["a non-finite count", "lineProgress", { cleanRuns: Number.NaN, reveals: Number.POSITIVE_INFINITY }, { cleanRuns: 0, reveals: 0 }],
+    [
+      "a nested count",
+      "positionProgress",
+      { srs: { ...SRS, box: -2, lapses: 0.4 }, weakMoves: [{ san: "e4", count: -1, lastAt: NOW }] },
+      { srs: { ...SRS, box: 0, lapses: 0 }, weakMoves: [{ san: "e4", count: 0, lastAt: NOW }] }
+    ],
+    ["mastery above 1", "positionProgress", { mastery: 1.2 }, { mastery: 1 }],
+    ["mastery a rounding error above 1", "positionProgress", { mastery: 1 + 1e-12 }, { mastery: 1 }],
+    ["mastery below 0", "positionProgress", { mastery: -0.1 }, { mastery: 0 }],
+    ["a mastery of NaN", "positionProgress", { mastery: Number.NaN }, { mastery: 0 }],
+    ["three hints", "attempts", { hintsShown: 3 }, { hintsShown: 2 }],
+    ["a fractional hint count", "attempts", { hintsShown: 0.6 }, { hintsShown: 1 }],
+    ["negative hints", "attempts", { hintsShown: -1 }, { hintsShown: 0 }],
+    ["a negative duration", "attempts", { durationMs: -3 }, { durationMs: null }],
+    ["a non-finite duration", "attempts", { durationMs: Number.NaN }, { durationMs: null }],
+    ["a duration of 0", "attempts", { durationMs: 0 }, { durationMs: 0 }],
+    [
+      "a non-finite optional time",
+      "positionProgress",
+      { lastPracticedAt: Number.NaN, srs: { ...SRS, dueAt: Number.POSITIVE_INFINITY } },
+      { lastPracticedAt: null, srs: { ...SRS, dueAt: null } }
+    ],
+    ["a non-finite status time", "lineStates", { statusSetAt: Number.NEGATIVE_INFINITY }, { statusSetAt: null }]
+  ] as const)("repairs %s instead of rejecting the file", (_label, store, patch, repaired) => {
+    const parsed = parseBackup(patched(store, patch));
+    expect(parsed[store][0]).toEqual({ ...backup()[store][0], ...repaired });
+    // Repaired values are valid: a second pass changes nothing.
+    expect(parseBackup(JSON.stringify(parsed))).toEqual(parsed);
+  });
+
+  it.each([
+    ["a count that is not a number", patched("lineProgress", { runs: "2" }), "lineProgress[0].runs"],
+    ["a missing count", patched("lineProgress", { runs: undefined }), "lineProgress[0].runs"],
+    ["a count of null", patched("lineProgress", { runs: null }), "lineProgress[0].runs"],
+    ["a duration that is not a number", patched("attempts", { durationMs: "4s" }), "attempts[0].durationMs"],
+    ["a hint count that is not a number", patched("attempts", { hintsShown: true }), "attempts[0].hintsShown"],
+    ["a required time that is not finite", patched("lineStates", { updatedAt: Number.NaN }), "lineStates[0].updatedAt"],
+    ["a required time of null", patched("attempts", { at: null }), "attempts[0].at"],
     ["an unknown result", patched("positionProgress", { recent: ["great"] }), "positionProgress[0].recent[0]"],
     ["an unknown side", patched("customLines", { side: "both" }), "customLines[0].side"],
     ["an unknown verdict", patched("attempts", { tries: [{ san: "c4", verdict: "brilliant" }] }), "attempts[0].tries[0].verdict"],
     ["an unknown mode", patched("attempts", { mode: "blitz" }), "attempts[0].mode"],
-    ["three hints", patched("attempts", { hintsShown: 3 }), "attempts[0].hintsShown"],
     ["a malformed day", patched("attempts", { day: "2/10/2026" }), "attempts[0].day"],
     ["an attempt id of 0", patched("attempts", { id: 0 }), "attempts[0].id"],
     ["an unknown line status", patched("lineStates", { status: "done" }), "lineStates[0].status"],
@@ -257,6 +295,49 @@ describe("parseBackup", () => {
     expect(error.message).toBe("Broken.");
     expect(error.issues).toEqual(["a: b"]);
     expect(new BackupError("No issues.").issues).toEqual([]);
+  });
+});
+
+describe("prepareBackup", () => {
+  it("returns valid contents unchanged", () => {
+    expect(prepareBackup(backup())).toEqual(backup());
+  });
+
+  it("repairs out-of-range numbers exactly as an import does", () => {
+    const contents = {
+      ...backup(),
+      attempts: [{ ...backup().attempts[0], durationMs: -3 }],
+      positionProgress: [{ ...backup().positionProgress[0], mastery: Number.NaN, attempts: 2.5 }]
+    };
+    const prepared = prepareBackup(contents);
+    expect(prepared.attempts[0].durationMs).toBeNull();
+    expect(prepared.positionProgress[0]).toMatchObject({ mastery: 0, attempts: 3 });
+    expect(parseBackup(JSON.stringify(prepared))).toEqual(prepared);
+    expect(parseBackup(contents)).toEqual(prepared);
+  });
+
+  it("normalises the settings and drops unknown keys", () => {
+    const contents = { ...backup(), settings: { ...DEFAULT_SETTINGS, sound: { enabled: true, volume: 3 } }, comment: "x" } as unknown as BackupFile;
+    expect(prepareBackup(contents)).toEqual({ ...backup(), settings: { ...DEFAULT_SETTINGS, sound: { enabled: true, volume: 1 } } });
+  });
+
+  it("throws a BackupError naming what cannot be repaired", () => {
+    const file = backup();
+    const contents = { ...file, attempts: [{ ...file.attempts[0], day: "" }], lineStates: [{ ...file.lineStates[0], updatedAt: Number.NaN }] };
+    let error: unknown = null;
+    try {
+      prepareBackup(contents);
+    } catch (caught) {
+      error = caught;
+    }
+    expect(error).toBeInstanceOf(BackupError);
+    expect((error as BackupError).issues).toEqual([
+      "lineStates[0].updatedAt: expected number, received NaN",
+      "attempts[0].day: expected a day as YYYY-MM-DD"
+    ]);
+    expect((error as BackupError).message).toBe(
+      "Some saved data is damaged, so a backup cannot be made: lineStates[0].updatedAt: expected number, received NaN; attempts[0].day: expected a day as YYYY-MM-DD."
+    );
   });
 });
 
