@@ -2,7 +2,7 @@ import { bareSan, formatLine, moveLabel } from "../chess/format";
 import type { Color } from "../chess/position";
 import { nameAt, type OpeningBook } from "../openingDb/book";
 import { SIDES } from "./schema";
-import { moveKey, type Catalog, type CompiledNote, type ContentIssue, type Line } from "./types";
+import { moveKey, noteKey, type Catalog, type CompiledNote, type ContentIssue, type Line } from "./types";
 
 // Authoring checks that need the whole catalog (compile.ts already checked each file on its own):
 // enabled lines that disagree, hints that give the move away, missing or stray notes, recall
@@ -152,13 +152,13 @@ function giveaways(catalog: Catalog, issues: ContentIssue[]): void {
   }
 }
 
-/** User moves (position and move) that no note explains: the trainer then writes a generic hint. */
+/** User moves (position and move) that no note of the same side explains: the trainer then writes a generic hint. */
 function missingNotes(catalog: Catalog, issues: ContentIssue[]): void {
   const reported = new Set<string>();
   for (const line of catalog.lines) {
     for (const ply of line.userPlies) {
       const move = line.moves[ply - 1];
-      const key = moveKey(move.epdBefore, move.uci);
+      const key = noteKey(line.side, move.epdBefore, move.uci);
       if (catalog.notes.has(key) || reported.has(key)) {
         continue;
       }
@@ -175,27 +175,25 @@ function missingNotes(catalog: Catalog, issues: ContentIssue[]): void {
   }
 }
 
-/** Notes whose move no line or trap plays. */
+const SIDE_NAMES: Record<Color, string> = { white: "White", black: "Black" };
+
+/** Notes whose move no line or trap of the note's side plays (a note is only shown to its own side). */
 function strayNotes(catalog: Catalog, issues: ContentIssue[]): void {
   const played = new Set<string>();
   for (const line of catalog.lines) {
-    for (const move of line.moves) {
-      played.add(moveKey(move.epdBefore, move.uci));
-    }
-    for (const trap of line.traps) {
-      for (const move of trap.played) {
-        played.add(moveKey(move.epdBefore, move.uci));
-      }
+    for (const move of [...line.moves, ...line.traps.flatMap((trap) => trap.played)]) {
+      played.add(noteKey(line.side, move.epdBefore, move.uci));
     }
   }
   for (const [key, note] of catalog.notes) {
     if (!played.has(key)) {
+      const side = catalog.chapterById.get(note.chapterId)?.side;
       const path = `notes.${JSON.stringify(note.key)}`;
       issues.push({
         level: "warning",
         fileId: note.chapterId,
         path,
-        message: `${path}: no line or trap plays ${moveLabel(note.key.split(" ").length, note.san)} in this position; check the note's move path`
+        message: `${path}: no ${side ? `${SIDE_NAMES[side]} ` : ""}line or trap plays ${moveLabel(note.key.split(" ").length, note.san)} in this position; check the note's move path`
       });
     }
   }

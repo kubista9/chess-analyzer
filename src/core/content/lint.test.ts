@@ -237,8 +237,27 @@ describe("notes no line plays", () => {
         level: "warning",
         fileId: "white-english-e5",
         path: 'notes."c4 e5 Nc3 Nc6 Nf3"',
-        message: `notes."c4 e5 Nc3 Nc6 Nf3": no line or trap plays 3.Nf3 in this position; check the note's move path`
+        message: `notes."c4 e5 Nc3 Nc6 Nf3": no White line or trap plays 3.Nf3 in this position; check the note's move path`
       }
+    ]);
+  });
+
+  it("counts only the lines of the note's own side: a White note is never shown to Black", () => {
+    const files = changed((byId) => {
+      // Only the Black Scandinavian plays 1.e4 d5 2.exd5 Qxd5.
+      byId["white-english-e5"].notes!["1.e4 d5 2.exd5 Qxd5"] = { why: "Black takes back with the queen." };
+      delete byId["black-scandinavian"].notes!["1.e4 d5 2.exd5 Qxd5"];
+    });
+    const issues = warnings(lint(files));
+    expect(issues.find((issue) => issue.path === 'notes."e4 d5 exd5 Qxd5"')).toEqual({
+      level: "warning",
+      fileId: "white-english-e5",
+      path: 'notes."e4 d5 exd5 Qxd5"',
+      message: `notes."e4 d5 exd5 Qxd5": no White line or trap plays 2...Qxd5 in this position; check the note's move path`
+    });
+    // Black's 2...Qxd5 still counts as a move without a note: the White note does not speak to Black.
+    expect(issues.filter((issue) => issue.path === "1.e4 d5 2.exd5 Qxd5")).toEqual([
+      expect.objectContaining({ fileId: "black-scandinavian", lineId: "scandi-qa5", message: expect.stringContaining("your move 2...Qxd5 has no note") })
     ]);
   });
 

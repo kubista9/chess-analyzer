@@ -15,7 +15,7 @@ import {
 } from "./catalog";
 import { compileChapter, parseContentFile } from "./compile";
 import { lineSchema, type ContentFileInput } from "./schema";
-import { moveKey, type Catalog } from "./types";
+import { noteKey, type Catalog } from "./types";
 
 const AT = Date.UTC(2026, 9, 1, 12);
 
@@ -51,8 +51,8 @@ function blackAgainstEnglish(): ContentFileInput {
     source: { kind: "editorial", references: [] },
     review: { status: "draft", confidence: "low" },
     notes: {
-      "1.c4": { why: "White takes control of d5 from the side." },
-      "1.c4 e5": { idea: "centre", hint: "Claim your share of the centre at once.", why: "Takes the centre with a pawn." },
+      "1.c4": { why: "White takes d5 from the side; you answer in the centre." },
+      "1.c4 e5": { idea: "centre", hint: "Claim your share of the centre at once.", why: "You take the centre directly." },
       "1.c4 e5 2.Nc3 Nf6": { idea: "development", why: "Develops and attacks e4." }
     },
     lines: [
@@ -100,10 +100,10 @@ describe("buildCatalog", () => {
     // 1.c4 Nf6 2.Nc3 e5 3.Nf3: chapter 1 wrote the note under 1.c4 e5 2.Nc3 Nf6 3.Nf3.
     const move = viaNf6.moves[4];
     expect(move.san).toBe("Nf3");
-    const note = noteFor(catalog, move.epdBefore, move.uci);
+    const note = noteFor(catalog, move.epdBefore, move.uci, "white");
     expect(note).toMatchObject({ key: "c4 e5 Nc3 Nf6 Nf3", chapterId: "white-english-e5" });
-    expect(catalog.notes.get(moveKey(START_EPD, "c2c4"))?.key).toBe("c4");
-    expect(noteFor(catalog, START_EPD, "e2e4")).toBeUndefined();
+    expect(catalog.notes.get(noteKey("white", START_EPD, "c2c4"))?.key).toBe("c4");
+    expect(noteFor(catalog, START_EPD, "e2e4", "white")).toBeUndefined();
   });
 
   it("finds a chapter's or side's chapters and lines", () => {
@@ -174,7 +174,7 @@ describe("buildCatalog", () => {
     const nf6 = fixtureFile("white-english-nf6");
     nf6.notes = { ...nf6.notes, "1.c4": { why: "A different explanation." } };
     const conflicting = buildCatalog([nf6, fixtureFile("white-english-e5")]);
-    expect(noteFor(conflicting, START_EPD, "c2c4")?.chapterId).toBe("white-english-e5");
+    expect(noteFor(conflicting, START_EPD, "c2c4", "white")?.chapterId).toBe("white-english-e5");
     expect(conflicting.issues).toEqual([
       {
         level: "warning",
@@ -189,14 +189,63 @@ describe("buildCatalog", () => {
     expect(buildCatalog([fixtureFile("white-english-e5"), same]).issues).toEqual([]);
   });
 
-  it("prefers a note written by the side that plays the move, whatever the chapter order", () => {
+  it("keeps each side's notes apart, so a White and a Black chapter can annotate the same moves", () => {
     const result = buildCatalog([...fixtureFiles(), blackAgainstEnglish()]);
+    // Both sides explain 1.c4 and 1...e5 in their own words: nothing conflicts, nothing is dropped.
     expect(result.issues).toEqual([]);
     const afterC4 = result.lineById.get("eng-e5-closed")!.moves[1];
-    // White's chapter explains 1...e5 as an opponent move; Black's chapter has the hint for it.
-    expect(noteFor(result, afterC4.epdBefore, afterC4.uci)).toMatchObject({ chapterId: "black-vs-english", hint: "Claim your share of the centre at once." });
-    // 1.c4 is White's move: White's note stays, although the Black chapter wrote one too.
-    expect(noteFor(result, START_EPD, "c2c4")?.chapterId).toBe("white-english-e5");
+    expect(afterC4.san).toBe("e5");
+
+    // Training White: White's own notes, on White's moves and on Black's replies.
+    expect(noteFor(result, START_EPD, "c2c4", "white")).toMatchObject({ chapterId: "white-english-e5", idea: "centre" });
+    expect(noteFor(result, afterC4.epdBefore, afterC4.uci, "white")).toMatchObject({
+      chapterId: "white-english-e5",
+      why: "Black takes the centre directly, a Sicilian with the colours reversed.",
+      hint: null
+    });
+    // Training Black: Black's notes, which speak to the Black player.
+    expect(noteFor(result, START_EPD, "c2c4", "black")).toMatchObject({
+      chapterId: "black-vs-english",
+      why: "White takes d5 from the side; you answer in the centre."
+    });
+    expect(noteFor(result, afterC4.epdBefore, afterC4.uci, "black")).toMatchObject({
+      chapterId: "black-vs-english",
+      hint: "Claim your share of the centre at once.",
+      why: "You take the centre directly."
+    });
+
+    // A note only the other side wrote addresses the other player, so it is not used.
+    const nf6 = result.lineById.get("black-english-nf6")!.moves[3];
+    expect(nf6.san).toBe("Nf6");
+    expect(noteFor(result, nf6.epdBefore, nf6.uci, "black")?.chapterId).toBe("black-vs-english");
+    expect(noteFor(result, nf6.epdBefore, nf6.uci, "white")).toBeUndefined();
+    const exd5 = result.lineById.get("scandi-qa5")!.moves[2];
+    expect(noteFor(result, exd5.epdBefore, exd5.uci, "black")?.chapterId).toBe("black-scandinavian");
+    expect(noteFor(result, exd5.epdBefore, exd5.uci, "white")).toBeUndefined();
+
+    // The same in any file order.
+    const reversed = buildCatalog([blackAgainstEnglish(), ...fixtureFiles()].reverse());
+    expect([...reversed.notes.keys()].sort()).toEqual([...result.notes.keys()].sort());
+    expect(noteFor(reversed, START_EPD, "c2c4", "black")?.chapterId).toBe("black-vs-english");
+  });
+
+  it("warns about a duplicate within one side only, never across sides", () => {
+    const second = blackAgainstEnglish();
+    second.id = "black-vs-english-two";
+    second.order = 6;
+    second.lines[0].id = "black-english-nf6-two";
+    second.notes = { "1.c4 e5": { why: "A different explanation of your move." }, "1.c4": { why: "White takes d5 from the side; you answer in the centre." } };
+    const result = buildCatalog([...fixtureFiles(), second, blackAgainstEnglish()]);
+    expect(result.issues).toEqual([
+      {
+        level: "warning",
+        fileId: "black-vs-english-two",
+        path: 'notes."c4 e5"',
+        message: 'the note on 1...e5 after 1.c4 is also written in chapter "black-vs-english" with different text; that one is used'
+      }
+    ]);
+    const afterC4 = result.lineById.get("eng-e5-closed")!.moves[1];
+    expect(noteFor(result, afterC4.epdBefore, afterC4.uci, "black")?.why).toBe("You take the centre directly.");
   });
 
   it("adds the user's own lines after the built-in ones", () => {
@@ -236,6 +285,17 @@ describe("summariseCatalog", () => {
       coverage: 15 / 17
     });
     expect(black).toEqual({ side: "black", chapters: 1, lines: 2, defaultEnabledLines: 2, plies: 14, userMoves: 5, notedUserMoves: 5, coverage: 1 });
+  });
+
+  it("counts a user move as noted only when a chapter of the same side explains it", () => {
+    const files = fixtureFiles();
+    const [white, scandinavian] = [files[0], files[2]];
+    // Move Black's note on 2...Qxd5 into a White chapter: Black's coverage drops.
+    white.notes!["1.e4 d5 2.exd5 Qxd5"] = scandinavian.notes!["1.e4 d5 2.exd5 Qxd5"];
+    delete scandinavian.notes!["1.e4 d5 2.exd5 Qxd5"];
+    const [whiteSummary, blackSummary] = summariseCatalog(buildCatalog(files));
+    expect(whiteSummary).toMatchObject({ userMoves: 17, notedUserMoves: 15 });
+    expect(blackSummary).toMatchObject({ userMoves: 5, notedUserMoves: 4, coverage: 4 / 5 });
   });
 
   it("has no coverage without lines", () => {

@@ -4,11 +4,11 @@ import { IllegalMoveError, START_EPD, fenOf, replayMoves, toEpd, type Color } fr
 import type { CustomLineRecord } from "../training/types";
 import { compileChapter, compileCustomLines, parseContentFile } from "./compile";
 import { SIDES, type ContentFile, type LineDef } from "./schema";
-import { moveKey, type Catalog, type Chapter, type CompiledNote, type ContentIssue, type Line } from "./types";
+import { noteKey, type Catalog, type Chapter, type CompiledNote, type ContentIssue, type Line } from "./types";
 
 // The whole repertoire, compiled once: built-in chapters (content/**/*.json) plus the user's
-// own lines, with lookups by id and the move notes indexed by position. Also PGN and content
-// JSON export, and PGN import for "Add a line".
+// own lines, with lookups by id and the move notes indexed by side and position. Also PGN and
+// content JSON export, and PGN import for "Add a line".
 
 /** Maximum length of a PGN movetext line, in characters (the PGN export format's limit). */
 export const PGN_LINE_WIDTH = 80;
@@ -32,9 +32,10 @@ function noteText(note: CompiledNote): string {
 /**
  * Compiles every content file and the user's custom lines into one catalog. Files are taken
  * in order of side, `order`, then id. A duplicate chapter or line id is an error and the later
- * one is left out. Notes are indexed by moveKey(epdBefore, uci): a note written for the side
- * that plays the move beats one written from the other side (only it has the hints), otherwise
- * the first chapter in order wins; duplicates with different text are a warning.
+ * one is left out. Notes are indexed by noteKey(side, epdBefore, uci) with the side of their
+ * chapter: a note speaks to that side's player ("your knight"), so a White and a Black chapter
+ * that annotate the same move both keep their note. Within a side the first chapter in order
+ * wins and a duplicate with different text is a warning.
  */
 export function buildCatalog(
   files: readonly unknown[],
@@ -63,7 +64,6 @@ export function buildCatalog(
   const chapterById = new Map<string, Chapter>();
   const lineById = new Map<string, Line>();
   const notes = new Map<string, CompiledNote>();
-  const noteSide = new Map<string, Color>();
 
   const addChapter = (chapter: Chapter, chapterLines: readonly Line[], fileName?: string): boolean => {
     if (chapterById.has(chapter.id)) {
@@ -94,19 +94,11 @@ export function buildCatalog(
   };
 
   const addNote = (note: CompiledNote, side: Color) => {
-    const key = moveKey(note.epdBefore, note.uci);
+    const key = noteKey(side, note.epdBefore, note.uci);
     const existing = notes.get(key);
     if (!existing) {
       notes.set(key, note);
-      noteSide.set(key, side);
-      return;
-    }
-    const existingFromMover = noteSide.get(key) === existing.mover;
-    const fromMover = side === note.mover;
-    if (fromMover && !existingFromMover) {
-      notes.set(key, note);
-      noteSide.set(key, side);
-    } else if (fromMover === existingFromMover && noteText(note) !== noteText(existing)) {
+    } else if (noteText(note) !== noteText(existing)) {
       const where = existing.chapterId === note.chapterId ? "elsewhere in this chapter" : `in chapter "${existing.chapterId}"`;
       issues.push({
         level: "warning",
@@ -150,9 +142,13 @@ function pathLabel(note: CompiledNote): string {
   return sans.length === 0 ? "the start" : formatLine(sans);
 }
 
-/** The note on the move `uci` played from `epdBefore`, if the content has one. */
-export function noteFor(catalog: Catalog, epdBefore: string, uci: string): CompiledNote | undefined {
-  return catalog.notes.get(moveKey(epdBefore, uci));
+/**
+ * The note `side`'s chapters give on the move `uci` played from `epdBefore`: for the user's own
+ * move and for the opponent's reply alike, pass the side being trained. A note from the other
+ * side's chapters is never returned, since it speaks to the other player.
+ */
+export function noteFor(catalog: Catalog, epdBefore: string, uci: string, side: Color): CompiledNote | undefined {
+  return catalog.notes.get(noteKey(side, epdBefore, uci));
 }
 
 /** The chapters of one side, in order. */
@@ -190,7 +186,7 @@ export function summariseCatalog(catalog: Catalog): SideSummary[] {
     for (const line of sideLines) {
       for (const ply of line.userPlies) {
         const move = line.moves[ply - 1];
-        userMoves.add(moveKey(move.epdBefore, move.uci));
+        userMoves.add(noteKey(side, move.epdBefore, move.uci));
       }
     }
     const notedUserMoves = [...userMoves].filter((key) => catalog.notes.has(key)).length;
@@ -234,7 +230,7 @@ function wrapTokens(tokens: readonly string[], width: number): string[] {
 /**
  * A line as a PGN game: the seven standard tags (Event "Repertoire line", players "?"), Opening
  * and ECO, then the movetext in export format wrapped at PGN_LINE_WIDTH. With `notes` (and
- * `comments` not false) each move with a note gets its "why" as a {comment}.
+ * `comments` not false) each move with a note of the line's side gets its "why" as a {comment}.
  */
 export function lineToPgn(line: Line, options: { comments?: boolean; notes?: Catalog } = {}): string {
   const headers: [string, string][] = [
@@ -264,7 +260,7 @@ export function lineToPgn(line: Line, options: { comments?: boolean; notes?: Cat
       tokens.push(move.san);
     }
     afterComment = false;
-    const why = catalog ? noteFor(catalog, move.epdBefore, move.uci)?.why : undefined;
+    const why = catalog ? noteFor(catalog, move.epdBefore, move.uci, line.side)?.why : undefined;
     if (why) {
       const words = why.replace(/[{}]/g, "").split(/\s+/).filter(Boolean);
       if (words.length > 0) {
