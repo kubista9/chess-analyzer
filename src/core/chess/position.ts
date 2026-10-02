@@ -97,15 +97,25 @@ function toApplied(move: Move, fenAfter: string, checkmate: boolean): AppliedMov
 }
 
 const UCI_PATTERN = /^[a-h][1-8][a-h][1-8][qrbn]?$/;
+/** The piece a SAN or long-algebraic promotion names: "e8=Q", "e8Q", "e7e8=N+", "exd8=R#". */
+const PROMOTION_SUFFIX = /[a-h][18]=?([qrbnQRBN])[+#]?$/;
 
-/** Strips annotation glyphs a human might type or paste ("Nf3!?", "Bg2??", "e4!"). */
+/**
+ * Strips annotation glyphs and a leading move number a human might type or paste ("Nf3!?",
+ * "Bg2??", "1.e4!", "2...Nc6", "2…Nc6", "3. Nc3").
+ */
 export function cleanSan(san: string): string {
-  return san.trim().replace(/[!?]+$/u, "").replace(/^\d+\.(\.\.)?/, "");
+  return san
+    .trim()
+    .replace(/^\d+\s*(?:\.+|…)\s*/u, "")
+    .replace(/[!?]+$/u, "")
+    .trim();
 }
 
 /**
  * Plays one move on a position. `move` is SAN ("Nf3", "O-O", "exd5"), UCI ("g1f3", "e7e8q") or
- * {from, to, promotion}. Returns null for an illegal or unparsable move.
+ * {from, to, promotion}. Returns null for an illegal or unparsable move. A promotion must name
+ * its piece ("e7e8" or "e7-e8" alone is not a move).
  */
 export function applyMove(fen: string, move: MoveInput): AppliedMove | null {
   let chess: Chess;
@@ -122,6 +132,11 @@ export function applyMove(fen: string, move: MoveInput): AppliedMove | null {
         played = chess.move({ from: text.slice(0, 2), to: text.slice(2, 4), promotion: text[4] });
       } else {
         played = chess.move(text);
+        // chess.js's permissive parser turns "e7-e8" or "e7e8k" into some promotion (a knight):
+        // only accept a promotion whose piece the text actually names.
+        if (played.promotion && PROMOTION_SUFFIX.exec(text)?.[1].toLowerCase() !== played.promotion) {
+          return null;
+        }
       }
     } else {
       played = chess.move({ from: move.from, to: move.to, promotion: move.promotion });
