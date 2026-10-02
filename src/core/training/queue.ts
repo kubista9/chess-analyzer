@@ -23,6 +23,7 @@ export const RECENT_ERROR_WEIGHT = 1.5;
 /** Days since the last practice that add 1 to a due position's urgency (days). */
 export const STALENESS_DAYS = 30;
 
+/** One position of the practice queue and why it is there. */
 export interface QueueEntry {
   item: PositionItem;
   reason: "due" | "new" | "extra";
@@ -52,7 +53,8 @@ export function dueScore(item: PositionItem, progress: PositionProgress, now: nu
   const lapses = Math.min(Math.max(progress.srs.lapses, 0), MAX_COUNTED_LAPSES);
   const recentError = progress.lastResult === "retried" || progress.lastResult === "revealed" ? RECENT_ERROR_WEIGHT : 1;
   const daysSince = progress.lastPracticedAt === null ? 0 : Math.max(0, now - progress.lastPracticedAt) / DAY_MS;
-  return (1 + overdueRatio(progress.srs, now)) * (1 + LAPSE_WEIGHT * lapses) * PRIORITY_WEIGHT[item.priority] * recentError + daysSince / STALENESS_DAYS;
+  const urgency = (1 + overdueRatio(progress.srs, now)) * (1 + LAPSE_WEIGHT * lapses) * PRIORITY_WEIGHT[item.priority] * recentError;
+  return urgency + daysSince / STALENESS_DAYS;
 }
 
 /** A whole, non-negative count; `fallback` when it is missing or not a number. */
@@ -166,7 +168,10 @@ export function dueLines(lines: readonly Line[], lineProgress: ReadonlyMap<strin
       const record = lineProgress.get(line.id);
       return record && isDue(record.srs, now) ? [{ line, ratio: overdueRatio(record.srs, now), dueAt: record.srs.dueAt ?? now }] : [];
     })
-    .sort((left, right) => right.ratio - left.ratio || left.dueAt - right.dueAt || left.line.order - right.line.order || byText(left.line.id, right.line.id))
+    .sort(
+      (left, right) =>
+        right.ratio - left.ratio || left.dueAt - right.dueAt || left.line.order - right.line.order || byText(left.line.id, right.line.id)
+    )
     .map((entry) => entry.line);
 }
 

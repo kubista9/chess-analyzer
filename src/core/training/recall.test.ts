@@ -18,16 +18,36 @@ const E5_FOUR_KNIGHTS = makeLine({
   description: "Both sides develop their knights first.",
   plans: ["Fianchetto the bishop and play d4 when it works."]
 });
-const E5_CLOSED = makeLine({ id: "e5-closed", side: "white", chapterId: "eng-e5", family: ENGLISH, name: "Closed system", moves: "1.c4 e5 2.Nc3 Nc6 3.g3 g6 4.Bg2 Bg7 5.d3", order: 2 });
-const E5_DRAGON = makeLine({ id: "e5-dragon", side: "white", chapterId: "eng-e5", family: ENGLISH, name: "Reversed Dragon", moves: "1.c4 e5 2.Nc3 Nf6 3.g3 d5 4.cxd5", order: 3 });
+/** A White English line of the given chapter. */
+const english = (id: string, chapterId: string, name: string, moves: string, order: number): Line =>
+  makeLine({ id, side: "white", chapterId, family: ENGLISH, name, moves, order });
+
+const E5_CLOSED = english("e5-closed", "eng-e5", "Closed system", "1.c4 e5 2.Nc3 Nc6 3.g3 g6 4.Bg2 Bg7 5.d3", 2);
+const E5_DRAGON = english("e5-dragon", "eng-e5", "Reversed Dragon", "1.c4 e5 2.Nc3 Nf6 3.g3 d5 4.cxd5", 3);
 // Its recall position lies on E5_CLOSED's path: not a recall candidate, and E5_CLOSED is never its distractor.
-const E5_SHORT = makeLine({ id: "e5-short", side: "white", chapterId: "eng-e5", family: ENGLISH, name: "Closed, early g3", moves: "1.c4 e5 2.Nc3 Nc6 3.g3", order: 4 });
-const C5_SYMMETRICAL = makeLine({ id: "c5-symmetrical", side: "white", chapterId: "eng-c5", family: ENGLISH, name: "Symmetrical", moves: "1.c4 c5 2.Nc3 Nc6 3.g3", order: 10 });
+const E5_SHORT = english("e5-short", "eng-e5", "Closed, early g3", "1.c4 e5 2.Nc3 Nc6 3.g3", 4);
+const C5_SYMMETRICAL = english("c5-symmetrical", "eng-c5", "Symmetrical", "1.c4 c5 2.Nc3 Nc6 3.g3", 10);
 // The same name as E5_CLOSED: offered at most once.
-const C5_CLOSED = makeLine({ id: "c5-closed", side: "white", chapterId: "eng-c5", family: ENGLISH, name: "Closed system", moves: "1.c4 c5 2.g3", order: 11 });
-const NF6_MIKENAS = makeLine({ id: "nf6-mikenas", side: "white", chapterId: "eng-nf6", family: ENGLISH, name: "Mikenas attack", moves: "1.c4 Nf6 2.Nc3 e6 3.e4", order: 20 });
-const RETI = makeLine({ id: "reti-gambit", side: "white", chapterId: "reti", family: "Reti Opening", name: "Reti Gambit", moves: "1.Nf3 d5 2.c4", order: 30 });
-const CARO = makeLine({ id: "caro-main", side: "black", chapterId: "caro", family: "Caro-Kann Defence", name: "Caro-Kann", moves: "1.e4 c6 2.d4 d5", order: 40 });
+const C5_CLOSED = english("c5-closed", "eng-c5", "Closed system", "1.c4 c5 2.g3", 11);
+const NF6_MIKENAS = english("nf6-mikenas", "eng-nf6", "Mikenas attack", "1.c4 Nf6 2.Nc3 e6 3.e4", 20);
+const RETI = makeLine({
+  id: "reti-gambit",
+  side: "white",
+  chapterId: "reti",
+  family: "Reti Opening",
+  name: "Reti Gambit",
+  moves: "1.Nf3 d5 2.c4",
+  order: 30
+});
+const CARO = makeLine({
+  id: "caro-main",
+  side: "black",
+  chapterId: "caro",
+  family: "Caro-Kann Defence",
+  name: "Caro-Kann",
+  moves: "1.e4 c6 2.d4 d5",
+  order: 40
+});
 // A Black line through E5_FOUR_KNIGHTS's recall position.
 const BLACK_FOUR_KNIGHTS = makeLine({
   id: "black-four-knights",
@@ -70,7 +90,15 @@ describe("buildRecallQuestion: opening", () => {
   });
 
   it("uses an earlier recall ply when the line sets one", () => {
-    const line = makeLine({ id: "early", side: "white", chapterId: "eng-e5", family: ENGLISH, name: "Early", moves: "1.c4 e5 2.Nc3 Nf6 3.Nf3 d6 4.d4", recallPly: 6 });
+    const line = makeLine({
+      id: "early",
+      side: "white",
+      chapterId: "eng-e5",
+      family: ENGLISH,
+      name: "Early",
+      moves: "1.c4 e5 2.Nc3 Nf6 3.Nf3 d6 4.d4",
+      recallPly: 6
+    });
     const recall = question(line, "opening")!;
     expect(recall.movesShown).toEqual(["c4", "e5", "Nc3", "Nf6", "Nf3", "d6"]);
     expect(recall.fen).toBe(line.moves[5].fenAfter);
@@ -137,7 +165,12 @@ describe("buildRecallQuestion: plan", () => {
   it("offers each plan once and needs at least MIN_PLAN_OPTIONS options", () => {
     expect(MIN_PLAN_OPTIONS).toBe(3);
     const samePlan = (line: Line, plan: string): Line => ({ ...line, plans: [plan] });
-    const pool = [E5_DRAGON, samePlan(RETI, "Play in the centre."), samePlan(C5_CLOSED, "play in the centre. "), samePlan(NF6_MIKENAS, E5_DRAGON.plans[0])];
+    const pool = [
+      E5_DRAGON,
+      samePlan(RETI, "Play in the centre."),
+      samePlan(C5_CLOSED, "play in the centre. "),
+      samePlan(NF6_MIKENAS, E5_DRAGON.plans[0])
+    ];
     // Two distinct texts at most (and one is the answer): too few.
     expect(question(E5_DRAGON, "plan", 1, pool)).toBeNull();
     const enough = question(E5_DRAGON, "plan", 1, [...pool, CARO])!;
@@ -195,7 +228,17 @@ describe("recallCandidates", () => {
   it("keeps lines whose recall position no other line of the same side reaches", () => {
     const ids = recallCandidates(POOL).map((line) => line.id);
     expect(ids).not.toContain("e5-short");
-    expect(ids).toEqual(["e5-four-knights", "e5-closed", "e5-dragon", "c5-symmetrical", "c5-closed", "nf6-mikenas", "reti-gambit", "caro-main", "black-four-knights"]);
+    expect(ids).toEqual([
+      "e5-four-knights",
+      "e5-closed",
+      "e5-dragon",
+      "c5-symmetrical",
+      "c5-closed",
+      "nf6-mikenas",
+      "reti-gambit",
+      "caro-main",
+      "black-four-knights"
+    ]);
   });
 
   it("drops both lines when their recall positions are the same", () => {

@@ -20,6 +20,7 @@ export const SPARRING_MULTI_PV = 4;
 /** Without an engine the partner picks among this many most-travelled book moves (moves). */
 export const BOOK_TOP_MOVES = 3;
 
+/** The partner's move and where it comes from. */
 export interface OpponentChoice {
   uci: string;
   san: string;
@@ -30,6 +31,7 @@ export interface OpponentChoice {
   bookName: string | null;
 }
 
+/** Everything the partner needs to choose its move in one position. */
 export interface SparringContext {
   fen: string;
   /** The moves played so far, from the start. */
@@ -77,7 +79,12 @@ function legal<T>(fen: string, entries: readonly T[], uciOf: (entry: T) => strin
 }
 
 /** The engine-scored book moves within SOUND_LOSS of the best; the top book move is scored on its own if the search missed it. */
-async function soundBookMoves(ctx: SparringContext, engine: EngineClient, analysis: Analysis, children: readonly { entry: BookMove & { lines: number }; move: AppliedMove }[]): Promise<Candidate[]> {
+async function soundBookMoves(
+  ctx: SparringContext,
+  engine: EngineClient,
+  analysis: Analysis,
+  children: readonly { entry: BookMove & { lines: number }; move: AppliedMove }[]
+): Promise<Candidate[]> {
   if (analysis.lines.length === 0) {
     return [];
   }
@@ -115,7 +122,8 @@ function engineCandidates(ctx: SparringContext, analysis: Analysis): Candidate[]
  * (2) else a mainstream book move (with an engine: only moves within SOUND_LOSS of its best;
  * without: the top BOOK_TOP_MOVES by line count, weighted by count); (3) else an engine move
  * within LEVEL_WINDOW[level] of the best; (4) else null: out of book and no engine, or the game
- * is over. An engine failure in step 2 falls back to the book choice without the engine; an
+ * is over. An engine failure in step 2 falls back to the book choice without the engine; out of
+ * book there is no fallback, so an engine failure there rejects with the engine's error, and an
  * abort always rejects (AbortError).
  */
 export async function chooseOpponentMove(ctx: SparringContext): Promise<OpponentChoice | null> {
@@ -174,6 +182,7 @@ export async function chooseOpponentMove(ctx: SparringContext): Promise<Opponent
   return null;
 }
 
+/** How a sparring game related to the repertoire. */
 export interface SparringSummary {
   /** Plies from the start that stayed on the repertoire tree. */
   inRepertoireThrough: number;

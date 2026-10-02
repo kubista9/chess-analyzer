@@ -6,8 +6,10 @@ import { shuffled, type Rng } from "../util/random";
 // ("opening") or its plan ("plan") from a few options. A distractor must never be a right answer
 // too, so a line whose moves pass through the shown position is never offered as a distractor.
 
+/** What a recall question asks for: the line's name or its plan. */
 export type RecallKind = "opening" | "plan";
 
+/** One multiple-choice Position Recall question. */
 export interface RecallQuestion {
   id: string;
   kind: RecallKind;

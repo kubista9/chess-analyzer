@@ -15,6 +15,7 @@ export const SOUND_LOSS = 5;
 /** From this mover's win% loss on the engine calls a move a mistake; from SOUND_LOSS up to here, an inaccuracy (win%). */
 export const MISTAKE_LOSS = 10;
 
+/** What judgeMove needs to know about one played move. */
 export interface JudgeInput {
   move: AppliedMove;
   /** The moves this exercise accepts as book. */
