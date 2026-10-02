@@ -225,6 +225,32 @@ describe("question validity", () => {
     expect(built).toBeGreaterThan(100);
   });
 
+  it("never offers a line that ends on the shown position by another move order", () => {
+    // 1.c4 d5 2.Nf3 ends where RETI's 1.Nf3 d5 2.c4 does, and only there: it names the shown position too.
+    const transposed = makeLine({
+      id: "transposed",
+      side: "white",
+      chapterId: "eng-d5",
+      family: ENGLISH,
+      name: "English, 1...d5",
+      moves: "1.c4 d5 2.Nf3",
+      order: 50,
+      plans: ["Take on d5 and develop quickly."]
+    });
+    const shown = toEpd(RETI.finalFen);
+    expect(transposed.epds[transposed.epds.length - 1]).toBe(shown);
+    expect(transposed.epds.slice(0, -1)).not.toContain(shown);
+    for (const kind of KINDS) {
+      for (let seed = 0; seed < 20; seed += 1) {
+        const recall = question(RETI, kind, seed, [...POOL, transposed])!;
+        expect(distractorIds(recall)).not.toContain("transposed");
+      }
+    }
+    // With only the transposition as a candidate there is no valid distractor.
+    expect(question(RETI, "opening", 1, [RETI, transposed])).toBeNull();
+    expect(question(RETI, "plan", 1, [RETI, transposed, CARO])).toBeNull();
+  });
+
   it("is deterministic for a seed and shuffles the options", () => {
     expect(question(E5_DRAGON, "opening", 42)).toEqual(question(E5_DRAGON, "opening", 42));
     expect(question(E5_FOUR_KNIGHTS, "plan", 42)).toEqual(question(E5_FOUR_KNIGHTS, "plan", 42));
