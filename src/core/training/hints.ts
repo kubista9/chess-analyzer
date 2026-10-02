@@ -129,6 +129,24 @@ function generatedNarrow(move: AppliedMove, features: MoveFeatures): string {
 const MINOR_PIECES = 4;
 
 /**
+ * describeMove marks b2-b3, g2-g3, b7-b6 and g7-g6 as a fianchetto whichever piece makes them; only
+ * a pawn (the step) or a bishop (onto the long diagonal) fianchettoes, so the texts use this view.
+ */
+function soundFeatures(features: MoveFeatures): MoveFeatures {
+  const isFianchetto = features.isFianchetto && (features.piece === "p" || features.piece === "b");
+  return isFianchetto === features.isFianchetto ? features : { ...features, isFianchetto };
+}
+
+/**
+ * The square of the pawn an en passant capture removes (beside the capturing pawn, behind the
+ * target square), else null. A pawn capture onto the FEN's en passant square is en passant.
+ */
+function enPassantSquare(move: AppliedMove): string | null {
+  const isEnPassant = move.piece === "p" && move.captured === "p" && move.fenBefore.split(" ")[3] === move.to;
+  return isEnPassant ? `${move.to[0]}${move.from[1]}` : null;
+}
+
+/**
  * What the move achieves, written from the move's features and the opening principles it serves
  * (shown once the move is found or revealed).
  */
@@ -140,7 +158,8 @@ function generatedWhy(move: AppliedMove, features: MoveFeatures): string {
   } else if (features.isRecapture) {
     sentences.push(`It wins the material back: your ${features.pieceName} recaptures on ${move.to}.`);
   } else if (move.captured) {
-    sentences.push(`It takes the ${pieceName(move.captured)} on ${move.to}.`);
+    const passed = enPassantSquare(move);
+    sentences.push(passed ? `It takes the pawn on ${passed} en passant.` : `It takes the ${pieceName(move.captured)} on ${move.to}.`);
   } else if (features.isDevelopingMove) {
     sentences.push(
       features.isFianchetto
@@ -149,8 +168,8 @@ function generatedWhy(move: AppliedMove, features: MoveFeatures): string {
     );
   } else if (features.isFianchetto && features.isPawnMove) {
     sentences.push("It prepares to put your bishop on the long diagonal.");
-  } else if (features.isFianchetto) {
-    sentences.push(`It puts your ${features.pieceName} on the long diagonal.`);
+  } else if (features.isFianchetto && features.piece === "b") {
+    sentences.push("It puts your bishop on the long diagonal.");
   } else if (features.isCentralPawnMove) {
     sentences.push("It takes a share of the centre and opens lines for your pieces.");
   } else if (features.isPawnMove) {
@@ -158,8 +177,10 @@ function generatedWhy(move: AppliedMove, features: MoveFeatures): string {
   } else {
     sentences.push(`It finds a better square for your ${features.pieceName}.`);
   }
-  if (!move.castle && !move.captured && features.attacks.length > 0) {
-    sentences.push(`It attacks the ${features.attacks.join(" and the ")}, gaining time.`);
+  // An attack on the king is the check, which has its own sentence below.
+  const attacks = features.attacks.filter((target) => !target.startsWith("king "));
+  if (!move.castle && !move.captured && attacks.length > 0) {
+    sentences.push(`It attacks the ${attacks.join(" and the ")}, gaining time.`);
   }
   // The principle "develop every knight and bishop": say so when this move completes it.
   if (features.isDevelopingMove && developmentState(move.fenAfter, move.color).minorsDeveloped === MINOR_PIECES) {
@@ -180,7 +201,7 @@ function generatedWhy(move: AppliedMove, features: MoveFeatures): string {
  */
 export function buildHintSet(input: { move: AppliedMove; history: readonly AppliedMove[]; note: CompiledNote | null; ply: number }): HintSet {
   const { move, history, note, ply } = input;
-  const features = describeMove(move, history);
+  const features = soundFeatures(describeMove(move, history));
   return {
     idea: note?.hint ?? IDEA_HINTS[note?.idea ?? guessIdea(features)],
     narrow: note?.narrow ?? generatedNarrow(move, features),

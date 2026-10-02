@@ -204,11 +204,22 @@ const MOVES: { name: string; move: AppliedMove; history: AppliedMove[]; ply: num
   ["black king", "1.e4 e5 2.Qh5 Ke7"],
   ["short castling", "1.e4 e5 2.Nf3 Nc6 3.Bc4 Bc5 4.O-O"],
   ["black short castling", "1.e4 e5 2.Nf3 Nf6 3.Bc4 Bc5 4.Nc3 O-O"],
-  ["long castling", "1.d4 d5 2.Nc3 Nc6 3.Bf4 Bf5 4.Qd2 Qd7 5.O-O-O"]
+  ["long castling", "1.d4 d5 2.Nc3 Nc6 3.Bf4 Bf5 4.Qd2 Qd7 5.O-O-O"],
+  ["white en passant", "1.e4 a6 2.e5 d5 3.exd6"],
+  ["black en passant", "1.a3 e5 2.a4 e4 3.d4 exd3"],
+  ["developing with check", "1.e4 e5 2.Nf3 d6 3.Bb5+"]
 ].map(([name, movetext]) => ({ name, ...lastMove(movetext) }));
 
-const promotion = applyMove("8/P7/8/8/8/8/8/k6K w - - 0 1", "a7a8q")!;
-MOVES.push({ name: "promotion", move: promotion, history: [], ply: 1 });
+/** One move from a position, without history. */
+const fromFen = (fen: string, uci: string) => ({ move: applyMove(fen, uci)!, history: [] as AppliedMove[], ply: 1 });
+
+MOVES.push(
+  { name: "promotion", ...fromFen("8/P7/8/8/8/8/8/k6K w - - 0 1", "a7a8q") },
+  { name: "knight fork with check", ...fromFen("r3k3/8/8/1N6/8/8/8/4K3 w - - 0 1", "b5c7") },
+  { name: "queen to b3", ...fromFen("4k3/8/8/8/8/8/1Q6/4K3 w - - 0 1", "b2b3") },
+  { name: "king to g3", ...fromFen("4k3/8/8/8/8/8/6K1/8 w - - 0 1", "g2g3") },
+  { name: "black rook to g6", ...fromFen("4k3/6r1/8/8/8/8/8/4K3 b - - 0 1", "g7g6") }
+);
 
 /** Fails when a hint text gives the move away. */
 function expectNoGiveaway(text: string, move: AppliedMove, context: string): void {
@@ -356,5 +367,45 @@ describe("hint texts", () => {
       expect(text).toMatch(/^It .+\.$/);
       expect(text).not.toMatch(/!/);
     }
+  });
+
+  /** The generated hint set of a named entry of MOVES. */
+  const generated = (name: string) => {
+    const entry = MOVES.find((candidate) => candidate.name === name)!;
+    return buildHintSet({ ...entry, note: null });
+  };
+
+  it("an en passant capture names the square of the pawn it takes", () => {
+    expect(generated("white en passant").solution.why).toBe("It takes the pawn on d5 en passant.");
+    expect(generated("black en passant").solution.why).toBe("It takes the pawn on d4 en passant.");
+    // An ordinary pawn capture names its target square.
+    expect(generated("white pawn capture").solution.why).toBe("It takes the pawn on d5.");
+  });
+
+  it("says check once: the king is not listed among the attacked pieces", () => {
+    expect(generated("developing with check").solution.why).toBe("It develops your bishop: another minor piece joins the game. It gives check.");
+    expect(generated("knight fork with check").solution.why).toBe(
+      "It finds a better square for your knight. It attacks the rook on a8, gaining time. It gives check."
+    );
+    for (const { name, move, history, ply } of MOVES) {
+      const text = buildHintSet({ move, history, note: null, ply }).solution.why;
+      expect(/attacks[^.]*\bking\b/.test(text), `${name}: ${text}`).toBe(false);
+    }
+  });
+
+  it("only a pawn or a bishop fianchettoes: other pieces stepping onto b3, g3, b6 or g6 get plain texts", () => {
+    for (const [name, piece] of [
+      ["queen to b3", "queen"],
+      ["king to g3", "king"],
+      ["black rook to g6", "rook"]
+    ]) {
+      const set = generated(name);
+      expect([name, set.idea]).toEqual([name, IDEA_HINTS.activity]);
+      expect([name, set.solution.why]).toEqual([name, `It finds a better square for your ${piece}.`]);
+    }
+    // A pawn's step and a bishop's move onto the long diagonal still count.
+    expect(generated("white fianchetto pawn").idea).toBe(IDEA_HINTS.development);
+    const { move, history, ply } = lastMove("1.g3 e5 2.Bh3 d5 3.Bg2");
+    expect(buildHintSet({ move, history, note: null, ply }).solution.why).toBe("It puts your bishop on the long diagonal.");
   });
 });
