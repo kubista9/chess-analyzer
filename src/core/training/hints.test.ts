@@ -345,6 +345,12 @@ describe("hint texts", () => {
     expect(why("1.e4 e5 2.Nf3 Nc6 3.Bb5 Nf6 4.d3 Bc5 5.Bg5").why).toBe(
       "It develops your bishop: another minor piece joins the game. It attacks the knight on f6, gaining time."
     );
+    // The opening principle it completes: every knight and bishop is out.
+    expect(why("1.e4 e5 2.Nf3 Nc6 3.Bc4 Bc5 4.Nc3 Nf6 5.d3 d6 6.Bg5").why).toBe(
+      "It develops your bishop: another minor piece joins the game. It attacks the knight on f6, gaining time. " +
+        "Now all your knights and bishops are developed."
+    );
+    expect(why("1.e4 e5 2.Nf3 Nc6 3.Bc4 Bc5 4.Nc3 Nf6 5.Bb5").why).not.toContain("all your knights");
     for (const { move, history, ply } of MOVES) {
       const text = buildHintSet({ move, history, note: null, ply }).solution.why;
       expect(text).toMatch(/^It .+\.$/);

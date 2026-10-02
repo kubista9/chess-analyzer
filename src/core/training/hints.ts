@@ -1,6 +1,7 @@
 import { describeMove, guessIdea, pieceName, type MoveFeatures, type Region } from "../chess/features";
 import { moveLabel } from "../chess/format";
 import type { AppliedMove } from "../chess/position";
+import { developmentState } from "../chess/principles";
 import type { Idea } from "../content/schema";
 import type { CompiledNote } from "../content/types";
 import type { HintSet, LadderState, Outcome, Result } from "./types";
@@ -124,11 +125,18 @@ function generatedNarrow(move: AppliedMove, features: MoveFeatures): string {
   return `Look at your ${features.pieceName} on ${move.from}.`;
 }
 
-/** What the move achieves, written from the move's features (shown once the move is found or revealed). */
+/** Minor pieces a side has (4 = both knights and both bishops). */
+const MINOR_PIECES = 4;
+
+/**
+ * What the move achieves, written from the move's features and the opening principles it serves
+ * (shown once the move is found or revealed).
+ */
 function generatedWhy(move: AppliedMove, features: MoveFeatures): string {
   const sentences: string[] = [];
   if (move.castle) {
-    sentences.push(`It brings your king to safety ${AREA_PHRASES[move.castle === "short" ? "kingside" : "queenside"]} and a rook towards the centre.`);
+    const area = AREA_PHRASES[move.castle === "short" ? "kingside" : "queenside"];
+    sentences.push(`It brings your king to safety ${area} and a rook towards the centre.`);
   } else if (features.isRecapture) {
     sentences.push(`It wins the material back: your ${features.pieceName} recaptures on ${move.to}.`);
   } else if (move.captured) {
@@ -152,6 +160,10 @@ function generatedWhy(move: AppliedMove, features: MoveFeatures): string {
   }
   if (!move.castle && !move.captured && features.attacks.length > 0) {
     sentences.push(`It attacks the ${features.attacks.join(" and the ")}, gaining time.`);
+  }
+  // The principle "develop every knight and bishop": say so when this move completes it.
+  if (features.isDevelopingMove && developmentState(move.fenAfter, move.color).minorsDeveloped === MINOR_PIECES) {
+    sentences.push("Now all your knights and bishops are developed.");
   }
   if (move.checkmate) {
     sentences.push("It is checkmate.");
