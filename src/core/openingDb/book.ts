@@ -179,3 +179,20 @@ export function bookExit(book: OpeningBook, epdsAfter: readonly string[], color:
   const exitMover: Color = lastBookPly % 2 === 0 ? "white" : "black";
   return { lastBookPly, exitBy: exitMover === color ? "owner" : "opponent" };
 }
+
+/** Book moves out of a position, most-travelled first (lines through the target), ties by UCI. */
+export function mainstreamChildren(book: OpeningBook, epd: string): (BookMove & { lines: number })[] {
+  return bookChildren(book, epd)
+    .map((child) => ({ ...child, lines: book.lineCount.get(child.toEpd) ?? 0 }))
+    .sort((left, right) => right.lines - left.lines || (left.uci < right.uci ? -1 : left.uci > right.uci ? 1 : 0));
+}
+
+/** The name of exactly this position, if a book line ends on it. */
+export function bookNameAt(book: OpeningBook, epd: string): BookName | null {
+  return book.named.get(epd) ?? null;
+}
+
+/** Parses the TSV texts and builds the index. */
+export function loadBookFromTsv(texts: readonly string[]): OpeningBook {
+  return buildBook(texts.flatMap((text) => parseBookTsv(text)));
+}
