@@ -99,15 +99,23 @@ async function tally(overrides: Partial<SparringContext>, runs = 300): Promise<M
   return counts;
 }
 
+/**
+ * The picks are exactly the keys of `weights`, and each one's share of the `runs` picks is within
+ * `tolerance` of its weight's share of the total (equal weights would miss it).
+ */
+function expectShares(counts: Map<string, number>, weights: Record<string, number>, runs = 300, tolerance = 0.07): void {
+  expect([...counts.keys()].sort()).toEqual(Object.keys(weights).sort());
+  const total = Object.values(weights).reduce((sum, weight) => sum + weight, 0);
+  for (const [key, weight] of Object.entries(weights)) {
+    const share = (counts.get(key) ?? 0) / runs;
+    expect(Math.abs(share - weight / total), `${key}: share ${share}, expected ${weight / total}`).toBeLessThanOrEqual(tolerance);
+  }
+}
+
 describe("chooseOpponentMove: the repertoire first", () => {
   it("plays the opponent's moves of the user's repertoire, weighted by line priority", async () => {
-    const counts = await tally({});
-    expect([...counts.keys()].sort()).toEqual(["repertoire:c4", "repertoire:d4", "repertoire:e4"]);
-    // Weights 3 : 2 : 1.
-    expect(counts.get("repertoire:e4")!).toBeGreaterThan(counts.get("repertoire:d4")!);
-    expect(counts.get("repertoire:d4")!).toBeGreaterThan(counts.get("repertoire:c4")!);
-    expect(counts.get("repertoire:e4")! / 300).toBeGreaterThan(0.4);
-    expect(counts.get("repertoire:c4")! / 300).toBeLessThan(0.25);
+    // Weights 3 : 2 : 1 (main, secondary, sideline).
+    expectShares(await tally({}), { "repertoire:e4": 3, "repertoire:d4": 2, "repertoire:c4": 1 });
   });
 
   it("reports the lines that expect the reply and the opening name", async () => {
@@ -146,11 +154,8 @@ describe("chooseOpponentMove: the book", () => {
 
   it("without an engine picks among the top 3 book moves by line count, weighted by count", async () => {
     expect(BOOK_TOP_MOVES).toBe(3);
-    const counts = await tally(base);
     // Lines through: 3.e5 4, 3.Nc3 2, 3.exd5 1, 3.f3 1 (exd5 wins the tie on UCI).
-    expect([...counts.keys()].sort()).toEqual(["book:Nc3", "book:e5", "book:exd5"]);
-    expect(counts.get("book:e5")!).toBeGreaterThan(counts.get("book:Nc3")!);
-    expect(counts.get("book:Nc3")!).toBeGreaterThan(counts.get("book:exd5")!);
+    expectShares(await tally(base), { "book:e5": 4, "book:Nc3": 2, "book:exd5": 1 });
   });
 
   it("names the opening after the move", async () => {
@@ -171,11 +176,22 @@ describe("chooseOpponentMove: the book", () => {
       ["g1f3", 51],
       ["e4d5", 49]
     ]);
-    const counts = await tally({ ...base, engine });
-    expect([...counts.keys()].sort()).toEqual(["book:Nc3", "book:e5"]);
+    // Lines through: 3.e5 4, 3.Nc3 2.
+    expectShares(await tally({ ...base, engine }), { "book:e5": 4, "book:Nc3": 2 });
     expect(engine.scoreCalls).toEqual([]);
     expect(engine.analyseCalls[0]).toEqual({ fen: CARO_FEN, options: { multiPv: SPARRING_MULTI_PV, movetimeMs: 300, signal: undefined } });
     expect(engine.analyseCalls).toHaveLength(300);
+  });
+
+  it("with an engine keeps at most the BOOK_TOP_MOVES most-travelled sound book moves", async () => {
+    // All four book moves are within SOUND_LOSS of the best; 3.f3 (1 line, last on UCI) is dropped.
+    const engine = new FakeEngine([
+      ["b1c3", 55],
+      ["e4e5", 54],
+      ["e4d5", 53],
+      ["f2f3", 52]
+    ]);
+    expectShares(await tally({ ...base, engine }), { "book:e5": 4, "book:Nc3": 2, "book:exd5": 1 });
   });
 
   it("scores the top book move separately when the search missed it", async () => {
@@ -251,11 +267,14 @@ describe("chooseOpponentMove: the engine out of book", () => {
     for (const level of Object.keys(expected) as SparringLevel[]) {
       const counts = await tally({ ...base, engine: new FakeEngine(LINES), level });
       expect([level, [...counts.keys()].sort()]).toEqual([level, expected[level]]);
-      if (level === "relaxed") {
-        expect(counts.get("engine:Be2")!).toBeGreaterThan(counts.get("engine:c3")!);
-        expect(counts.get("engine:c3")!).toBeGreaterThan(counts.get("engine:Bd3")!);
-      }
     }
+    // Weights 1 / (1 + loss): losses 0, 3 and 8 give 1, 1/4 and 1/9.
+    expectShares(await tally({ ...base, engine: new FakeEngine(LINES), level: "relaxed" }), {
+      "engine:Be2": 1,
+      "engine:c3": 1 / 4,
+      "engine:Bd3": 1 / 9
+    });
+    expectShares(await tally({ ...base, engine: new FakeEngine(LINES), level: "club" }), { "engine:Be2": 1, "engine:c3": 1 / 4 });
   });
 
   it("includes a move exactly at the window's edge", async () => {
