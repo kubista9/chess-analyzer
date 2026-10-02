@@ -159,19 +159,21 @@ describe("buildQueue: due positions", () => {
 
 describe("buildQueue: extra practice", () => {
   const weak = seen(AFTER_E5, { overdueDays: -5, mastery: 0.2, practisedDaysAgo: 1 });
-  const strongOld = seen(AFTER_NF6, { overdueDays: -5, mastery: 0.8, practisedDaysAgo: 9 });
-  const strongRecent = seen(AFTER_1NF6, { overdueDays: -5, mastery: 0.8, practisedDaysAgo: 1 });
+  // Equal mastery: the key order alone (AFTER_NF6 first) would put the recently practised one first.
+  const strongOld = seen(AFTER_1NF6, { overdueDays: -5, mastery: 0.8, practisedDaysAgo: 9 });
+  const strongRecent = seen(AFTER_NF6, { overdueDays: -5, mastery: 0.8, practisedDaysAgo: 1 });
   const due = seen(AFTER_C5, { overdueDays: 1 });
   const progress = progressOf(weak, strongOld, strongRecent, due);
 
   it("fills a short queue with seen positions that are not due: weakest first, then least recently practised", () => {
+    expect(AFTER_NF6.key < AFTER_1NF6.key).toBe(true);
     const queue = buildQueue(ITEMS, progress, { now: NOW, newLimit: 1, limit: 5, includeExtra: true });
     expect(queue.map((entry) => [entry.item.key, entry.reason])).toEqual([
       [AFTER_C5.key, "due"],
       [START.key, "new"],
       [AFTER_E5.key, "extra"],
-      [AFTER_NF6.key, "extra"],
-      [AFTER_1NF6.key, "extra"]
+      [AFTER_1NF6.key, "extra"],
+      [AFTER_NF6.key, "extra"]
     ]);
     expect(queue[2].score).toBeCloseTo(0.8, 12);
     expect(queue[2].progress).toBe(weak);
