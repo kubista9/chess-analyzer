@@ -1,7 +1,7 @@
 import { Chess } from "chess.js";
 import { describe, expect, it } from "vitest";
-import { START_EPD, toEpd } from "./epd.js";
-import { bookChildren, bookExit, bookSans, buildBook, nameAt, openingFamily, parseBookTsv } from "./openingBook.js";
+import { START_EPD, toEpd } from "../chess/position";
+import { bookChildren, bookExit, bookSans, buildBook, nameAt, openingFamily, parseBookTsv } from "./book";
 
 const MINI_TSV = [
   "eco\tname\tpgn",

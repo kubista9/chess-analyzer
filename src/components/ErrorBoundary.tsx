@@ -32,7 +32,7 @@ export class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundarySt
     return (
       <section className="panel empty-panel error-boundary" role="alert">
         <h2>Something went wrong on this page</h2>
-        <p>Your data is safe: it lives in the local database. Reload to try again, or go to another page.</p>
+        <p>Your progress is safe: it is stored in this browser. Reload to try again, or go to another page.</p>
         <p className="error-text">{error.message || String(error)}</p>
         <button className="primary-button" type="button" onClick={() => window.location.reload()}>
           Reload the page

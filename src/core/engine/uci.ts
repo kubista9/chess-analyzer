@@ -1,5 +1,5 @@
-import { scoreWinPercent } from "../../shared/eval.js";
-import type { EngineLine } from "../../shared/types.js";
+import { scoreWinPercent } from "./score";
+import type { EngineLine } from "./types";
 
 // Pure UCI "info" parsing. A search reports its lines iteration by iteration; a depth or
 // node limit (or a stop) can end it in the middle of an iteration, and Stockfish then prints

@@ -11,7 +11,7 @@ import {
   resetForRecurrence,
   sessionPriority,
   startOfDay
-} from "./scheduler.js";
+} from "./scheduler";
 
 const NOW = Date.UTC(2026, 8, 26, 10, 0, 0);
 const ID = "own-mistake|black|rnbqkbnr/pppp1ppp/8/4p3/4P3/5N2/PPPP1PPP/RNBQKB1R b KQkq -";

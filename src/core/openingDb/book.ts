@@ -1,6 +1,5 @@
 import { Chess } from "chess.js";
-import { START_EPD, START_FEN, toEpd } from "./epd.js";
-import type { PlayerColor } from "./types.js";
+import { START_EPD, START_FEN, toEpd, type Color } from "../chess/position";
 
 // An index over the lichess chess-openings TSVs (eco, name, pgn), keyed by EPD so a name is
 // found whatever the move order. The dataset is a list of names, not a theory book: it names
@@ -169,7 +168,7 @@ export interface BookExit {
  * Where a game leaves the book. `epdsAfter[i]` is the position after ply i + 1 (so White moves
  * at even indices). A ply is "in book" when the position it reaches is a book position.
  */
-export function bookExit(book: OpeningBook, epdsAfter: readonly string[], color: PlayerColor): BookExit {
+export function bookExit(book: OpeningBook, epdsAfter: readonly string[], color: Color): BookExit {
   let lastBookPly = 0;
   while (lastBookPly < epdsAfter.length && book.positions.has(epdsAfter[lastBookPly])) {
     lastBookPly += 1;
@@ -177,6 +176,6 @@ export function bookExit(book: OpeningBook, epdsAfter: readonly string[], color:
   if (lastBookPly === epdsAfter.length) {
     return { lastBookPly, exitBy: null };
   }
-  const exitMover: PlayerColor = lastBookPly % 2 === 0 ? "white" : "black";
+  const exitMover: Color = lastBookPly % 2 === 0 ? "white" : "black";
   return { lastBookPly, exitBy: exitMover === color ? "owner" : "opponent" };
 }
