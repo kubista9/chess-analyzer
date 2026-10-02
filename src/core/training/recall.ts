@@ -59,9 +59,12 @@ function tiered(tiers: readonly Line[][], rng: Rng): Line[] {
   return tiers.flatMap((tier) => shuffled([...tier].sort((left, right) => left.order - right.order || byText(left.id, right.id)), rng));
 }
 
-/** Up to RECALL_DISTRACTORS candidates whose label differs from the answer's and from each other. */
-function pickDistinct(candidates: readonly Line[], label: (line: Line) => string, answer: string): Line[] {
-  const used = new Set<string>([normalised(answer)]);
+/**
+ * Up to RECALL_DISTRACTORS candidates whose label differs from every right answer and from each
+ * other (labels compared without case and extra spaces).
+ */
+function pickDistinct(candidates: readonly Line[], label: (line: Line) => string, rightAnswers: readonly string[]): Line[] {
+  const used = new Set<string>(rightAnswers.map(normalised));
   const picked: Line[] = [];
   for (const candidate of candidates) {
     const key = normalised(label(candidate));
@@ -82,7 +85,7 @@ function pickDistinct(candidates: readonly Line[], label: (line: Line) => string
  * - opening: the line's name and up to 3 other lines of the same side (same chapter first, then
  *   the same family, then any);
  * - plan: the line's first plan and the first plans of lines from other chapters (the same side
- *   first), at least MIN_PLAN_OPTIONS options.
+ *   first) that are none of the line's own plans, at least MIN_PLAN_OPTIONS options.
  * Options are shuffled with `rng`; the explanation is the description and the plan.
  */
 export function buildRecallQuestion(input: { line: Line; pool: readonly Line[]; kind: RecallKind; rng: Rng }): RecallQuestion | null {
@@ -103,7 +106,7 @@ export function buildRecallQuestion(input: { line: Line; pool: readonly Line[]; 
       sameSide.filter((other) => other.chapterId !== line.chapterId && other.family === line.family),
       sameSide.filter((other) => other.chapterId !== line.chapterId && other.family !== line.family)
     ];
-    distractors = pickDistinct(tiered(tiers, rng), (other) => other.name, answer).map((other) => ({ id: other.id, label: other.name }));
+    distractors = pickDistinct(tiered(tiers, rng), (other) => other.name, [answer]).map((other) => ({ id: other.id, label: other.name }));
     if (distractors.length + 1 < MIN_OPENING_OPTIONS) {
       return null;
     }
@@ -114,7 +117,8 @@ export function buildRecallQuestion(input: { line: Line; pool: readonly Line[]; 
     answer = plan;
     const withPlans = others.filter((other) => other.chapterId !== line.chapterId && other.plans.length > 0);
     const tiers = [withPlans.filter((other) => other.side === line.side), withPlans.filter((other) => other.side !== line.side)];
-    distractors = pickDistinct(tiered(tiers, rng), (other) => other.plans[0], answer).map((other) => ({ id: other.id, label: other.plans[0] }));
+    // Every plan of the line is right, not only the first: none of them may be a distractor.
+    distractors = pickDistinct(tiered(tiers, rng), (other) => other.plans[0], line.plans).map((other) => ({ id: other.id, label: other.plans[0] }));
     if (distractors.length + 1 < MIN_PLAN_OPTIONS) {
       return null;
     }

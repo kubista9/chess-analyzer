@@ -179,6 +179,23 @@ describe("buildRecallQuestion: plan", () => {
     expect(new Set(labels).size).toBe(3);
   });
 
+  it("never offers one of the line's own later plans as a wrong answer", () => {
+    const twoPlans: Line = { ...E5_DRAGON, plans: ["Open the c-file and press on d5.", "Castle short and push b4."] };
+    const pool = [
+      twoPlans,
+      { ...RETI, plans: ["castle short and  push b4."] },
+      { ...C5_CLOSED, plans: ["Play d4 when it works."] },
+      { ...NF6_MIKENAS, plans: ["Push e4 and e5."] },
+      { ...CARO, plans: ["Free the light-squared bishop first."] }
+    ];
+    for (let seed = 0; seed < 25; seed += 1) {
+      const recall = question(twoPlans, "plan", seed, pool)!;
+      expect(distractorIds(recall).sort()).toEqual(["c5-closed", "caro-main", "nf6-mikenas"]);
+    }
+    // Without the last two lines only one wrong answer is left: too few options.
+    expect(question(twoPlans, "plan", 1, pool.slice(0, 3))).toBeNull();
+  });
+
   it("a line without a plan has no plan question", () => {
     expect(question({ ...E5_DRAGON, plans: [] }, "plan")).toBeNull();
   });
