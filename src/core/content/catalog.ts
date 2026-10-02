@@ -2,8 +2,8 @@ import { Chess } from "chess.js";
 import { formatLine, moveLabel, parseMovetext } from "../chess/format";
 import { IllegalMoveError, START_EPD, fenOf, replayMoves, toEpd, type Color } from "../chess/position";
 import type { CustomLineRecord } from "../training/types";
-import { compileChapter, compileCustomLines, parseContentFile } from "./compile";
-import { SIDES, type ContentFile, type LineDef } from "./schema";
+import { compileChapter, compileCustomLines, parseContentFile, slugify } from "./compile";
+import { SIDES, lineSchema, type ContentFile, type LineDef, type ReviewMeta } from "./schema";
 import { noteKey, type Catalog, type Chapter, type CompiledNote, type ContentIssue, type Line } from "./types";
 
 // The whole repertoire, compiled once: built-in chapters (content/**/*.json) plus the user's
@@ -12,6 +12,12 @@ import { noteKey, type Catalog, type Chapter, type CompiledNote, type ContentIss
 
 /** Maximum length of a PGN movetext line, in characters (the PGN export format's limit). */
 export const PGN_LINE_WIDTH = 80;
+
+/** Written by lineToContentJson for a line without a description (a custom line may have none). */
+export const EXPORT_PLACEHOLDER_DESCRIPTION = "To be written: what this line is about.";
+
+/** Written by lineToContentJson for a line without plans. */
+export const EXPORT_PLACEHOLDER_PLAN = "To be written: how play continues after the line.";
 
 /** Optional extras for buildCatalog. */
 export interface BuildCatalogOptions {
@@ -327,29 +333,59 @@ export function parsePgnMainLine(pgn: string): { sans: string[]; headers: Record
   }
 }
 
+/** "the description and the plans" for a list of fields. */
+function joinFields(fields: readonly string[]): string {
+  return fields.length <= 1 ? fields.join("") : `${fields.slice(0, -1).join(", ")} and ${fields[fields.length - 1]}`;
+}
+
 /**
  * A compiled line in the content file format, ready to paste into a chapter's `lines`. Source
  * and review are written when they differ from the chapter's, and always for a custom line
- * (it will land in a chapter with other metadata).
+ * (it will land in a chapter with other metadata). A custom line may lack what a content file
+ * requires, so the result always validates against lineSchema: texts are trimmed, an empty name
+ * becomes the moves, an empty description or plan list gets a placeholder, an ECO that is not a
+ * code is left out and an id that is not a content id is slugified; review.notes says what
+ * was changed.
  */
 export function lineToContentJson(line: Line, catalog: Catalog): LineDef {
   const chapter = catalog.chapterById.get(line.chapterId);
-  const writeMeta = line.origin === "custom" || !chapter;
   const differs = (left: unknown, right: unknown) => JSON.stringify(left) !== JSON.stringify(right);
+  const moves = formatLine(line.sans);
+
+  const changes: string[] = [];
+  const description = line.description.trim();
+  const plans = line.plans.map((plan) => plan.trim()).filter(Boolean);
+  const placeholders = [...(description ? [] : ["the description"]), ...(plans.length > 0 ? [] : ["the plans"])];
+  if (placeholders.length > 0) {
+    changes.push(`Exported from the app with placeholder text for ${joinFields(placeholders)}; replace it before review.`);
+  }
+  const eco = line.eco?.trim().toUpperCase() ?? "";
+  const ecoValid = eco === "" || lineSchema.shape.eco.safeParse(eco).success;
+  if (!ecoValid) {
+    changes.push(`The ECO code "${line.eco}" was left out: it is not a code such as A20.`);
+  }
+  const id = lineSchema.shape.id.safeParse(line.id).success ? line.id : slugify(line.id);
+  if (id !== line.id) {
+    changes.push(`The id "${line.id}" became "${id}": content ids are lower-case words joined by hyphens.`);
+  }
+
+  const review: ReviewMeta =
+    changes.length > 0 ? { ...structuredClone(line.review), notes: [line.review.notes, ...changes].filter(Boolean).join(" ") } : line.review;
+  const writeMeta = line.origin === "custom" || !chapter;
   return {
-    id: line.id,
-    name: line.name,
-    ...(line.eco ? { eco: line.eco } : {}),
+    id,
+    name: line.name.trim() || moves,
+    ...(eco && ecoValid ? { eco } : {}),
     priority: line.priority,
     defaultEnabled: line.defaultEnabled,
-    moves: formatLine(line.sans),
-    description: line.description,
-    plans: [...line.plans],
+    moves,
+    description: description || EXPORT_PLACEHOLDER_DESCRIPTION,
+    plans: plans.length > 0 ? plans : [EXPORT_PLACEHOLDER_PLAN],
     ideas: [...line.ideas],
     traps: line.traps.map((trap) => ({ name: trap.name, moves: formatLine(trap.sans), side: trap.side, description: trap.description })),
     checkpoints: line.checkpoints.map((checkpoint) => ({ ...checkpoint })),
     ...(line.recallPly !== line.moves.length ? { recall: { ply: line.recallPly } } : {}),
     ...(writeMeta || differs(line.source, chapter?.source) ? { source: structuredClone(line.source) } : {}),
-    ...(writeMeta || differs(line.review, chapter?.review) ? { review: structuredClone(line.review) } : {})
+    ...(writeMeta || differs(review, chapter?.review) ? { review: structuredClone(review) } : {})
   };
 }

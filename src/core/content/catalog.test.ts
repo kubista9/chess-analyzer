@@ -3,6 +3,8 @@ import { fixtureFile, fixtureFiles } from "../../test/content";
 import { START_EPD, START_FEN, replayMoves } from "../chess/position";
 import type { CustomLineRecord } from "../training/types";
 import {
+  EXPORT_PLACEHOLDER_DESCRIPTION,
+  EXPORT_PLACEHOLDER_PLAN,
   PGN_LINE_WIDTH,
   buildCatalog,
   chaptersForSide,
@@ -448,7 +450,52 @@ describe("lineToContentJson", () => {
       review: { status: "draft", confidence: "low", checkedWith: [] }
     });
     expect(json.recall).toBeUndefined();
+    expect(json.review?.notes).toBeUndefined();
     expect(lineSchema.parse(json)).toEqual(json);
+  });
+
+  it("fills in what a custom line leaves empty, so the export always validates, and says so in the review notes", () => {
+    const sloppy = buildCatalog(
+      [],
+      [customRecord({ id: "My_Line 1", name: "  ", eco: "Reversed Sicilian", description: " ", plans: ["", "  "], moves: "1.c4 e5 2.Nc3" })]
+    );
+    expect(sloppy.issues).toEqual([]);
+    const json = lineToContentJson(sloppy.lines[0], sloppy);
+    expect(lineSchema.safeParse(json).error?.issues ?? []).toEqual([]);
+    expect(json).toMatchObject({
+      id: "my-line-1",
+      name: "1.c4 e5 2.Nc3",
+      description: EXPORT_PLACEHOLDER_DESCRIPTION,
+      plans: [EXPORT_PLACEHOLDER_PLAN],
+      review: {
+        status: "draft",
+        confidence: "low",
+        notes:
+          "Exported from the app with placeholder text for the description and the plans; replace it before review. " +
+          'The ECO code "Reversed Sicilian" was left out: it is not a code such as A20. ' +
+          'The id "My_Line 1" became "my-line-1": content ids are lower-case words joined by hyphens.'
+      }
+    });
+    expect(json).not.toHaveProperty("eco");
+
+    // Pasted into a chapter, it compiles without issues.
+    const file = fixtureFile("white-english-e5");
+    file.lines = [json];
+    expect(parseContentFile(file).issues).toEqual([]);
+  });
+
+  it("trims a custom line's texts, upper-cases its ECO code and notes only what was filled in", () => {
+    const record = customRecord({ name: " Mine ", eco: "a30", description: "Hedgehog. ", plans: [" d4 later. ", ""] });
+    const catalogWithRecord = buildCatalog([], [record]);
+    const json = lineToContentJson(catalogWithRecord.lines[0], catalogWithRecord);
+    expect(json).toMatchObject({ id: "my-hedgehog", name: "Mine", eco: "A30", description: "Hedgehog.", plans: ["d4 later."] });
+    expect(json.review?.notes).toBeUndefined();
+
+    const noPlans = buildCatalog([], [customRecord({ plans: [] })]);
+    const withPlaceholder = lineToContentJson(noPlans.lines[0], noPlans);
+    expect(withPlaceholder.plans).toEqual([EXPORT_PLACEHOLDER_PLAN]);
+    expect(withPlaceholder.review?.notes).toBe("Exported from the app with placeholder text for the plans; replace it before review.");
+    expect(lineSchema.safeParse(withPlaceholder).success).toBe(true);
   });
 
   it("round-trips: the exported line compiles to the same moves", () => {
