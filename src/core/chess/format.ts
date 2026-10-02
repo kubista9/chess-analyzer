@@ -63,7 +63,8 @@ export function parseMovetext(text: string): string[] {
     }
     // "1.c4" -> "c4", "1...e5" -> "e5", "12." -> "".
     const token = cleanSan(raw.replace(/^\d+\.+/, ""));
-    if (token) {
+    // A bare "..." or "…" stands for Black's move number in "12. ... Nf6".
+    if (token && !/^[.…]+$/u.test(token)) {
       sans.push(token);
     }
   }

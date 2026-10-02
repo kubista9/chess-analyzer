@@ -43,6 +43,8 @@ describe("parseMovetext", () => {
     expect(parseMovetext("1...e5 2.Nf3")).toEqual(["e5", "Nf3"]);
     expect(parseMovetext("2... Nc6 3. g3")).toEqual(["Nc6", "g3"]);
     expect(parseMovetext("1…e5 2.Nf3")).toEqual(["e5", "Nf3"]);
+    expect(parseMovetext("12. ... Nf6 13. … Bg7")).toEqual(["Nf6", "Bg7"]);
+    expect(parseMovetext("1. ...")).toEqual([]);
   });
 
   it("drops comments, NAGs, glyphs and the result", () => {
