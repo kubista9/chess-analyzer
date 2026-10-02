@@ -128,7 +128,14 @@ export function describeMove(move: AppliedMove, history: readonly AppliedMove[])
   };
 }
 
-/** The most likely idea of a move, for a generic first hint. */
+/**
+ * The most likely idea of a move, for a generic first hint. Checked in this order: castling →
+ * king-safety, recapture → recapture, developing move or fianchetto → development, central pawn
+ * move → centre, a non-capture that attacks a piece → tempo, other pawn move → flank, else
+ * activity. Recapture deliberately comes before development and centre (DESIGN.md lists it after
+ * them): a knight or central pawn that takes back is above all winning the material back, and
+ * that is the hint that helps.
+ */
 export function guessIdea(features: MoveFeatures): Idea {
   if (features.castle) {
     return "king-safety";

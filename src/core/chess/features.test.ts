@@ -136,9 +136,15 @@ describe("guessIdea", () => {
     expect(guessIdea(lastMove("e4 e5 Nf3 Nc6 Bc4 Bc5 O-O Nf6 Re1"))).toBe("activity");
   });
 
-  it("prefers recapture over centre for a central pawn that takes back", () => {
+  it("prefers recapture over centre and development for a move that takes back", () => {
     // exd5 is a central pawn move too; winning the material back is the clearer idea.
-    expect(guessIdea(lastMove("d4 d5 c4 e6 Nc3 Nf6 cxd5 exd5"))).toBe("recapture");
+    const pawn = lastMove("d4 d5 c4 e6 Nc3 Nf6 cxd5 exd5");
+    expect(pawn).toMatchObject({ isCentralPawnMove: true, isRecapture: true });
+    expect(guessIdea(pawn)).toBe("recapture");
+    // 4...Nxc6 also develops the knight for the first time.
+    const knight = lastMove("e4 d5 exd5 Nf6 c4 c6 dxc6 Nxc6");
+    expect(knight).toMatchObject({ isDevelopingMove: true, isRecapture: true });
+    expect(guessIdea(knight)).toBe("recapture");
   });
 
   it("does not call a capture that attacks a piece a tempo move", () => {
