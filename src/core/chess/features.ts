@@ -105,6 +105,7 @@ export function describeMove(move: AppliedMove, history: readonly AppliedMove[])
   const rank = Number(move.to[1]);
   const previous = history[history.length - 1];
   const isPawnMove = move.piece === "p";
+  const isRepeatMove = movedBefore(move, history);
   return {
     piece: move.piece,
     pieceName: PIECE_NAMES[move.piece],
@@ -116,17 +117,25 @@ export function describeMove(move: AppliedMove, history: readonly AppliedMove[])
     castle: move.castle,
     isPawnMove,
     isCentralPawnMove: isPawnMove && "cdef".includes(move.to[0]) && rank >= 3 && rank <= 6,
-    isDevelopingMove: (move.piece === "n" || move.piece === "b") && (HOME_SQUARES[code][move.piece] ?? []).includes(move.from),
+    // Only the first time: a knight that went back home and comes out again is not developing.
+    isDevelopingMove: (move.piece === "n" || move.piece === "b") && (HOME_SQUARES[code][move.piece] ?? []).includes(move.from) && !isRepeatMove,
     isFianchetto: FIANCHETTO_PAWN_MOVES.has(move.uci) || (move.piece === "b" && FIANCHETTO_BISHOP_SQUARES.has(move.to)),
     isQueenMove: move.piece === "q",
     isKingMove: move.piece === "k",
     isRecapture: move.captured !== null && previous !== undefined && previous.captured !== null && previous.to === move.to,
-    isRepeatMove: movedBefore(move, history),
+    isRepeatMove,
     attacks: move.castle ? [] : attackedPieces(move)
   };
 }
 
-/** The most likely idea of a move, for a generic first hint. */
+/**
+ * The most likely idea of a move, for a generic first hint. Checked in this order: castling →
+ * king-safety, recapture → recapture, developing move or fianchetto → development, central pawn
+ * move → centre, a non-capture that attacks a piece → tempo, other pawn move → flank, else
+ * activity. Recapture deliberately comes before development and centre (DESIGN.md lists it after
+ * them): a knight or central pawn that takes back is above all winning the material back, and
+ * that is the hint that helps.
+ */
 export function guessIdea(features: MoveFeatures): Idea {
   if (features.castle) {
     return "king-safety";

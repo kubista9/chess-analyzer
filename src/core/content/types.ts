@@ -97,7 +97,11 @@ export interface Catalog {
   lines: Line[];
   chapterById: Map<string, Chapter>;
   lineById: Map<string, Line>;
-  /** Notes by `${epdBefore}|${uci}` (the first chapter in order wins on a duplicate). */
+  /**
+   * Notes by noteKey(side, epdBefore, uci), side being the side of the chapter that wrote the note:
+   * a note speaks to that side's player ("your knight"), so each side has its own notes (the first
+   * chapter in order wins on a duplicate within a side). Look notes up with noteFor.
+   */
   notes: Map<string, CompiledNote>;
   /** Problems found while compiling; lines with errors are left out of `lines`. */
   issues: ContentIssue[];
@@ -161,7 +165,12 @@ export function posKey(side: Color, epd: string): string {
   return `${side}|${epd}`;
 }
 
-/** Index key for notes and edges. */
+/** Index key for a move played from a position (edges, user moves). */
 export function moveKey(epdBefore: string, uci: string): string {
   return `${epdBefore}|${uci}`;
+}
+
+/** Index key of Catalog.notes: the note that `side`'s chapters give on a move. */
+export function noteKey(side: Color, epdBefore: string, uci: string): string {
+  return `${side}|${moveKey(epdBefore, uci)}`;
 }

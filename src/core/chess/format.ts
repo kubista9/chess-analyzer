@@ -37,9 +37,9 @@ const RESULT_TOKENS = new Set(["1-0", "0-1", "1/2-1/2", "*"]);
 
 /**
  * The SAN tokens of a movetext such as "1.c4 e5 2.Nc3 Nf6", "1. c4 e5 2. Nc3" or "1...e5 2.Nf3".
- * Move numbers, comments ({...} and ;...), NAGs ($1), annotation glyphs (!, ?) and a result token
- * are dropped. Variations in parentheses are skipped (only the main line is read). The tokens are
- * not checked for legality here: replay them with replayMoves.
+ * Move numbers, comments ({...} and ;...), NAGs ($1), annotation glyphs (!, ?), "e.p." and a
+ * result token are dropped. Variations in parentheses are skipped (only the main line is read).
+ * The tokens are not checked for legality here: replay them with replayMoves.
  */
 export function parseMovetext(text: string): string[] {
   const withoutComments = text.replace(/\{[^}]*\}/g, " ").replace(/;[^\n]*/g, " ");
@@ -58,12 +58,13 @@ export function parseMovetext(text: string): string[] {
   }
   const sans: string[] = [];
   for (const raw of main.split(/\s+/)) {
-    if (!raw || RESULT_TOKENS.has(raw) || /^\$\d+$/.test(raw)) {
+    if (!raw || RESULT_TOKENS.has(raw) || /^\$\d+$/.test(raw) || raw === "e.p.") {
       continue;
     }
     // "1.c4" -> "c4", "1...e5" -> "e5", "12." -> "".
     const token = cleanSan(raw.replace(/^\d+\.+/, ""));
-    if (token) {
+    // A bare "..." or "…" stands for Black's move number in "12. ... Nf6".
+    if (token && !/^[.…]+$/u.test(token)) {
       sans.push(token);
     }
   }
