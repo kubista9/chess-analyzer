@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 
-/** The current time, refreshed every `intervalMs`, for "synced 5 min ago" labels. */
+/** The current time, refreshed every `intervalMs`, so "due now" counts and day labels stay current. */
 export function useNow(intervalMs = 30_000): number {
   const [now, setNow] = useState(() => Date.now());
   useEffect(() => {

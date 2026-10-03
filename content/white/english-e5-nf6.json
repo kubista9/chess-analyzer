@@ -1,0 +1,850 @@
+{
+  "schemaVersion": 1,
+  "id": "white-english-e5-nf6",
+  "side": "white",
+  "group": "English Opening",
+  "family": "English Opening",
+  "chapter": "1...e5 2.Nc3 Nf6: the Reversed Sicilian",
+  "order": 10,
+  "summary": "Black meets 1.c4 with 1...e5 and 2...Nf6. You keep the same set-up every time: knight on c3, pawn on g3, bishop on g2, then castling. The bishop and the c3 knight both aim at d5, and that one idea answers most of Black's plans: the Reversed Dragon with 3...d5, the Smyslov System with 3...Bb4, the Keres Variation with 3...c6 and the active 3...Bc5.",
+  "ideas": [
+    "This is a Sicilian with the colours reversed and an extra move for you. Black has the central pawn on e5; you play against it from the flanks and open the centre only when your pieces are ready.",
+    "Your bishop on g2 and knight on c3 both watch d5. Whenever a black piece lands there, count its attackers and defenders.",
+    "When Black plays ...d5 against you, you take with the c-pawn. The c-file opens and the g2 bishop's long diagonal gets clearer.",
+    "If Black exchanges on c3, recapture with the b-pawn. The half-open b-file and the g2 bishop then press on b7, and the c3 pawn supports a later d4.",
+    "Castle early and leave the f2, g3 and h2 pawns where they are. The fianchetto is your king's shelter.",
+    "If Black leaves these lines, fall back on principles: develop each minor piece once (Nf3 or Ne2, Bg2, the c1 bishop last), castle, then challenge the centre with a pawn."
+  ],
+  "source": {
+    "kind": "editorial",
+    "references": [
+      "Opening principles: Chess Opening Fundamentals (I. Smirnov), ideas only, no text reproduced",
+      "Names and ECO codes: lichess chess-openings (CC0)",
+      "Move checks: Stockfish 18 (local), depth 14"
+    ]
+  },
+  "review": {
+    "status": "draft",
+    "confidence": "medium",
+    "checkedWith": ["chess.js legality", "Stockfish 18 depth 14", "independent review"],
+    "date": "2026-10-02",
+    "notes": "Written and engine-checked by an AI editor; not yet reviewed by a human."
+  },
+  "notes": {
+    "1.c4": {
+      "idea": "centre",
+      "hint": "Start by controlling the centre from the side, keeping your central pawns flexible.",
+      "narrow": "A queenside pawn moves two squares and watches d5 and b5.",
+      "why": "The c-pawn controls d5 and b5. Your d- and e-pawns stay at home for now, so you can decide later whether they go one square or two.",
+      "fits": "This is the English Opening. You fight for the centre with a flank pawn and pieces, in a set-up you will meet in every line: Nc3, g3, Bg2 and castling.",
+      "avoids": "Setting up a fixed pawn centre on move one that your opponent can aim at straight away."
+    },
+    "1.c4 e5": {
+      "why": "Black takes a central square at once. With the colours reversed this is a Sicilian Defence, and you are the side playing the Sicilian with an extra move."
+    },
+    "1.c4 e5 2.Nc3": {
+      "idea": "development",
+      "hint": "Develop a knight towards the centre, on the side where you have already started.",
+      "narrow": "Your queen's knight; it adds a second guard to the light central square your first pawn watches.",
+      "why": "The knight controls d5 and e4 and makes it harder for Black to play ...d5. It develops on its best square straight away.",
+      "fits": "In the Nc3, g3, Bg2 set-up this knight and the fianchettoed bishop work together on d5, the key square of the whole system.",
+      "avoids": "Starting with the king's knight and allowing an early ...e4 that kicks it. The queen's knight is useful against every Black set-up, so it comes out first.",
+      "alternatives": [
+        {
+          "san": "g3",
+          "note": "Also sound: the fianchetto first. It usually transposes after Nc3, but it allows Black an immediate ...d5.",
+          "transposes": true
+        }
+      ]
+    },
+    "1.c4 e5 2.Nc3 Nf6": {
+      "why": "Black develops the king's knight. It watches d5 and e4 and prepares ...d5, ...Bb4, ...Bc5 or ...c6 followed by ...d5."
+    },
+    "1.c4 e5 2.Nc3 Nf6 3.g3": {
+      "idea": "development",
+      "hint": "Prepare to develop your king's bishop on the long light-squared diagonal.",
+      "narrow": "A kingside pawn moves one square to make room for the bishop.",
+      "why": "It opens the long diagonal for the bishop, which will hit d5, e4 and b7. It also starts building the shelter for your king.",
+      "fits": "This is the backbone of your English: g3, Bg2, then Nf3 or Ne2 and castling, with the bishop and the c3 knight both aiming at d5.",
+      "avoids": "Opening the centre with d4 or e4 before your pieces are out, which only gives Black's quick development targets.",
+      "alternatives": [
+        {
+          "san": "Nf3",
+          "note": "Sound, and after ...Nc6 it becomes the Four Knights. It allows ...e4 hitting the knight and leads away from the g3 lines in this course."
+        }
+      ]
+    },
+
+    "1.c4 e5 2.Nc3 Nf6 3.g3 d5": {
+      "why": "The Reversed Dragon. Black grabs the centre with two pawns, accepting that the d-pawn will be exchanged and that a knight will stand on d5, where your pieces can attack it."
+    },
+    "1.c4 e5 2.Nc3 Nf6 3.g3 d5 4.cxd5": {
+      "idea": "centre",
+      "hint": "Exchange a flank pawn for one of Black's central pawns.",
+      "narrow": "Your most advanced pawn can make a capture.",
+      "why": "You swap your c-pawn for Black's d-pawn. You keep two central pawns against Black's one, the c-file opens, and Black's recapturing knight becomes a target.",
+      "fits": "Against ...d5 in the Reversed Sicilian you always take: you get an Open Sicilian with an extra move, and the long diagonal is yours.",
+      "avoids": "Letting Black keep two pawns side by side in the centre. After ...d4 or ...dxc4 Black gains space or time.",
+      "mistakes": [
+        {
+          "san": "Nxd5",
+          "note": "After ...Nxd5 cxd5 Qxd5 the black queen is centralised and hits your rook on h1, so Black gains time.",
+          "severity": "inaccuracy"
+        }
+      ]
+    },
+    "1.c4 e5 2.Nc3 Nf6 3.g3 d5 4.cxd5 Nxd5": {
+      "why": "Black recaptures with the knight. It is centralised but only the queen defends it."
+    },
+    "1.c4 e5 2.Nc3 Nf6 3.g3 d5 4.cxd5 Nxd5 5.Bg2": {
+      "idea": "tempo",
+      "hint": "Develop with a threat: add a second attacker to the black piece in the middle of the board.",
+      "narrow": "Your king's bishop finishes the fianchetto.",
+      "why": "The bishop develops onto the long diagonal and attacks the d5 knight a second time. Black must spend a move on it: retreat, exchange or defend.",
+      "fits": "This is the point of the g3 set-up: the bishop and the c3 knight put immediate pressure on d5.",
+      "avoids": "Exchanging on d5 yourself. After Nxd5 Qxd5 the black queen hits your rook on h1 and gains time.",
+      "alternatives": [
+        {
+          "san": "Nf3",
+          "note": "Also good. After ...Nc6 and Bg2 it usually reaches the same positions.",
+          "transposes": true
+        }
+      ],
+      "mistakes": [
+        {
+          "san": "Nxd5",
+          "note": "Swaps your best-placed piece and lets the black queen come to d5 with tempo on your h1 rook."
+        }
+      ]
+    },
+    "1.c4 e5 2.Nc3 Nf6 3.g3 d5 4.cxd5 Nxd5 5.Bg2 Nb6": {
+      "why": "The most common retreat. On b6 the knight is safe from your bishop and still watches c4 and d5, and Black keeps the pieces on the board."
+    },
+    "1.c4 e5 2.Nc3 Nf6 3.g3 d5 4.cxd5 Nxd5 5.Bg2 Nb6 6.Nf3": {
+      "idea": "development",
+      "hint": "Develop your remaining kingside piece with pressure on Black's central pawn.",
+      "narrow": "Your king's knight.",
+      "why": "The knight attacks e5 and clears the way for your king. Black usually defends with ...Nc6.",
+      "fits": "The knight belongs on f3 here: Black's knight has left d5, so there is no ...e4 trick, and the knight hits e5 straight away.",
+      "avoids": "Starting queenside play while your king is still in the centre.",
+      "alternatives": [
+        { "san": "d3", "note": "Sound and flexible; the knight comes to f3 next anyway." },
+        { "san": "a3", "note": "Prepares b4 at once. Also good, and it usually transposes after Nf3." }
+      ]
+    },
+    "1.c4 e5 2.Nc3 Nf6 3.g3 d5 4.cxd5 Nxd5 5.Bg2 Nb6 6.Nf3 Nc6": {
+      "why": "Black defends e5 and develops. Both sides now finish with bishop moves and castling."
+    },
+    "1.c4 e5 2.Nc3 Nf6 3.g3 d5 4.cxd5 Nxd5 5.Bg2 Nb6 6.Nf3 Nc6 7.O-O": {
+      "idea": "king-safety",
+      "hint": "Put your king in safety before the queenside play begins.",
+      "narrow": "Your king goes to the kingside, behind the fianchetto.",
+      "why": "The king is safe behind the f2, g3 and h2 pawns and the bishop, and the rook on f1 can later join the game.",
+      "fits": "In the fianchetto set-up the king lives behind the g2 bishop. Keep the pawns in front of it unmoved.",
+      "avoids": "Leaving the king on e1, where tactics with ...Bb4 or on the e-file are much more dangerous.",
+      "alternatives": [
+        { "san": "d3", "note": "Also sound; you will castle next move." },
+        { "san": "a3", "note": "Prepares b4 straight away; good as well." }
+      ]
+    },
+    "1.c4 e5 2.Nc3 Nf6 3.g3 d5 4.cxd5 Nxd5 5.Bg2 Nb6 6.Nf3 Nc6 7.O-O Be7": {
+      "why": "Black develops quietly and prepares to castle. On e7 the bishop is safe from your knights and pawns."
+    },
+    "1.c4 e5 2.Nc3 Nf6 3.g3 d5 4.cxd5 Nxd5 5.Bg2 Nb6 6.Nf3 Nc6 7.O-O Be7 8.d3": {
+      "idea": "centre",
+      "hint": "Support your position in the centre with a modest pawn move that also frees your other bishop.",
+      "narrow": "A central pawn moves one square.",
+      "why": "The pawn covers c4 and e4, so Black's knights cannot settle there, and it opens the diagonal of your dark-squared bishop.",
+      "fits": "Like a Sicilian player you keep the centre compact and do not hurry with d4. Your play comes on the queenside.",
+      "avoids": "An early d4, which exchanges your central pawn and frees Black's game.",
+      "alternatives": [
+        { "san": "a3", "note": "The other main move. The d-pawn can move a turn later." },
+        { "san": "b3", "note": "Sound: the bishop goes to b2 and hits e5." }
+      ]
+    },
+    "1.c4 e5 2.Nc3 Nf6 3.g3 d5 4.cxd5 Nxd5 5.Bg2 Nb6 6.Nf3 Nc6 7.O-O Be7 8.d3 O-O": {
+      "why": "Black completes development and hopes for ...Be6 with ...f5 or ...a5, slowing your queenside play."
+    },
+    "1.c4 e5 2.Nc3 Nf6 3.g3 d5 4.cxd5 Nxd5 5.Bg2 Nb6 6.Nf3 Nc6 7.O-O Be7 8.d3 O-O 9.a3": {
+      "idea": "flank",
+      "hint": "Prepare a pawn advance on the wing where your pieces already point.",
+      "narrow": "A rook's pawn on the queenside moves one square to support its neighbour.",
+      "why": "It prepares b4 and takes the b4 square away from Black's knight and bishop. After b4 the b-pawn can chase the c6 knight with b5.",
+      "fits": "This is the Reversed Sicilian plan: queenside expansion with a3, b4 and b5, helped from afar by the g2 bishop.",
+      "avoids": "Pushing b4 without preparation, so that the pawn can simply be taken.",
+      "alternatives": [
+        { "san": "Be3", "note": "Common and sound: the bishop develops and eyes the b6 knight. You can still play a3 and b4 later." },
+        { "san": "Re1", "note": "Also played; the rook supports a later e3 or e4." }
+      ]
+    },
+    "1.c4 e5 2.Nc3 Nf6 3.g3 d5 4.cxd5 Nxd5 5.Bg2 Nb6 6.Nf3 Nc6 7.O-O Be7 8.d3 O-O 9.a3 Be6": {
+      "why": "Black develops the last minor piece, controls c4 and d5 and prepares ...Nd4 or ...f5."
+    },
+    "1.c4 e5 2.Nc3 Nf6 3.g3 d5 4.cxd5 Nxd5 5.Bg2 Nb6 6.Nf3 Nc6 7.O-O Be7 8.d3 O-O 9.a3 Be6 10.b4": {
+      "idea": "flank",
+      "hint": "Carry on with your wing advance and gain space.",
+      "narrow": "The pawn next to the one you just moved goes two squares.",
+      "why": "The pawn gains space and threatens b5, which would drive the c6 knight away from e5 and d4.",
+      "fits": "This is the main plan of the structure: your queenside pawns advance while the g2 bishop supports them along the long diagonal.",
+      "avoids": "Passive moves such as Bd2 that give Black time for ...f5 and play on the kingside.",
+      "alternatives": [
+        { "san": "Be3", "note": "Sound: the bishop develops first and b4 follows." },
+        { "san": "Rb1", "note": "Prepares b4 with the rook behind the pawn; also good." }
+      ]
+    },
+
+    "1.c4 e5 2.Nc3 Nf6 3.g3 d5 4.cxd5 Nxd5 5.Bg2 Nxc3": {
+      "why": "Black exchanges knights instead of retreating. It ends the pressure on d5, but your recapture opens the b-file and strengthens your centre."
+    },
+    "1.c4 e5 2.Nc3 Nf6 3.g3 d5 4.cxd5 Nxd5 5.Bg2 Nxc3 6.bxc3": {
+      "idea": "structure",
+      "hint": "Recapture towards the centre.",
+      "narrow": "Use the pawn that will open a file for your queen's rook.",
+      "why": "The pawn moves towards the centre and supports a later d4. The b-file opens for your rook against b7.",
+      "fits": "The doubled c-pawns are healthy here: they control d4 and b4, and the half-open b-file plus the g2 bishop press on Black's queenside.",
+      "avoids": "Recapturing with the d-pawn, which allows a queen exchange and gives up the central pawn you need for d4.",
+      "mistakes": [
+        {
+          "san": "dxc3",
+          "note": "After ...Qxd1+ Kxd1 your king has lost the right to castle and Black has an easy game.",
+          "severity": "inaccuracy"
+        }
+      ]
+    },
+    "1.c4 e5 2.Nc3 Nf6 3.g3 d5 4.cxd5 Nxd5 5.Bg2 Nxc3 6.bxc3 Bd6": {
+      "why": "Black defends e5 with the bishop and prepares to castle."
+    },
+    "1.c4 e5 2.Nc3 Nf6 3.g3 d5 4.cxd5 Nxd5 5.Bg2 Nxc3 6.bxc3 Bd6 7.Nf3": {
+      "idea": "development",
+      "hint": "Develop with pressure on Black's central pawn.",
+      "narrow": "Your king's knight.",
+      "why": "The knight develops, attacks e5 and gets ready for your king to go to safety.",
+      "fits": "With the d5 knight gone there is no ...Nb4 or ...Nf4 trick, so the knight goes to its natural square.",
+      "avoids": "Spending time on pawn moves while Black castles and prepares ...f5.",
+      "alternatives": [
+        { "san": "d3", "note": "Solid; Nf3 and castling follow." },
+        { "san": "Rb1", "note": "Puts the rook on the b-file at once; also good." }
+      ]
+    },
+    "1.c4 e5 2.Nc3 Nf6 3.g3 d5 4.cxd5 Nxd5 5.Bg2 Nxc3 6.bxc3 Bd6 7.Nf3 O-O": {
+      "why": "Black castles and keeps e5 defended by the bishop."
+    },
+    "1.c4 e5 2.Nc3 Nf6 3.g3 d5 4.cxd5 Nxd5 5.Bg2 Nxc3 6.bxc3 Bd6 7.Nf3 O-O 8.O-O": {
+      "idea": "king-safety",
+      "hint": "Make your king safe before you open the centre.",
+      "narrow": "Your king goes to the kingside.",
+      "why": "The king is safe behind the fianchetto and the rook on f1 can join the game.",
+      "fits": "Development first, then the central break: this is the order in all your English lines.",
+      "avoids": "Opening the centre with d4 while your king is still on e1.",
+      "alternatives": [
+        { "san": "d4", "note": "Sound: the central break comes first and you castle next." }
+      ]
+    },
+    "1.c4 e5 2.Nc3 Nf6 3.g3 d5 4.cxd5 Nxd5 5.Bg2 Nxc3 6.bxc3 Bd6 7.Nf3 O-O 8.O-O Nc6": {
+      "why": "Black develops and adds a second defender to e5."
+    },
+    "1.c4 e5 2.Nc3 Nf6 3.g3 d5 4.cxd5 Nxd5 5.Bg2 Nxc3 6.bxc3 Bd6 7.Nf3 O-O 8.O-O Nc6 9.Rb1": {
+      "idea": "activity",
+      "hint": "Bring a rook to the open line your earlier recapture created.",
+      "narrow": "Your queen's rook moves along the back rank.",
+      "why": "The rook presses on b7, so Black must keep a piece busy defending it, and the c8 bishop is tied down.",
+      "fits": "This is the reward for recapturing with the b-pawn: the half-open b-file and the g2 bishop both aim at Black's queenside.",
+      "avoids": "Leaving the rook on a1, where it does nothing in this structure.",
+      "alternatives": [
+        { "san": "d4", "note": "The direct central break; also good." },
+        { "san": "d3", "note": "Solid and slower; you can follow with Nd2 and f4 or Rb1." }
+      ]
+    },
+    "1.c4 e5 2.Nc3 Nf6 3.g3 d5 4.cxd5 Nxd5 5.Bg2 Nxc3 6.bxc3 Bd6 7.Nf3 O-O 8.O-O Nc6 9.Rb1 Rb8": {
+      "why": "Black defends b7 with the rook so that the c8 bishop is free to develop."
+    },
+    "1.c4 e5 2.Nc3 Nf6 3.g3 d5 4.cxd5 Nxd5 5.Bg2 Nxc3 6.bxc3 Bd6 7.Nf3 O-O 8.O-O Nc6 9.Rb1 Rb8 10.d4": {
+      "idea": "centre",
+      "hint": "With your pieces out, strike in the centre with a pawn supported by its neighbour.",
+      "narrow": "A central pawn moves two squares.",
+      "why": "The pawn challenges e5. After ...exd4 cxd4 you have two strong central pawns and the c1 bishop's diagonal opens.",
+      "fits": "The c3 pawn exists to support this break. Once development is complete, open the centre for your bishops.",
+      "avoids": "Waiting so long that Black regroups with ...f5 and ...e4 and takes over the centre.",
+      "alternatives": [
+        { "san": "Qc2", "note": "A useful waiting move; d4 comes next." },
+        { "san": "Re1", "note": "Prepares e4 or d4 with the rook on the e-file; sound." }
+      ]
+    },
+
+    "1.c4 e5 2.Nc3 Nf6 3.g3 Bb4": {
+      "why": "The Smyslov System. Black plans to take on c3 to double your pawns and weaken your hold on d5 and e4."
+    },
+    "1.c4 e5 2.Nc3 Nf6 3.g3 Bb4 4.Bg2": {
+      "idea": "development",
+      "hint": "Continue your normal development; the bishop on your knight is not a real threat yet.",
+      "narrow": "Your king's bishop completes the fianchetto.",
+      "why": "The bishop takes the long diagonal. If Black takes on c3, you recapture with the b-pawn, and the bishop plus the half-open b-file make up for the doubled pawns.",
+      "fits": "You keep the standard set-up and add the e-pawn and the king's knight next.",
+      "avoids": "Spending a move on a3 or Qc2 just to avoid doubled pawns; here they are not a weakness, but the lost time would be.",
+      "alternatives": [
+        { "san": "Nd5", "note": "Sound: the knight hits the bishop and offers an exchange on d5, avoiding doubled pawns." }
+      ]
+    },
+    "1.c4 e5 2.Nc3 Nf6 3.g3 Bb4 4.Bg2 O-O": {
+      "why": "Black castles first and keeps the choice between ...Bxc3, ...Re8 and ...c6 with ...d5."
+    },
+    "1.c4 e5 2.Nc3 Nf6 3.g3 Bb4 4.Bg2 O-O 5.e4": {
+      "idea": "centre",
+      "hint": "Take space in the centre so that Black's freeing pawn break is harder to achieve.",
+      "narrow": "Your king's pawn moves two squares.",
+      "why": "The pawn takes space, covers d5 and f5 and makes ...d5 harder. Your king's knight will come to e2, where it does not block the bishop.",
+      "fits": "Against ...Bb4 the pawn keeps a firm grip on d5 even if the c3 knight is exchanged.",
+      "avoids": "Allowing ...e4 with gain of time, which happens if your knight goes to f3 too early.",
+      "alternatives": [
+        { "san": "Nf3", "note": "The other main line. After ...Re8, castling and ...e4 the knight goes to d4. Sound, but more theory." },
+        { "san": "d3", "note": "Solid; you can follow with e4 or Nf3." }
+      ]
+    },
+    "1.c4 e5 2.Nc3 Nf6 3.g3 Bb4 4.Bg2 O-O 5.e4 Bxc3": {
+      "why": "Black gives up the bishop to double your pawns before you can protect the knight."
+    },
+    "1.c4 e5 2.Nc3 Nf6 3.g3 Bb4 4.Bg2 O-O 5.e4 Bxc3 6.bxc3": {
+      "idea": "structure",
+      "hint": "Recapture so that your pawns point towards the centre.",
+      "narrow": "Use the pawn that opens a file for your queen's rook.",
+      "why": "The pawn supports a later d4 and the b-file opens for your rook. You also keep the bishop pair.",
+      "fits": "With two bishops you want the position to open later; the c3 pawn and the d-pawn will do that with d4.",
+      "avoids": "Recapturing with the d-pawn, which gives up control of d4 and leaves you without a central pawn break.",
+      "alternatives": [
+        { "san": "dxc3", "note": "Playable: it opens the diagonal for the c1 bishop, but your central control is weaker." }
+      ]
+    },
+    "1.c4 e5 2.Nc3 Nf6 3.g3 Bb4 4.Bg2 O-O 5.e4 Bxc3 6.bxc3 c6": {
+      "why": "Black prepares ...d5 to break open the centre before you have castled."
+    },
+    "1.c4 e5 2.Nc3 Nf6 3.g3 Bb4 4.Bg2 O-O 5.e4 Bxc3 6.bxc3 c6 7.Ne2": {
+      "idea": "development",
+      "hint": "Develop your last kingside piece where it blocks neither your bishop nor your f-pawn.",
+      "narrow": "Your king's knight, but not to its usual square.",
+      "why": "On e2 the knight supports d4 and f4, keeps the long diagonal open and lets you castle next move.",
+      "fits": "With a pawn on e4 the knight belongs on e2 in this system: the g2 bishop stays free and f4 remains possible.",
+      "avoids": "Nf3, which blocks the g2 bishop and the f-pawn.",
+      "alternatives": [
+        { "san": "d3", "note": "Solid: it protects e4 and keeps the centre closed, at the cost of a slower position." }
+      ]
+    },
+    "1.c4 e5 2.Nc3 Nf6 3.g3 Bb4 4.Bg2 O-O 5.e4 Bxc3 6.bxc3 c6 7.Ne2 d5": {
+      "why": "Black breaks in the centre at once, before you can castle and support the e4 pawn."
+    },
+    "1.c4 e5 2.Nc3 Nf6 3.g3 Bb4 4.Bg2 O-O 5.e4 Bxc3 6.bxc3 c6 7.Ne2 d5 8.cxd5": {
+      "idea": "centre",
+      "hint": "Exchange pawns so that Black cannot build a strong pawn centre.",
+      "narrow": "Your front c-pawn makes a capture.",
+      "why": "You remove one of Black's central pawns. After ...cxd5 and exd5 Black's centre has gone and your bishop sees the whole long diagonal.",
+      "fits": "Your rule against ...d5: capture with the c-pawn and open the diagonal for the g2 bishop.",
+      "avoids": "Pushing e5 or ignoring the tension, which lets Black take on e4 or c4 and keep a big centre.",
+      "alternatives": [
+        { "san": "exd5", "note": "Exchanges in the other order and reaches the same position.", "transposes": true }
+      ]
+    },
+    "1.c4 e5 2.Nc3 Nf6 3.g3 Bb4 4.Bg2 O-O 5.e4 Bxc3 6.bxc3 c6 7.Ne2 d5 8.cxd5 cxd5": {
+      "why": "Black recaptures with the pawn and now attacks e4."
+    },
+    "1.c4 e5 2.Nc3 Nf6 3.g3 Bb4 4.Bg2 O-O 5.e4 Bxc3 6.bxc3 c6 7.Ne2 d5 8.cxd5 cxd5 9.exd5": {
+      "idea": "recapture",
+      "hint": "Take back the material in the centre.",
+      "narrow": "A central pawn makes the capture.",
+      "why": "You exchange your e-pawn for Black's last central pawn. Black's knight will recapture, and the long diagonal is wide open for your bishop.",
+      "fits": "With the centre open, the bishop pair counts for more than your split queenside pawns.",
+      "avoids": "Leaving the tension, when ...dxe4 wins a pawn or ...d4 gives Black a big centre and blocks your g2 bishop.",
+      "mistakes": [
+        {
+          "san": "O-O",
+          "note": "Natural but too slow: ...dxe4 wins your e-pawn, because Black's pawn and knight both attack it."
+        }
+      ]
+    },
+    "1.c4 e5 2.Nc3 Nf6 3.g3 Bb4 4.Bg2 O-O 5.e4 Bxc3 6.bxc3 c6 7.Ne2 d5 8.cxd5 cxd5 9.exd5 Nxd5": {
+      "why": "The knight recaptures and stands well in the centre, but it can become a target for your bishop and queen."
+    },
+    "1.c4 e5 2.Nc3 Nf6 3.g3 Bb4 4.Bg2 O-O 5.e4 Bxc3 6.bxc3 c6 7.Ne2 d5 8.cxd5 cxd5 9.exd5 Nxd5 10.O-O": {
+      "idea": "king-safety",
+      "hint": "Get your king out of the centre before you open more lines.",
+      "narrow": "Your king goes to the kingside.",
+      "why": "The king is safe and your rooks are connected sooner. Only then is it time for d4.",
+      "fits": "In this open position the side that finishes development first gets the initiative.",
+      "avoids": "Opening the centre with your king still on e1, where ...Re8 and ...Nc6 quickly cause trouble on the e-file.",
+      "alternatives": [
+        { "san": "d4", "note": "Sharper and sound: after ...exd4 you recapture with the queen and castle next." }
+      ]
+    },
+    "1.c4 e5 2.Nc3 Nf6 3.g3 Bb4 4.Bg2 O-O 5.e4 Bxc3 6.bxc3 c6 7.Ne2 d5 8.cxd5 cxd5 9.exd5 Nxd5 10.O-O Nc6": {
+      "why": "Black develops and adds pressure on d4 and e5, ready for ...Be6 and ...Re8."
+    },
+    "1.c4 e5 2.Nc3 Nf6 3.g3 Bb4 4.Bg2 O-O 5.e4 Bxc3 6.bxc3 c6 7.Ne2 d5 8.cxd5 cxd5 9.exd5 Nxd5 10.O-O Nc6 11.d4": {
+      "idea": "centre",
+      "hint": "Strike in the centre to open lines for your two bishops.",
+      "narrow": "A central pawn moves two squares.",
+      "why": "The pawn challenges e5. After ...exd4 cxd4 you have an isolated d-pawn, but the two bishops, the open files and the pressure on the d5 knight give you active play.",
+      "fits": "This break is why you recaptured with the b-pawn: the c3 pawn supports d4.",
+      "avoids": "A passive set-up with d3, after which Black's knights settle in the centre and your c3 pawn becomes a target.",
+      "alternatives": [
+        { "san": "Re1", "note": "Sound: the rook comes to the e-file first and d4 follows." },
+        { "san": "h3", "note": "Stops ...Bg4 before you play d4; also good." }
+      ]
+    },
+
+    "1.c4 e5 2.Nc3 Nf6 3.g3 c6": {
+      "why": "The Keres Variation. Black prepares ...d5 so that, after an exchange on d5, the c-pawn can recapture and Black keeps two central pawns."
+    },
+    "1.c4 e5 2.Nc3 Nf6 3.g3 c6 4.d4": {
+      "idea": "centre",
+      "hint": "Hit Black's centre with a pawn before Black's planned break arrives.",
+      "narrow": "A central pawn moves two squares.",
+      "why": "You challenge e5 at once. If Black takes, your queen recaptures in the centre; if Black pushes ...e4, the pawn becomes a target.",
+      "fits": "Here capturing on d5 later would help Black recapture with the c-pawn and keep a full centre, so you strike first. Your g2 bishop will follow next.",
+      "avoids": "Allowing ...d5 with a full black pawn centre, where taking on d5 only helps Black.",
+      "alternatives": [
+        { "san": "Nf3", "note": "The main theory move: after ...e4 the knight goes to d4. Sound but sharper." },
+        { "san": "Bg2", "note": "Natural, but after ...d5 you should not take on d5; the engine prefers d4 then." }
+      ]
+    },
+    "1.c4 e5 2.Nc3 Nf6 3.g3 c6 4.d4 exd4": {
+      "why": "Black exchanges and plans ...d5, using the c6 pawn as support and gaining time on your queen."
+    },
+    "1.c4 e5 2.Nc3 Nf6 3.g3 c6 4.d4 exd4 5.Qxd4": {
+      "idea": "recapture",
+      "hint": "Win back the pawn straight away.",
+      "narrow": "The queen makes the recapture.",
+      "why": "The queen regains the pawn and stands strongly in the centre. It will be hit later by ...Nc6 or ...Na6 and ...Nb4, so plan good squares for it.",
+      "fits": "An early queen move needs a concrete reason. Here it is a recapture, and no other piece can win the pawn back.",
+      "avoids": "Leaving the pawn on d4 and playing a gambit you do not need."
+    },
+    "1.c4 e5 2.Nc3 Nf6 3.g3 c6 4.d4 exd4 5.Qxd4 d5": {
+      "why": "Black strikes in the centre, threatening ...dxc4, and plans ...Be7 and castling."
+    },
+    "1.c4 e5 2.Nc3 Nf6 3.g3 c6 4.d4 exd4 5.Qxd4 d5 6.Bg2": {
+      "idea": "development",
+      "hint": "Develop the piece that pressures Black's central pawn from a distance.",
+      "narrow": "Your king's bishop.",
+      "why": "The bishop develops onto the long diagonal and adds pressure on d5.",
+      "fits": "The fianchettoed bishop is your best piece against a black pawn on d5.",
+      "avoids": "Taking on d5 straight away, which lets Black develop quickly with gain of time on your queen.",
+      "alternatives": [
+        { "san": "Nf3", "note": "Also good: the knight first, the bishop next." }
+      ]
+    },
+    "1.c4 e5 2.Nc3 Nf6 3.g3 c6 4.d4 exd4 5.Qxd4 d5 6.Bg2 Be7": {
+      "why": "Black develops and prepares to castle, hoping for ...dxc4 or ...c5 to gain time on your queen."
+    },
+    "1.c4 e5 2.Nc3 Nf6 3.g3 c6 4.d4 exd4 5.Qxd4 d5 6.Bg2 Be7 7.cxd5": {
+      "idea": "structure",
+      "hint": "Choose the pawn structure: exchange in the centre now, while Black has to recapture with a pawn.",
+      "narrow": "Your c-pawn makes a capture.",
+      "why": "After ...cxd5 Black has an isolated pawn on d5. You blockade it, attack it with pieces and are happy to exchange into an endgame.",
+      "fits": "With the c-pawn exchanged, the g2 bishop and your queen both press on d5, and the c-file is open for your rook.",
+      "avoids": "Slow developing moves here, after which ...c5 or ...dxc4 gains time on your queen.",
+      "mistakes": [
+        { "san": "Bg5", "note": "Natural but wrong: ...dxc4 opens lines and Black's ...Qb6 or ...Qa5 ideas gain time." },
+        { "san": "Nf3", "note": "Allows ...c5 or ...dxc4 with tempo on the queen; take on d5 first." }
+      ]
+    },
+    "1.c4 e5 2.Nc3 Nf6 3.g3 c6 4.d4 exd4 5.Qxd4 d5 6.Bg2 Be7 7.cxd5 cxd5": {
+      "why": "Black recaptures and has an isolated d-pawn, with free development as compensation."
+    },
+    "1.c4 e5 2.Nc3 Nf6 3.g3 c6 4.d4 exd4 5.Qxd4 d5 6.Bg2 Be7 7.cxd5 cxd5 8.Nf3": {
+      "idea": "development",
+      "hint": "Develop your last kingside piece and prepare to secure your king.",
+      "narrow": "Your king's knight.",
+      "why": "The knight develops, controls d4 and e5 and makes way for your king.",
+      "fits": "Against an isolated pawn you want pieces on the square in front of it; this knight can later go to d4.",
+      "avoids": "Grabbing the pawn when Black gets fast development; simple development is easier to play.",
+      "alternatives": [
+        { "san": "Nxd5", "note": "Wins a pawn after ...Nxd5 Qxd5 or Bxd5, but Black gets active pieces. Sound if you like it." },
+        { "san": "Be3", "note": "Develops and controls d4; also good." }
+      ]
+    },
+    "1.c4 e5 2.Nc3 Nf6 3.g3 c6 4.d4 exd4 5.Qxd4 d5 6.Bg2 Be7 7.cxd5 cxd5 8.Nf3 Nc6": {
+      "why": "Black develops with gain of time on your queen."
+    },
+    "1.c4 e5 2.Nc3 Nf6 3.g3 c6 4.d4 exd4 5.Qxd4 d5 6.Bg2 Be7 7.cxd5 cxd5 8.Nf3 Nc6 9.Qa4": {
+      "idea": "activity",
+      "hint": "Your queen is attacked: move it to a square where it pins a black piece.",
+      "narrow": "The queen goes to the queenside.",
+      "why": "From the side the queen pins the c6 knight against the black king for now and stays out of reach of Black's minor pieces.",
+      "fits": "The queen joins the pressure on c6 and the queenside, while Rd1 and Be3 or Bg5 later add pressure on d5.",
+      "avoids": "Retreating to d1, which loses time and lets Black play ...d4, when the isolated pawn becomes a strength.",
+      "alternatives": [
+        { "san": "Qd3", "note": "Also playable: the queen stays close to d5." }
+      ],
+      "mistakes": [
+        { "san": "Qd1", "note": "Passive: ...d4 drives your knight back and Black's centre comes alive." },
+        { "san": "Qf4", "note": "...d4 hits the knight and your queen gets in the way; Black gains a lot of time." }
+      ]
+    },
+    "1.c4 e5 2.Nc3 Nf6 3.g3 c6 4.d4 exd4 5.Qxd4 d5 6.Bg2 Be7 7.cxd5 cxd5 8.Nf3 Nc6 9.Qa4 O-O": {
+      "why": "Black castles, breaks the pin and is ready for ...Be6, ...Qb6 or ...d4."
+    },
+    "1.c4 e5 2.Nc3 Nf6 3.g3 c6 4.d4 exd4 5.Qxd4 d5 6.Bg2 Be7 7.cxd5 cxd5 8.Nf3 Nc6 9.Qa4 O-O 10.O-O": {
+      "idea": "king-safety",
+      "hint": "Secure your king; your development is then complete apart from the c1 bishop.",
+      "narrow": "Your king goes to the kingside.",
+      "why": "The king is safe. Next the rook comes to d1 and the bishop to e3 or g5 to increase the pressure on d5.",
+      "fits": "Against an isolated pawn: finish development, blockade the square in front of it and pile up on it.",
+      "avoids": "Hunting the d5 pawn with your king still in the centre.",
+      "alternatives": [
+        { "san": "Be3", "note": "Develops first and controls d4; sound." }
+      ]
+    },
+
+    "1.c4 e5 2.Nc3 Nf6 3.g3 Bc5": {
+      "why": "Black puts the bishop on its most active square, aiming at f2 and supporting ...d5 later."
+    },
+    "1.c4 e5 2.Nc3 Nf6 3.g3 Bc5 4.Bg2": {
+      "idea": "development",
+      "hint": "Keep developing; your usual kingside piece comes out.",
+      "narrow": "Your king's bishop.",
+      "why": "The bishop takes the long diagonal. Keep an eye on f2: with the bishop on c5, Black may try ...Ng4.",
+      "fits": "Same set-up as always; the e-pawn and the king's knight follow next.",
+      "avoids": "An early Nf3 that lets ...e4 kick the knight while your bishop is still on f1.",
+      "alternatives": [
+        { "san": "Nf3", "note": "Sound; after ...Nc6 it becomes a Four Knights position." }
+      ]
+    },
+    "1.c4 e5 2.Nc3 Nf6 3.g3 Bc5 4.Bg2 O-O": {
+      "why": "Black castles and prepares ...c6 and ...d5 or ...Re8."
+    },
+    "1.c4 e5 2.Nc3 Nf6 3.g3 Bc5 4.Bg2 O-O 5.e3": {
+      "idea": "prevention",
+      "hint": "Blunt Black's active bishop and prepare a central advance.",
+      "narrow": "A central pawn moves one square.",
+      "why": "The pawn blocks the c5 bishop's diagonal towards f2, controls d4 and f4 and prepares d4 with gain of time on the bishop.",
+      "fits": "Against ...Bc5 the plan e3, Nge2 and d4 is simple and sound, and the knight on e2 keeps the long diagonal open.",
+      "avoids": "Allowing ...Ng4 tricks against f2; with the pawn in the way, f2 is shielded.",
+      "alternatives": [
+        { "san": "Nf3", "note": "Sound: development first." },
+        { "san": "d3", "note": "Solid; the e-pawn can still go to e3 or e4." }
+      ]
+    },
+    "1.c4 e5 2.Nc3 Nf6 3.g3 Bc5 4.Bg2 O-O 5.e3 c6": {
+      "why": "Black prepares ...d5 to claim the centre and keeps the bishop on its active diagonal."
+    },
+    "1.c4 e5 2.Nc3 Nf6 3.g3 Bc5 4.Bg2 O-O 5.e3 c6 6.Nge2": {
+      "idea": "development",
+      "hint": "Develop your king's knight where it supports a central advance and leaves your bishop free.",
+      "narrow": "Your king's knight, but not to its usual square.",
+      "why": "From e2 the knight supports d4 and f4 and keeps the g2 bishop's diagonal open.",
+      "fits": "This knight is part of the e3 and d4 plan; on f3 it would block the bishop and not support the d-pawn.",
+      "avoids": "Nf3, which blocks the g2 bishop and does nothing for the d4 advance.",
+      "alternatives": [
+        { "san": "d4", "note": "Also sound: you gain time on the bishop straight away." }
+      ]
+    },
+    "1.c4 e5 2.Nc3 Nf6 3.g3 Bc5 4.Bg2 O-O 5.e3 c6 6.Nge2 d5": {
+      "why": "Black takes the centre. If you do nothing, ...d4 or ...dxc4 will follow."
+    },
+    "1.c4 e5 2.Nc3 Nf6 3.g3 Bc5 4.Bg2 O-O 5.e3 c6 6.Nge2 d5 7.cxd5": {
+      "idea": "centre",
+      "hint": "Release the central tension on your terms before Black can advance.",
+      "narrow": "Your c-pawn makes a capture.",
+      "why": "You exchange a flank pawn for a central one and open the c-file.",
+      "fits": "Your rule against ...d5: take with the c-pawn, then challenge the remaining central pawn with d4.",
+      "avoids": "Letting Black play ...d4, which cramps your knights.",
+      "alternatives": [
+        { "san": "d4", "note": "Strikes first; also good." }
+      ]
+    },
+    "1.c4 e5 2.Nc3 Nf6 3.g3 Bc5 4.Bg2 O-O 5.e3 c6 6.Nge2 d5 7.cxd5 cxd5": {
+      "why": "Black recaptures with the pawn and keeps two central pawns for the moment."
+    },
+    "1.c4 e5 2.Nc3 Nf6 3.g3 Bc5 4.Bg2 O-O 5.e3 c6 6.Nge2 d5 7.cxd5 cxd5 8.d4": {
+      "idea": "tempo",
+      "hint": "Challenge Black's centre and hit the active bishop at the same time.",
+      "narrow": "A central pawn moves two squares.",
+      "why": "The pawn attacks the c5 bishop and challenges e5. Black has to exchange or move the bishop, and the centre opens when you are ready to castle.",
+      "fits": "This is why you played e3 and Ne2: both support this break.",
+      "avoids": "Letting Black play ...e4 and ...Nc6 with a firm grip on the centre."
+    },
+    "1.c4 e5 2.Nc3 Nf6 3.g3 Bc5 4.Bg2 O-O 5.e3 c6 6.Nge2 d5 7.cxd5 cxd5 8.d4 exd4": {
+      "why": "Black exchanges and opens the e-file."
+    },
+    "1.c4 e5 2.Nc3 Nf6 3.g3 Bc5 4.Bg2 O-O 5.e3 c6 6.Nge2 d5 7.cxd5 cxd5 8.d4 exd4 9.exd4": {
+      "idea": "recapture",
+      "hint": "Win back the pawn and keep a pawn in the centre.",
+      "narrow": "Recapture with a pawn.",
+      "why": "You keep a pawn in the centre and the bishop on c5 is attacked again. Both sides have an isolated d-pawn, but yours is better protected and your pieces are well placed to attack Black's.",
+      "fits": "Your knights on c3 and e2 and the g2 bishop all point at d5, Black's weak point.",
+      "avoids": "Recapturing with the knight, which leaves Black with the only central pawn."
+    },
+    "1.c4 e5 2.Nc3 Nf6 3.g3 Bc5 4.Bg2 O-O 5.e3 c6 6.Nge2 d5 7.cxd5 cxd5 8.d4 exd4 9.exd4 Bb4": {
+      "why": "The bishop escapes with a pin on your c3 knight and may take it to double your pawns."
+    },
+    "1.c4 e5 2.Nc3 Nf6 3.g3 Bc5 4.Bg2 O-O 5.e3 c6 6.Nge2 d5 7.cxd5 cxd5 8.d4 exd4 9.exd4 Bb4 10.O-O": {
+      "idea": "king-safety",
+      "hint": "Make your king safe; the pin on your knight then loses its sting.",
+      "narrow": "Your king goes to the kingside.",
+      "why": "Once the king has left e1 the c3 knight is no longer pinned to it. Next Bg5 and Nf4 add pressure on d5.",
+      "fits": "Finish development, then attack the isolated pawn with pieces.",
+      "avoids": "Spending time on a3 or Qb3 while your king is still in the centre.",
+      "alternatives": [
+        { "san": "Bg5", "note": "Develops with a pin of your own; sound." }
+      ]
+    },
+
+    "1.c4 e5 2.Nc3 Nf6 3.g3 Nc6": {
+      "why": "Black develops the queen's knight and reaches a Four Knights position with g3. The same position arises after 2...Nc6 and is covered in that chapter."
+    },
+    "1.c4 e5 2.Nc3 Nf6 3.g3 Nc6 4.Bg2": {
+      "idea": "development",
+      "hint": "Complete your fianchetto as usual.",
+      "narrow": "Your king's bishop.",
+      "why": "The bishop takes the long diagonal and adds pressure on d5. The position is now the Four Knights with g3 from the 2...Nc6 chapter, so continue from there.",
+      "fits": "The same set-up against every Black move order: knight on c3, bishop on g2, then the king's knight and castling.",
+      "avoids": "Changing plans because the move order is different; the position is the one you already know.",
+      "alternatives": [
+        { "san": "Nf3", "note": "Sound: it becomes the classical Four Knights with g3, a different set of lines." }
+      ]
+    },
+
+    "1.c4 e5 2.Nc3 Nf6 3.g3 d5 4.cxd5 Nxd5 5.Bg2 Be6": {
+      "why": "Black defends the knight with the bishop. The knight stays central, but the bishop on e6 can become a target and Black's king is still in the centre."
+    },
+    "1.c4 e5 2.Nc3 Nf6 3.g3 d5 4.cxd5 Nxd5 5.Bg2 Be6 6.Nf3": {
+      "idea": "development",
+      "hint": "Develop with an attack on Black's central pawn.",
+      "narrow": "Your king's knight.",
+      "why": "The knight attacks e5 and prepares to put your king in safety, so Black must spend another move defending.",
+      "fits": "Fast development is the answer to Black's slow defensive moves.",
+      "avoids": "Slow pawn moves that give Black time to castle and consolidate."
+    },
+    "1.c4 e5 2.Nc3 Nf6 3.g3 d5 4.cxd5 Nxd5 5.Bg2 Be6 6.Nf3 Nc6": {
+      "why": "Black defends e5 and develops. The d5 knight is still held only by pieces and Black's king is on e8."
+    },
+    "1.c4 e5 2.Nc3 Nf6 3.g3 d5 4.cxd5 Nxd5 5.Bg2 Be6 6.Nf3 Nc6 7.O-O": {
+      "idea": "king-safety",
+      "hint": "Secure your king before opening the centre.",
+      "narrow": "Your king goes to the kingside.",
+      "why": "The king is safe and the rook can join the fight. Now the d4 break is in the air.",
+      "fits": "Your king is safe and Black's is not: that is the moment to think about opening lines.",
+      "avoids": "Opening the centre while your own king is also uncastled."
+    },
+    "1.c4 e5 2.Nc3 Nf6 3.g3 d5 4.cxd5 Nxd5 5.Bg2 Be6 6.Nf3 Nc6 7.O-O Be7": {
+      "why": "Black develops and prepares to castle, but has not yet secured the king."
+    },
+    "1.c4 e5 2.Nc3 Nf6 3.g3 d5 4.cxd5 Nxd5 5.Bg2 Be6 6.Nf3 Nc6 7.O-O Be7 8.d4": {
+      "idea": "centre",
+      "hint": "Open the centre while Black's king is still uncastled.",
+      "narrow": "A central pawn moves two squares.",
+      "why": "The pawn attacks e5. After ...exd4 your knight jumps to b5 or recaptures, and your pieces become active against Black's uncastled king and loose knight.",
+      "fits": "With your king safe and Black's not, opening the centre is the principled way to punish slow development.",
+      "avoids": "A quiet d3, which gives Black time to castle and consolidate."
+    },
+
+    "1.c4 e5 2.Nc3 Nf6 3.g3 c6 4.d4 e4": {
+      "why": "Black pushes past your pawn and gains space, but the e4 pawn is defended only by the f6 knight."
+    },
+    "1.c4 e5 2.Nc3 Nf6 3.g3 c6 4.d4 e4 5.Bg5": {
+      "idea": "development",
+      "hint": "Develop with a pin on the piece that defends Black's advanced pawn.",
+      "narrow": "Your queen's bishop.",
+      "why": "The bishop pins the f6 knight to the queen. The knight is the only defender of e4, so the pawn is now in danger.",
+      "fits": "Developing a piece with pressure is better than chasing pawns: your plan is to win or undermine the e4 pawn, later with f3.",
+      "avoids": "Advancing the d-pawn past the e4 pawn, which gives Black's bishop the b4 square and good play.",
+      "alternatives": [
+        { "san": "a3", "note": "Sound: it stops ...Bb4 before you deal with e4." }
+      ]
+    },
+    "1.c4 e5 2.Nc3 Nf6 3.g3 c6 4.d4 e4 5.Bg5 Bb4": {
+      "why": "The best reply: Black pins your c3 knight in turn, so it cannot take on e4."
+    },
+    "1.c4 e5 2.Nc3 Nf6 3.g3 c6 4.d4 e4 5.Bg5 Bb4 6.Qb3": {
+      "idea": "tempo",
+      "hint": "Attack the bishop that pins your knight, and a pawn behind it.",
+      "narrow": "The queen moves to the queenside.",
+      "why": "The queen attacks the b4 bishop and the b7 pawn and defends c3. Black usually exchanges on c3.",
+      "fits": "An early queen move needs a concrete reason: here it breaks the pin with a double attack.",
+      "avoids": "Leaving the pin alone, when Black supports e4 with ...d5 and your c3 knight stays tied down."
+    },
+    "1.c4 e5 2.Nc3 Nf6 3.g3 c6 4.d4 e4 5.Bg5 Bb4 6.Qb3 Bxc3+": {
+      "why": "Black gives up the bishop rather than retreat, keeping the e4 pawn protected."
+    },
+    "1.c4 e5 2.Nc3 Nf6 3.g3 c6 4.d4 e4 5.Bg5 Bb4 6.Qb3 Bxc3+ 7.Qxc3": {
+      "idea": "recapture",
+      "hint": "Recapture and keep your pawns healthy.",
+      "narrow": "Use the queen.",
+      "why": "The queen recaptures, your pawn structure stays intact and you now have the two bishops.",
+      "fits": "Next come the g2 bishop and f3 to undermine e4.",
+      "avoids": "Recapturing with the b-pawn, which doubles your pawns for no reason."
+    },
+    "1.c4 e5 2.Nc3 Nf6 3.g3 c6 4.d4 e4 5.Bg5 Bb4 6.Qb3 Bxc3+ 7.Qxc3 d6": {
+      "why": "Black opens the c8 bishop's diagonal and prepares ...Nbd7 and ...h6."
+    },
+    "1.c4 e5 2.Nc3 Nf6 3.g3 c6 4.d4 e4 5.Bg5 Bb4 6.Qb3 Bxc3+ 7.Qxc3 d6 8.Bg2": {
+      "idea": "development",
+      "hint": "Develop the piece that adds pressure on Black's advanced pawn.",
+      "narrow": "Your king's bishop.",
+      "why": "The bishop develops and attacks e4 a second time. With f3 later you undermine the pawn and open lines for your bishops.",
+      "fits": "Your bishop pair wants open lines; breaking up Black's e4 pawn creates them.",
+      "avoids": "Taking on f6 too early, which gives up a bishop for the knight without a gain.",
+      "alternatives": [
+        { "san": "Bxf6", "note": "Also playable: after ...Qxf6 you continue with Bg2 and f3." }
+      ]
+    }
+  },
+  "lines": [
+    {
+      "id": "eng-e5nf6-dragon-nb6",
+      "name": "Reversed Dragon: 5...Nb6 main line",
+      "eco": "A29",
+      "priority": "main",
+      "moves": "1.c4 e5 2.Nc3 Nf6 3.g3 d5 4.cxd5 Nxd5 5.Bg2 Nb6 6.Nf3 Nc6 7.O-O Be7 8.d3 O-O 9.a3 Be6 10.b4",
+      "description": "The main line of the Reversed Dragon. You exchange on d5, hit the knight with the g2 bishop and, after Black retreats to b6, finish development with Nf3, castling and d3. Then the classic plan starts: a3, b4 and b5 on the queenside, with the bishop on g2 supporting from afar. It is an Open Sicilian with an extra move for you.",
+      "plans": [
+        "Push b5 to drive the c6 knight away from e5 and d4, then play down the c-file against c7.",
+        "Develop the c1 bishop to b2 or e3 and bring a rook to c1 or b1.",
+        "If Black answers with ...Nd4, exchange it on d4 and then press on the queenside.",
+        "If Black plays ...f5, the e5 pawn is less protected: keep pieces aimed at it and do not open the kingside yourself."
+      ],
+      "traps": [
+        {
+          "name": "The loose d5 knight",
+          "moves": "1.c4 e5 2.Nc3 Nf6 3.g3 d5 4.cxd5 Nxd5 5.Bg2 Nc6 6.Nxd5",
+          "side": "for",
+          "description": "After 5.Bg2 the d5 knight is attacked twice and defended once. If Black ignores it, for example with 5...Nc6 or 5...Be7, take it: the queen cannot recapture because your bishop would capture her, so you win a piece."
+        }
+      ],
+      "checkpoints": [
+        { "ply": 19, "fen": "r2q1rk1/ppp1bppp/1nn1b3/4p3/1P6/P1NP1NP1/4PPBP/R1BQ1RK1 b - - 0 10" }
+      ]
+    },
+    {
+      "id": "eng-e5nf6-dragon-nxc3",
+      "name": "Reversed Dragon: 5...Nxc3 6.bxc3",
+      "eco": "A22",
+      "priority": "main",
+      "moves": "1.c4 e5 2.Nc3 Nf6 3.g3 d5 4.cxd5 Nxd5 5.Bg2 Nxc3 6.bxc3 Bd6 7.Nf3 O-O 8.O-O Nc6 9.Rb1 Rb8 10.d4",
+      "description": "Black solves the problem of the d5 knight by exchanging it. You recapture towards the centre with the b-pawn, develop, castle and put a rook on the half-open b-file. Then d4, supported by the c3 pawn, opens the centre for your bishops. You have scored well from this position in your games.",
+      "plans": [
+        "After ...exd4 cxd4 you have two central pawns; follow up with Bb2 or Be3 and Qc2.",
+        "Keep the rook on the b-file against b7; with the g2 bishop it ties Black's queenside down.",
+        "Another plan is Nd2 followed by e4 or f4, but only after your king is safe."
+      ],
+      "traps": [
+        {
+          "name": "The early ...e4",
+          "moves": "1.c4 e5 2.Nc3 Nf6 3.g3 d5 4.cxd5 Nxd5 5.Bg2 Nxc3 6.bxc3 Bd6 7.Nf3 e4 8.Qa4+ Nc6 9.Qxe4+",
+          "side": "for",
+          "description": "If Black pushes the e-pawn to hit your knight, the pawn is loose. The queen check from a4 attacks it along the fourth rank and you win it next move."
+        }
+      ],
+      "checkpoints": [
+        { "ply": 19, "fen": "1rbq1rk1/ppp2ppp/2nb4/4p3/3P4/2P2NP1/P3PPBP/1RBQ1RK1 b - - 0 10" }
+      ]
+    },
+    {
+      "id": "eng-e5nf6-smyslov-e4",
+      "name": "Smyslov System: 4...O-O 5.e4",
+      "eco": "A22",
+      "priority": "main",
+      "moves": "1.c4 e5 2.Nc3 Nf6 3.g3 Bb4 4.Bg2 O-O 5.e4 Bxc3 6.bxc3 c6 7.Ne2 d5 8.cxd5 cxd5 9.exd5 Nxd5 10.O-O Nc6 11.d4",
+      "description": "Against 3...Bb4 you take central space with e4 and develop the king's knight to e2, so the g2 bishop stays open. Black usually takes on c3 and breaks with ...c6 and ...d5. After the exchanges in the centre you castle and play d4: you have the two bishops and open lines in return for the isolated pawn. If Black takes on c3 at once with 4...Bxc3, recapture with the b-pawn and continue with e4 and Ne2 in the same way.",
+      "plans": [
+        "After ...exd4 cxd4 develop the c1 bishop to b2 or a3, where it hits f8, and put rooks on b1 and e1.",
+        "Use the g2 bishop and the queen against the d5 knight and b7.",
+        "If Black blockades on d5, an exchange on d5 can leave Black with the weaker pawns in an endgame."
+      ],
+      "checkpoints": [
+        { "ply": 21, "fen": "r1bq1rk1/pp3ppp/2n5/3np3/3P4/2P3P1/P3NPBP/R1BQ1RK1 b - - 0 11" }
+      ]
+    },
+    {
+      "id": "eng-e5nf6-keres-exd4",
+      "name": "Keres Variation: 4.d4 exd4",
+      "eco": "A23",
+      "priority": "secondary",
+      "moves": "1.c4 e5 2.Nc3 Nf6 3.g3 c6 4.d4 exd4 5.Qxd4 d5 6.Bg2 Be7 7.cxd5 cxd5 8.Nf3 Nc6 9.Qa4 O-O 10.O-O",
+      "description": "3...c6 prepares ...d5 so that Black can recapture with a pawn and keep a big centre. You strike first with 4.d4. After the exchange your queen recaptures in the centre for a concrete reason, then you take on d5 and leave Black with an isolated d-pawn. Your fianchettoed bishop, knight and queen all work against it.",
+      "plans": [
+        "Put a rook on d1 and the c1 bishop on e3 or g5 to pile up on d5.",
+        "Use d4 as a blockade square for a knight; exchanges usually favour you because the isolated pawn gets weaker.",
+        "Watch for ...d4 by Black: keep enough pieces on d4 and the long diagonal to stop it."
+      ],
+      "checkpoints": [
+        { "ply": 19, "fen": "r1bq1rk1/pp2bppp/2n2n2/3p4/Q7/2N2NP1/PP2PPBP/R1B2RK1 b - - 5 10" }
+      ]
+    },
+    {
+      "id": "eng-e5nf6-bc5-e3",
+      "name": "3...Bc5: e3, Nge2 and d4",
+      "eco": "A22",
+      "priority": "secondary",
+      "moves": "1.c4 e5 2.Nc3 Nf6 3.g3 Bc5 4.Bg2 O-O 5.e3 c6 6.Nge2 d5 7.cxd5 cxd5 8.d4 exd4 9.exd4 Bb4 10.O-O",
+      "description": "Black's bishop on c5 aims at f2. You blunt it with e3, develop the king's knight to e2 and then break with d4, gaining time on the bishop. After the exchanges both sides have an isolated d-pawn, but Black's is easier to attack: your knights and the g2 bishop all aim at d5.",
+      "plans": [
+        "Play Bg5 and Nf4 to pile up on d5; a rook on c1 uses the open c-file.",
+        "If Black takes on c3, recapture with the b-pawn: your bishops and the half-open b-file give you good play.",
+        "Exchange pieces that defend d5 and aim for an endgame against the isolated pawn."
+      ],
+      "traps": [
+        {
+          "name": "The ...Ng4 jump",
+          "moves": "1.c4 e5 2.Nc3 Nf6 3.g3 Bc5 4.Bg2 Ng4 5.d3 Nxf2",
+          "side": "against",
+          "description": "With the bishop on c5, ...Ng4 attacks f2 twice. Shield it with e3 at once. After a careless move such as 5.d3, ...Nxf2 forks your queen and rook and the bishop protects the knight."
+        }
+      ],
+      "checkpoints": [
+        { "ply": 19, "fen": "rnbq1rk1/pp3ppp/5n2/3p4/1b1P4/2N3P1/PP2NPBP/R1BQ1RK1 b - - 2 10" }
+      ]
+    },
+    {
+      "id": "eng-e5nf6-nc6-transpose",
+      "name": "3...Nc6: into the Four Knights",
+      "eco": "A22",
+      "priority": "secondary",
+      "moves": "1.c4 e5 2.Nc3 Nf6 3.g3 Nc6 4.Bg2",
+      "description": "Black brings out the second knight, and after 4.Bg2 the position is the same as 1.c4 e5 2.Nc3 Nc6 3.g3 Nf6 4.Bg2 from the 2...Nc6 chapter. Learn the continuations there. This line only shows that the move order changes nothing: complete the fianchetto as usual.",
+      "plans": [
+        "Continue as in the 2...Nc6 chapter: against ...d5 take on d5, otherwise play Nf3 or e3 and Nge2, castle and expand on the queenside."
+      ],
+      "checkpoints": [
+        { "ply": 7, "fen": "r1bqkb1r/pppp1ppp/2n2n2/4p3/2P5/2N3P1/PP1PPPBP/R1BQK1NR b KQkq - 2 4" }
+      ]
+    },
+    {
+      "id": "eng-e5nf6-dragon-be6",
+      "name": "Reversed Dragon: 5...Be6",
+      "eco": "A22",
+      "priority": "sideline",
+      "moves": "1.c4 e5 2.Nc3 Nf6 3.g3 d5 4.cxd5 Nxd5 5.Bg2 Be6 6.Nf3 Nc6 7.O-O Be7 8.d4",
+      "description": "Black keeps the knight on d5 by defending it with the bishop. You develop quickly, castle and open the centre with d4 while Black's king is still on e8. The d5 knight and the e6 bishop become targets for your pieces.",
+      "plans": [
+        "After ...exd4, Nb5 or Nxd4 brings your knights into play with pressure on c7 and the d5 knight.",
+        "After ...Nxc3 bxc3 e4, move the knight to d2 and break with f3 or e3 and c4.",
+        "Keep the g2 bishop on the long diagonal, where it hits b7 and c6."
+      ],
+      "checkpoints": [
+        { "ply": 15, "fen": "r2qk2r/ppp1bppp/2n1b3/3np3/3P4/2N2NP1/PP2PPBP/R1BQ1RK1 b kq - 0 8" }
+      ]
+    },
+    {
+      "id": "eng-e5nf6-keres-e4",
+      "name": "Keres Variation: 4.d4 e4",
+      "eco": "A23",
+      "priority": "sideline",
+      "moves": "1.c4 e5 2.Nc3 Nf6 3.g3 c6 4.d4 e4 5.Bg5 Bb4 6.Qb3 Bxc3+ 7.Qxc3 d6 8.Bg2",
+      "description": "Black answers 4.d4 by pushing past your pawn. The e4 pawn is defended only by the f6 knight, so you pin that knight with Bg5. Black pins back with ...Bb4; your queen breaks the pin, recaptures on c3 and you keep the two bishops. Then Bg2 and f3 undermine the e4 pawn.",
+      "plans": [
+        "Play f3 to exchange the e4 pawn and open the f-file and the long diagonal.",
+        "Develop the king's knight to h3 or e2 so it does not block the f-pawn, then castle.",
+        "Keep the bishop pair: the more the position opens, the stronger it gets."
+      ],
+      "traps": [
+        {
+          "name": "Winning the e4 pawn",
+          "moves": "1.c4 e5 2.Nc3 Nf6 3.g3 c6 4.d4 e4 5.Bg5 Be7 6.Bxf6 Bxf6 7.Nxe4",
+          "side": "for",
+          "description": "If Black does not answer the pin with ...Bb4, take the f6 knight: its defence of e4 disappears and your c3 knight wins the pawn. After 7.Nxe4, meet ...Qa5+ with Qd2."
+        }
+      ],
+      "checkpoints": [
+        { "ply": 15, "fen": "rnbqk2r/pp3ppp/2pp1n2/6B1/2PPp3/2Q3P1/PP2PPBP/R3K1NR b KQkq - 1 8" }
+      ]
+    }
+  ]
+}

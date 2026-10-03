@@ -1,136 +1,113 @@
-// One Leitner scheduler for both drill kinds, with parameters per kind. Pure: every function
+import { hash32 } from "../util/random";
+import { DAY_MS } from "../util/time";
+import type { Outcome, SrsState } from "./types";
+
+// Leitner boxes for spaced review: one schedule for positions and for lines. Pure: every function
 // takes the clock (ms) as an argument, so tests run on a fixed clock.
 //
-// A card starts in box 0 ("new": never shown). It is introduced into box 1, due at once, when
-// the day's new-card slots of its kind allow (a mistake card only after its deep check). A
-// correct first try in box b schedules it `boxesDays[b - 1]` days ahead (±5% fuzz from its id)
-// and moves it to box b + 1 (the last box repeats). A wrong answer sends it back to box 1, due
-// tomorrow, with a lapse. A mistake card retires after RETIRE_STREAK correct answers in a row
-// once its interval reaches RETIRE_MIN_DAYS.
+// An item starts in box 0 ("new": never shown). Its first graded answer introduces it into box 1
+// and then applies the outcome:
+// - good: due BOX_DAYS[b - 1] days later (±FUZZ, fixed per item and box), and up one box (the last
+//   box repeats its interval);
+// - hard: same box, due after half that interval (at least a day);
+// - again: back to box 1, due after LAPSE_DAYS, with one more lapse (the session re-asks it too).
 
-export type DrillKind = "repertoire-line" | "own-mistake";
+/** Days until the next review after a good answer in box b: BOX_DAYS[b - 1] (days). */
+export const BOX_DAYS = [1, 3, 7, 16, 35, 60] as const;
 
-export const DRILL_KINDS: readonly DrillKind[] = ["repertoire-line", "own-mistake"];
+/** The highest box (a box number). */
+export const LAST_BOX = BOX_DAYS.length;
 
-export const DAY_MS = 86_400_000;
-
-export interface KindSchedule {
-  /** The interval after a correct answer in box b (1-based) is boxesDays[b - 1] days. */
-  boxesDays: readonly number[];
-  /** New cards introduced per day. */
-  newPerDay: number;
-  /** null: the card never retires. */
-  retire: { streak: number; minIntervalDays: number } | null;
-}
-
-export const SCHEDULES: Record<DrillKind, KindSchedule> = {
-  "repertoire-line": { boxesDays: [1, 3, 7, 16, 35, 60], newPerDay: 5, retire: null },
-  "own-mistake": { boxesDays: [2, 5, 14, 30, 90], newPerDay: 5, retire: { streak: 3, minIntervalDays: 21 } }
-};
-
-/** A wrong answer is due again after this many days. */
-export const LAPSE_DAYS = 1;
-
-/** The fuzz on intervals: ±5%. */
+/** Interval fuzz as a fraction of the interval: ±5%, deterministic per item id and box. */
 export const FUZZ = 0.05;
 
-export interface SrsState {
-  /** 0 = new (never introduced), else 1..boxesDays.length. */
-  box: number;
-  /** ms; null while new. */
-  dueAt: number | null;
-  introducedAt: number | null;
-  lapses: number;
-  /** Correct answers in a row. */
-  streak: number;
-  reviews: number;
-  lastReviewAt: number | null;
-  /** A learned mistake card (it comes back if the mistake recurs). */
-  retired: boolean;
+/** Days until an item answered "again" is due (days). */
+export const LAPSE_DAYS = 1;
+
+/** The shortest interval after a "hard" answer (days). */
+export const MIN_HARD_DAYS = 1;
+
+/** A new item: box 0, never shown. */
+export function newSrs(): SrsState {
+  return { box: 0, dueAt: null, introducedAt: null, lapses: 0, streak: 0, reviews: 0, lastReviewAt: null };
 }
 
-export function newState(): SrsState {
-  return { box: 0, dueAt: null, introducedAt: null, lapses: 0, streak: 0, reviews: 0, lastReviewAt: null, retired: false };
-}
-
-/** FNV-1a: a small deterministic hash. */
-export function hash32(text: string): number {
-  let value = 0x811c9dc5;
-  for (let index = 0; index < text.length; index += 1) {
-    value ^= text.charCodeAt(index);
-    value = Math.imul(value, 0x01000193);
-  }
-  return value >>> 0;
-}
-
-/** A deterministic factor in [1 - FUZZ, 1 + FUZZ] from the card id and the box. */
+/** A deterministic factor in [1 - FUZZ, 1 + FUZZ] from the item id and the box (FNV-1a). */
 export function fuzzFactor(id: string, box: number): number {
   const unit = hash32(`${id}#${box}`) / 0xffffffff;
   return 1 - FUZZ + unit * 2 * FUZZ;
 }
 
-/** The interval in days after a correct answer in `box`. */
-export function intervalDays(kind: DrillKind, box: number): number {
-  const boxes = SCHEDULES[kind].boxesDays;
-  return boxes[Math.min(Math.max(box, 1), boxes.length) - 1];
-}
-
-/** Puts a new card into box 1, due now. */
-export function introduce(state: SrsState, now: number): SrsState {
-  return { ...state, box: 1, dueAt: now, introducedAt: now, retired: false };
-}
-
-export type Outcome = "correct" | "wrong";
-
-/** The state after a graded answer at `now`. */
-export function grade(kind: DrillKind, id: string, state: SrsState, outcome: Outcome, now: number): SrsState {
-  const base = state.box === 0 ? introduce(state, now) : state;
-  const reviewed = { ...base, reviews: base.reviews + 1, lastReviewAt: now };
-  if (outcome === "wrong") {
-    return { ...reviewed, box: 1, dueAt: now + LAPSE_DAYS * DAY_MS, lapses: base.lapses + 1, streak: 0, retired: false };
+/** Box number clamped to 1..LAST_BOX (anything unreadable counts as box 1). */
+function clampBox(box: number): number {
+  if (!Number.isFinite(box)) {
+    return 1;
   }
-  const boxes = SCHEDULES[kind].boxesDays;
-  const days = intervalDays(kind, base.box);
-  const streak = base.streak + 1;
-  const retire = SCHEDULES[kind].retire;
-  return {
-    ...reviewed,
-    box: Math.min(base.box + 1, boxes.length),
-    dueAt: now + Math.round(days * DAY_MS * fuzzFactor(id, base.box)),
-    streak,
-    retired: retire !== null && streak >= retire.streak && days >= retire.minIntervalDays
+  return Math.min(Math.max(Math.trunc(box), 1), LAST_BOX);
+}
+
+/** The interval in days after a good answer in `box` (clamped to 1..LAST_BOX). */
+export function intervalDays(box: number): number {
+  return BOX_DAYS[clampBox(box) - 1];
+}
+
+function afterDays(now: number, days: number): number {
+  return now + Math.round(days * DAY_MS);
+}
+
+/** The state after a graded answer at `now`. A new item is introduced into box 1 first. */
+export function grade(id: string, state: SrsState, outcome: Outcome, now: number): SrsState {
+  const introduced = !(state.box >= 1);
+  const box = introduced ? 1 : clampBox(state.box);
+  const reviewed: SrsState = {
+    ...state,
+    box,
+    introducedAt: introduced ? now : state.introducedAt,
+    reviews: state.reviews + 1,
+    lastReviewAt: now
   };
+  if (outcome === "good") {
+    return {
+      ...reviewed,
+      box: Math.min(box + 1, LAST_BOX),
+      dueAt: afterDays(now, intervalDays(box) * fuzzFactor(id, box)),
+      streak: state.streak + 1
+    };
+  }
+  if (outcome === "hard") {
+    return { ...reviewed, dueAt: afterDays(now, Math.max(MIN_HARD_DAYS, intervalDays(box) / 2) * fuzzFactor(id, box)), streak: 0 };
+  }
+  return { ...reviewed, box: 1, dueAt: afterDays(now, LAPSE_DAYS), lapses: state.lapses + 1, streak: 0 };
 }
 
-/** Brings a card back because its mistake recurred: box 1, due now, one more lapse. */
-export function resetForRecurrence(state: SrsState, now: number): SrsState {
-  return { ...state, box: 1, dueAt: now, introducedAt: state.introducedAt ?? now, lapses: state.lapses + 1, streak: 0, retired: false };
-}
-
+/** True when the item has been introduced and its review time has come. */
 export function isDue(state: SrsState, now: number): boolean {
-  return !state.retired && state.box > 0 && state.dueAt !== null && state.dueAt <= now;
+  return state.box > 0 && state.dueAt !== null && state.dueAt <= now;
+}
+
+/** True while the item has never been answered. */
+export function isNew(state: SrsState): boolean {
+  return state.box === 0;
 }
 
 /**
- * Session order: the overdue ratio times the card's weight. The ratio is 1 when the card is due
- * just now and grows by 1 per interval it is late; a new card counts as due now.
+ * The interval the item is actually on, in ms: from its last review to its due time. That is the
+ * interval grade() chose (a good, hard or again answer, fuzz included), so the last box counts
+ * its own 60 days rather than the previous box's. Without a review on record (a hand-made or
+ * imported state) the nominal interval that leads into the box is used.
  */
-export function sessionPriority(kind: DrillKind, state: SrsState, weight: number, now: number): number {
-  if (state.box === 0 || state.dueAt === null) {
-    return weight;
+function scheduledIntervalMs(state: SrsState): number {
+  if (state.lastReviewAt !== null && state.dueAt !== null && state.dueAt > state.lastReviewAt) {
+    return state.dueAt - state.lastReviewAt;
   }
-  const intervalMs = Math.max(1, state.box > 1 ? intervalDays(kind, state.box - 1) : LAPSE_DAYS) * DAY_MS;
-  return (1 + Math.max(0, now - state.dueAt) / intervalMs) * weight;
+  const box = clampBox(state.box);
+  return (box === 1 ? LAPSE_DAYS : intervalDays(box - 1)) * DAY_MS;
 }
 
-/** The local midnight before `now`: the day the new-card cap counts. */
-export function startOfDay(now: number): number {
-  const date = new Date(now);
-  date.setHours(0, 0, 0, 0);
-  return date.getTime();
-}
-
-/** New cards of `kind` that may still be introduced today. */
-export function newSlots(kind: DrillKind, introducedToday: number): number {
-  return Math.max(0, SCHEDULES[kind].newPerDay - introducedToday);
+/** How late the item is, in units of its current interval: 0 when not yet due (never negative). */
+export function overdueRatio(state: SrsState, now: number): number {
+  if (state.box <= 0 || state.dueAt === null || now <= state.dueAt) {
+    return 0;
+  }
+  return (now - state.dueAt) / scheduledIntervalMs(state);
 }

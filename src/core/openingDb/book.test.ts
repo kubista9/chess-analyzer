@@ -1,7 +1,8 @@
 import { Chess } from "chess.js";
 import { describe, expect, it } from "vitest";
-import { START_EPD, toEpd } from "./epd.js";
-import { bookChildren, bookExit, bookSans, buildBook, nameAt, openingFamily, parseBookTsv } from "./openingBook.js";
+import { START_EPD, toEpd } from "../chess/position";
+import { bookChildren, bookExit, bookNameAt, bookSans, buildBook, loadBookFromTsv, mainstreamChildren, nameAt, openingFamily, parseBookTsv } from "./book";
+import { createBookLoader, getOpeningBook } from "./loadBook";
 
 const MINI_TSV = [
   "eco\tname\tpgn",
@@ -114,5 +115,103 @@ describe("names and book exit along a game", () => {
     expect(bookExit(book, game, "white")).toEqual({ lastBookPly: 6, exitBy: "owner" });
     expect(bookExit(book, epdsAfter("d4"), "white")).toEqual({ lastBookPly: 0, exitBy: "owner" });
     expect(bookExit(book, epdsAfter("e4 e6"), "black")).toEqual({ lastBookPly: 2, exitBy: null });
+  });
+});
+
+describe("mainstream moves and exact names", () => {
+  const book = buildBook(parseBookTsv(MINI_TSV));
+
+  it("sorts book children by the lines through them, then by UCI", () => {
+    expect(mainstreamChildren(book, epdAt("e4")).map((move) => [move.san, move.lines])).toEqual([
+      ["d5", 2],
+      ["e5", 2],
+      ["a6", 1],
+      ["e6", 1]
+    ]);
+    expect(mainstreamChildren(book, START_EPD)).toEqual([
+      { san: "e4", uci: "e2e4", toEpd: epdAt("e4"), lines: 6 },
+      { san: "Nf3", uci: "g1f3", toEpd: epdAt("Nf3"), lines: 1 }
+    ]);
+    expect(mainstreamChildren(book, epdAt("d4"))).toEqual([]);
+  });
+
+  it("names only a position a book line ends on", () => {
+    expect(bookNameAt(book, epdAt("e4 e5"))).toEqual({ eco: "C20", name: "King's Pawn Game", plies: 2 });
+    expect(bookNameAt(book, epdAt("e4 d5 exd5"))).toBeNull();
+    expect(bookNameAt(book, START_EPD)).toBeNull();
+  });
+});
+
+describe("loadBookFromTsv", () => {
+  it("builds one book from several TSV texts", () => {
+    const book = loadBookFromTsv([MINI_TSV, "eco\tname\tpgn\nA10\tEnglish Opening\t1. c4\n"]);
+    expect(book.rows).toBe(7);
+    expect(bookNameAt(book, epdAt("c4"))).toEqual({ eco: "A10", name: "English Opening", plies: 1 });
+    // 1.c4 and 1.Nf3 have one line each: UCI breaks the tie (c2c4 before g1f3).
+    expect(mainstreamChildren(book, START_EPD).map((move) => move.san)).toEqual(["e4", "c4", "Nf3"]);
+  });
+
+  it("rejects a text with a wrong header", () => {
+    expect(() => loadBookFromTsv([MINI_TSV, "name\tpgn\n"])).toThrow(/header/);
+  });
+
+  it("builds an empty book from no texts", () => {
+    const book = loadBookFromTsv([]);
+    expect(book.rows).toBe(0);
+    expect([...book.positions]).toEqual([START_EPD]);
+  });
+});
+
+describe("createBookLoader", () => {
+  it("loads the texts and builds the book once, however often it is called", async () => {
+    let loads = 0;
+    const loader = createBookLoader(async () => {
+      loads += 1;
+      return [MINI_TSV];
+    });
+    const first = loader();
+    const second = loader();
+    expect(second).toBe(first);
+    const book = await first;
+    expect(book.rows).toBe(6);
+    expect(await loader()).toBe(book);
+    expect(loads).toBe(1);
+  });
+
+  it("yields to a timer before building", async () => {
+    const order: string[] = [];
+    const loader = createBookLoader(async () => {
+      order.push("texts");
+      return [MINI_TSV];
+    });
+    const built = loader().then(() => order.push("built"));
+    setTimeout(() => order.push("timer"), 0);
+    await built;
+    expect(order).toEqual(["texts", "timer", "built"]);
+  });
+
+  it("tries again after a failed load", async () => {
+    let calls = 0;
+    const loader = createBookLoader(async () => {
+      calls += 1;
+      if (calls === 1) {
+        throw new Error("network down");
+      }
+      return [MINI_TSV];
+    });
+    await expect(loader()).rejects.toThrow("network down");
+    expect((await loader()).rows).toBe(6);
+    expect(calls).toBe(2);
+  });
+});
+
+describe("getOpeningBook", () => {
+  it("builds the bundled lichess book once", async () => {
+    const book = await getOpeningBook();
+    expect(await getOpeningBook()).toBe(book);
+    expect(book.rows).toBeGreaterThan(3000);
+    expect(bookNameAt(book, epdAt("c4"))).toMatchObject({ eco: "A10", name: "English Opening" });
+    expect(nameAt(book, epdsAfter("c4 e5 Nc3 Nc6 g3 g6 Bg2 Bg7 d3 d6 Rb1"))).toMatchObject({ eco: "A26" });
+    expect(mainstreamChildren(book, START_EPD).slice(0, 2).map((move) => move.san)).toEqual(["e4", "d4"]);
   });
 });

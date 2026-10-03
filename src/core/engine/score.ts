@@ -1,8 +1,18 @@
-import { CP_CLAMP } from "./constants.js";
-import { clamp } from "./chess.js";
-import type { MoveCategory, PlayerColor } from "./types.js";
+import type { Color } from "../chess/position";
 
-// All win% maths and move classification live here (server and client share it).
+/** Centipawn evals are clamped to this before any win% maths; a mate counts as the clamped eval of the mating side. */
+export const CP_CLAMP = 1000;
+
+/** Move classes by the mover's win% loss, best to worst. */
+export const MOVE_CATEGORIES = ["best", "good", "inaccuracy", "mistake", "blunder"] as const;
+export type MoveCategory = (typeof MOVE_CATEGORIES)[number];
+
+/** max when min > max. */
+export function clamp(value: number, min: number, max: number): number {
+  return Math.min(Math.max(value, min), max);
+}
+
+// All win% maths and move classification live here.
 //
 // Two views are used:
 // - EngineScore: a raw UCI score from the side to move. Exactly one of cp / mate is set.
@@ -69,7 +79,7 @@ export function rootMoveLoss(best: EngineScore, played: EngineScore): number {
 }
 
 /** Converts a side-to-move engine score into a clamped White-view eval. */
-export function toWhiteEval(score: EngineScore, sideToMove: PlayerColor): WhiteEval {
+export function toWhiteEval(score: EngineScore, sideToMove: Color): WhiteEval {
   const sign = sideToMove === "white" ? 1 : -1;
   if (score.mate === 0) {
     return checkmateEval(sideToMove);
@@ -83,7 +93,7 @@ export function toWhiteEval(score: EngineScore, sideToMove: PlayerColor): WhiteE
 }
 
 /** The eval of a checkmated position: the side to move has lost. */
-export function checkmateEval(sideToMove: PlayerColor): WhiteEval {
+export function checkmateEval(sideToMove: Color): WhiteEval {
   return { cp: sideToMove === "white" ? -CP_CLAMP : CP_CLAMP, mate: 0 };
 }
 
@@ -93,7 +103,7 @@ export function whiteWinPercent(evaluation: WhiteEval): number {
 }
 
 /** Win% for the given side. */
-export function winPercentFor(evaluation: WhiteEval, color: PlayerColor): number {
+export function winPercentFor(evaluation: WhiteEval, color: Color): number {
   const white = whiteWinPercent(evaluation);
   return color === "white" ? white : 100 - white;
 }

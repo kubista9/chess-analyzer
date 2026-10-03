@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { CP_CLAMP, MOVE_CATEGORIES } from "./constants.js";
+import { CP_CLAMP, MOVE_CATEGORIES } from "./score";
 import {
   CATEGORY_THRESHOLDS,
   checkmateEval,
@@ -15,7 +15,7 @@ import {
   whiteWinPercent,
   winPercent,
   winPercentFor
-} from "./eval.js";
+} from "./score";
 
 describe("clampCp", () => {
   it("clamps to +/-1000 and keeps values inside the range", () => {

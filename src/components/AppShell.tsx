@@ -1,232 +1,106 @@
-import { useEffect, useRef, useState } from "react";
-import { Link, NavLink, Outlet, useLocation } from "react-router-dom";
-import { BookMarked, Compass, GraduationCap, House, Menu, TriangleAlert, X } from "lucide-react";
-import { fetchDrillStats } from "../api/client";
-import { useStoreQuery } from "../hooks/useStoreQuery";
-import "../styles/trainer.css";
-import { OWNER_USERNAME } from "../../shared/constants";
+import { useMemo } from "react";
+import { NavLink, Outlet, useLocation } from "react-router-dom";
+import { BookOpen, ChartNoAxesColumn, House, Settings as SettingsIcon, Target } from "lucide-react";
+import { useAppData } from "../app/AppData";
+import { ENGINE_STATUS_LABELS, useEngineSettingsSync, useEngineStatus } from "../app/engine";
+import { dueCount } from "../core/training/queue";
 import { useNow } from "../hooks/useNow";
-import { useWorkspace } from "../hooks/useWorkspace";
-import { formatAgo, formatCount } from "../utils/formatters";
 import { ErrorBoundary } from "./ErrorBoundary";
-import { formatMinutes, searchedPercent } from "./EngineCard";
 
-const COMPACT_QUERY = "(max-width: 1180px)";
-const FOCUSABLE = 'a[href], button:not([disabled]), [tabindex]:not([tabindex="-1"])';
-
-const navItems = [
+const NAV_ITEMS = [
   { to: "/", label: "Home", icon: House, end: true },
-  { to: "/explorer", label: "Explorer", icon: Compass, end: false },
-  { to: "/repertoire", label: "Repertoire", icon: BookMarked, end: false },
-  { to: "/leaks", label: "Leaks", icon: TriangleAlert, end: false },
-  { to: "/train", label: "Train", icon: GraduationCap, end: false }
-];
+  { to: "/repertoire", label: "Repertoire", icon: BookOpen, end: false },
+  { to: "/practice", label: "Practice", icon: Target, end: false },
+  { to: "/progress", label: "Progress", icon: ChartNoAxesColumn, end: false },
+  { to: "/settings", label: "Settings", icon: SettingsIcon, end: false }
+] as const;
 
+/** The app chrome: a sidebar on wide screens, a top bar and bottom tabs on phones. */
 export function AppShell() {
-  const { status, analysis, dataVersion } = useWorkspace();
-  const engineRunning = analysis?.state === "running" || analysis?.state === "pausing";
-  const engineProgress = engineRunning ? analysis?.progress : null;
-  const now = useNow();
-  const footer = status
-    ? [
-        OWNER_USERNAME,
-        `${formatCount(status.counts.total)} games`,
-        status.lastSync ? `synced ${formatAgo(status.lastSync.at, now)}` : "not synced"
-      ].join(" · ")
-    : OWNER_USERNAME;
+  const { items, positions, saveError } = useAppData();
   const location = useLocation();
-  // The Train badge: due drills of both kinds, refreshed on navigation and after a sync.
-  const drills = useStoreQuery((signal) => fetchDrillStats(signal), [dataVersion, location.pathname]);
-  const drillsDue = drills.data ? drills.data.due["repertoire-line"] + drills.data.due["own-mistake"] : 0;
-  const [isMenuOpen, setIsMenuOpen] = useState(false);
-  // Read synchronously so the first compact render already hides the closed drawer.
-  const [isCompact, setIsCompact] = useState(() => window.matchMedia(COMPACT_QUERY).matches);
-  const isDrawerOpen = isCompact && isMenuOpen;
-  const isNavHidden = isCompact && !isMenuOpen;
-  const toggleRef = useRef<HTMLButtonElement | null>(null);
-  const sidebarRef = useRef<HTMLElement | null>(null);
-  const wasDrawerOpen = useRef(false);
+  const now = useNow(60_000);
+  useEngineSettingsSync();
+  const engineStatus = useEngineStatus();
 
-  useEffect(() => {
-    const mediaQuery = window.matchMedia(COMPACT_QUERY);
-    const updateCompactLayout = () => setIsCompact(mediaQuery.matches);
-
-    updateCompactLayout();
-    mediaQuery.addEventListener("change", updateCompactLayout);
-
-    return () => mediaQuery.removeEventListener("change", updateCompactLayout);
-  }, []);
-
-  useEffect(() => {
-    setIsMenuOpen(false);
-  }, [location.pathname]);
-
-  // Open: focus the first link and keep Tab inside the drawer. Close: focus returns to the toggle.
-  useEffect(() => {
-    if (!isDrawerOpen) {
-      if (wasDrawerOpen.current) {
-        wasDrawerOpen.current = false;
-        toggleRef.current?.focus();
-      }
-      return undefined;
-    }
-    wasDrawerOpen.current = true;
-
-    const sidebar = sidebarRef.current;
-    const focusables = () => (sidebar ? [...sidebar.querySelectorAll<HTMLElement>(FOCUSABLE)] : []);
-    focusables().find((element) => element.matches(".nav-link"))?.focus();
-
-    const originalOverflow = document.body.style.overflow;
-    const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.key === "Escape") {
-        setIsMenuOpen(false);
-        return;
-      }
-      if (event.key !== "Tab") {
-        return;
-      }
-      const elements = focusables();
-      if (elements.length === 0) {
-        return;
-      }
-      const first = elements[0];
-      const last = elements[elements.length - 1];
-      const active = document.activeElement;
-      if (event.shiftKey && (active === first || !sidebar?.contains(active))) {
-        event.preventDefault();
-        last.focus();
-      } else if (!event.shiftKey && (active === last || !sidebar?.contains(active))) {
-        event.preventDefault();
-        first.focus();
-      }
-    };
-
-    document.body.style.overflow = "hidden";
-    window.addEventListener("keydown", handleKeyDown);
-
-    return () => {
-      document.body.style.overflow = originalOverflow;
-      window.removeEventListener("keydown", handleKeyDown);
-    };
-  }, [isDrawerOpen]);
+  const due = useMemo(() => dueCount([...items.white, ...items.black], positions, now), [items, positions, now]);
+  const dueLabel = due > 0 ? `${due} position${due === 1 ? "" : "s"} due` : null;
 
   return (
-    <div className={`app-shell${isMenuOpen ? " mobile-menu-open" : ""}`}>
-      <header className="mobile-topbar" inert={isDrawerOpen}>
-        <Link className="mobile-brand" to="/" aria-label="Go to home">
-          <div className="brand-mark">♟</div>
-          <div className="mobile-brand-copy">
-            <div className="brand-title">Chess Analyst</div>
-            <div className="brand-subtitle">Offline opening trainer</div>
-          </div>
-        </Link>
-
-        <button
-          ref={toggleRef}
-          className="mobile-menu-button"
-          type="button"
-          aria-controls="primary-navigation"
-          aria-expanded={isMenuOpen}
-          aria-label={isMenuOpen ? "Close navigation menu" : "Open navigation menu"}
-          onClick={() => setIsMenuOpen((isOpen) => !isOpen)}
-        >
-          {isMenuOpen ? <X size={22} /> : <Menu size={22} />}
-        </button>
-      </header>
-
-      <button
-        className="mobile-menu-backdrop"
-        type="button"
-        aria-label="Close navigation menu"
-        aria-hidden="true"
-        tabIndex={-1}
-        onClick={() => setIsMenuOpen(false)}
-      />
-
-      <aside
-        ref={sidebarRef}
-        className="sidebar"
-        id="primary-navigation"
-        aria-label="Primary navigation"
-        aria-modal={isDrawerOpen || undefined}
-        role={isDrawerOpen ? "dialog" : undefined}
-        aria-hidden={isNavHidden || undefined}
-        inert={isNavHidden}
-      >
-        <div className="sidebar-header">
-          <Link className="brand" to="/" aria-label="Go to home">
-            <div className="brand-mark">♟</div>
-            <div>
-              <div className="brand-title">Chess Analyst</div>
-              <div className="brand-subtitle">Offline opening trainer</div>
-            </div>
-          </Link>
-
-          <button
-            className="sidebar-close-button"
-            type="button"
-            aria-label="Close navigation menu"
-            onClick={() => setIsMenuOpen(false)}
-          >
-            <X size={20} />
-          </button>
-        </div>
-
-        <nav className="sidebar-nav">
-          {navItems.map((item) => {
-            const Icon = item.icon;
-            return (
-              <NavLink
-                key={item.to}
-                to={item.to}
-                end={item.end}
-                className={({ isActive }) =>
-                  `nav-link${isActive ? " nav-link-active" : ""}`
-                }
-               
-                onClick={() => setIsMenuOpen(false)}
-              >
-                <Icon size={18} />
-                <span>{item.label}</span>
-                {item.to === "/train" && drillsDue ? (
-                  <span className="nav-badge" aria-label={`${drillsDue} drills due`}>
-                    {drillsDue}
-                  </span>
-                ) : null}
-              </NavLink>
-            );
-          })}
+    <div className="shell">
+      <a className="skip-link" href="#main">
+        Skip to content
+      </a>
+      <aside className="sidebar" aria-label="Main">
+        <Brand />
+        <nav className="nav" aria-label="Sections">
+          {NAV_ITEMS.map(({ to, label, icon: Icon, end }) => (
+            <NavLink key={to} to={to} end={end} className="nav-link">
+              <Icon size={18} aria-hidden="true" />
+              <span>{label}</span>
+              {to === "/practice" && dueLabel ? (
+                <span className="nav-count" aria-label={dueLabel}>
+                  {due}
+                </span>
+              ) : null}
+            </NavLink>
+          ))}
         </nav>
-
-        {engineRunning ? (
-          <Link
-            className="engine-chip"
-            to="/"
-           
-            aria-label="Engine check running, see Home"
-            onClick={() => setIsMenuOpen(false)}
-          >
-            <span className="engine-chip-dot" aria-hidden="true" />
-            <span>
-              Engine check
-              {engineProgress ? ` ${searchedPercent(engineProgress)}%` : ""}
-              {engineProgress?.etaSec != null ? ` · ${formatMinutes(engineProgress.etaSec / 60)}` : ""}
-              {analysis?.state === "pausing" ? " · pausing" : ""}
-            </span>
-          </Link>
-        ) : null}
-
-        <div className="sidebar-footer">
-          <div className="footer-label">Current workspace</div>
-          <div className="footer-value">{footer}</div>
+        <div className="sidebar-foot">
+          <span className="engine-state">
+            <span className={`engine-dot engine-dot-${engineStatus}`} aria-hidden="true" />
+            {ENGINE_STATUS_LABELS[engineStatus]}
+          </span>
+          <span>Your progress is stored in this browser.</span>
         </div>
       </aside>
 
-      <main className="page-shell" inert={isDrawerOpen}>
+      <header className="topbar">
+        <Brand compact />
+        <span className="engine-state small muted">
+          <span className={`engine-dot engine-dot-${engineStatus}`} aria-hidden="true" />
+          <span className="visually-hidden">{ENGINE_STATUS_LABELS[engineStatus]}</span>
+        </span>
+      </header>
+
+      <main className="main" id="main" tabIndex={-1}>
+        {saveError ? (
+          <p className="notice notice-danger page save-error" role="alert">
+            {saveError}
+          </p>
+        ) : null}
         <ErrorBoundary key={location.pathname}>
           <Outlet />
         </ErrorBoundary>
       </main>
+
+      <nav className="tabbar" aria-label="Sections">
+        {NAV_ITEMS.map(({ to, label, icon: Icon, end }) => (
+          <NavLink key={to} to={to} end={end} className="tab-link">
+            <Icon size={20} aria-hidden="true" />
+            <span>{label}</span>
+            {to === "/practice" && dueLabel ? (
+              <span className="nav-count" aria-label={dueLabel}>
+                {due}
+              </span>
+            ) : null}
+          </NavLink>
+        ))}
+      </nav>
     </div>
+  );
+}
+
+function Brand({ compact = false }: { compact?: boolean }) {
+  return (
+    <NavLink to="/" className="brand" aria-label="Opening Trainer, home">
+      <span className="brand-mark" aria-hidden="true">
+        ♞
+      </span>
+      <span>
+        <span className="brand-name">Opening Trainer</span>
+        {compact ? null : <span className="brand-tagline">Learn, practise, retain</span>}
+      </span>
+    </NavLink>
   );
 }

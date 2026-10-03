@@ -34,7 +34,7 @@ await fs.mkdir(targetDir, { recursive: true });
 let rows = 0;
 for (const name of FILES) {
   const url = `https://raw.githubusercontent.com/lichess-org/chess-openings/${commit}/${name}`;
-  const response = await fetch(url, { headers: { "User-Agent": "chess-analyst-local/0.1" } });
+  const response = await fetch(url, { headers: { "User-Agent": "opening-trainer-vendor-script" } });
   if (!response.ok) {
     throw new Error(`GET ${url} -> ${response.status}`);
   }

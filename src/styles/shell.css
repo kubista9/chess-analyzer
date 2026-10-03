@@ -1,0 +1,229 @@
+/* App chrome: a left sidebar on wide screens; a top bar plus a bottom tab bar on phones and
+   tablets, so the five sections are always one tap away. */
+
+.shell {
+  display: grid;
+  grid-template-columns: var(--shell-sidebar) minmax(0, 1fr);
+  min-height: 100vh;
+}
+
+.sidebar {
+  position: sticky;
+  top: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-6);
+  height: 100vh;
+  padding: var(--space-5) var(--space-4);
+  border-right: 1px solid var(--line);
+  background: var(--bg-deep);
+}
+
+.brand {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: 0 var(--space-2);
+  color: var(--text);
+  text-decoration: none;
+}
+
+.brand-mark {
+  display: grid;
+  place-items: center;
+  width: 36px;
+  height: 36px;
+  flex: none;
+  border-radius: var(--radius-md);
+  background: var(--accent);
+  color: var(--accent-ink);
+}
+
+.brand-name {
+  font-family: var(--font-head);
+  font-size: 1.02rem;
+  font-weight: 700;
+  line-height: 1.2;
+}
+
+.brand-tagline {
+  color: var(--muted);
+  font-size: 0.78rem;
+}
+
+.nav {
+  display: grid;
+  gap: 2px;
+}
+
+.nav-link {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  min-height: 42px;
+  padding: 8px var(--space-3);
+  border-radius: var(--radius-md);
+  color: var(--muted);
+  font-weight: 600;
+  text-decoration: none;
+  transition:
+    background var(--fast) var(--ease),
+    color var(--fast) var(--ease);
+}
+
+.nav-link:hover {
+  background: var(--overlay);
+  color: var(--text);
+}
+
+.nav-link[aria-current="page"] {
+  background: var(--accent-soft);
+  color: var(--text);
+}
+
+.nav-link[aria-current="page"] svg {
+  color: var(--accent-strong);
+}
+
+.nav-count {
+  margin-left: auto;
+  min-width: 22px;
+  padding: 0 7px;
+  border-radius: var(--radius-pill);
+  background: var(--accent);
+  color: var(--accent-ink);
+  font-size: 0.74rem;
+  font-weight: 800;
+  line-height: 20px;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+}
+
+.sidebar-foot {
+  display: grid;
+  gap: var(--space-2);
+  margin-top: auto;
+  padding: var(--space-3);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-md);
+  color: var(--muted);
+  font-size: 0.8rem;
+}
+
+.engine-state {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.engine-dot {
+  width: 8px;
+  height: 8px;
+  flex: none;
+  border-radius: 50%;
+  background: var(--faint);
+}
+
+.engine-dot-ready {
+  background: var(--book);
+}
+
+.engine-dot-busy,
+.engine-dot-loading {
+  background: var(--hint);
+}
+
+.engine-dot-error {
+  background: var(--mistake);
+}
+
+.main {
+  min-width: 0;
+  padding: var(--space-8) var(--space-6) var(--space-8);
+}
+
+.topbar,
+.tabbar {
+  display: none;
+}
+
+@media (max-width: 1023px) {
+  .shell {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .sidebar {
+    display: none;
+  }
+
+  .topbar {
+    position: sticky;
+    top: 0;
+    z-index: 20;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--space-3);
+    height: var(--shell-topbar);
+    padding: 0 var(--space-4);
+    border-bottom: 1px solid var(--line);
+    background: rgba(34, 32, 30, 0.96);
+    backdrop-filter: blur(10px);
+  }
+
+  .tabbar {
+    position: fixed;
+    right: 0;
+    bottom: 0;
+    left: 0;
+    z-index: 20;
+    display: grid;
+    grid-template-columns: repeat(5, minmax(0, 1fr));
+    height: calc(var(--shell-tabbar) + env(safe-area-inset-bottom, 0px));
+    padding-bottom: env(safe-area-inset-bottom, 0px);
+    border-top: 1px solid var(--line);
+    background: rgba(34, 32, 30, 0.98);
+  }
+
+  .tab-link {
+    position: relative;
+    display: grid;
+    place-items: center;
+    align-content: center;
+    gap: 2px;
+    min-width: 0;
+    color: var(--muted);
+    font-size: 0.7rem;
+    font-weight: 700;
+    text-decoration: none;
+  }
+
+  .tab-link[aria-current="page"] {
+    color: var(--text);
+  }
+
+  .tab-link[aria-current="page"] svg {
+    color: var(--accent-strong);
+  }
+
+  .tab-link .nav-count {
+    position: absolute;
+    top: 6px;
+    left: calc(50% + 6px);
+    min-width: 18px;
+    padding: 0 5px;
+    font-size: 0.66rem;
+    line-height: 16px;
+  }
+
+  .main {
+    padding: var(--space-5) var(--space-4) calc(var(--shell-tabbar) + var(--space-8));
+  }
+}
+
+@media (max-width: 380px) {
+  .main {
+    padding-right: var(--space-3);
+    padding-left: var(--space-3);
+  }
+}
