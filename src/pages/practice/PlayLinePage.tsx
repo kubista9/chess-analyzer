@@ -185,7 +185,7 @@ function LineRun({ line, onAgain }: { line: Line; onAgain: () => void }) {
   const lastMove = solvedMove ?? played[played.length - 1] ?? null;
   const orientation = flipped ? opposite(line.side) : line.side;
   const lastOpponent = [...played].reverse().find((entry) => entry.color !== line.side);
-  const opponentNote = lastOpponent ? noteFor(catalog, lastOpponent.epdBefore, lastOpponent.uci) : undefined;
+  const opponentNote = lastOpponent ? noteFor(catalog, lastOpponent.epdBefore, lastOpponent.uci, line.side) : undefined;
   const marks: Record<string, "hint"> = {};
   if (state && state.phase === "awaiting" && state.ladder.level >= 2) {
     for (const square of state.hints.narrowSquares) {

@@ -19,7 +19,7 @@ export function positionExercise(item: PositionItem, catalog: Catalog, key: stri
     expected: item.expected.map((edge) => ({ uci: edge.uci, san: edge.san })),
     primary,
     siblings: item.expected,
-    note: noteFor(catalog, item.epd, primary.uci) ?? null
+    note: noteFor(catalog, item.epd, primary.uci, item.side) ?? null
   };
 }
 
@@ -34,7 +34,7 @@ export function lineStepExercise(line: Line, index: number, tree: RepertoireTree
     expected: [{ uci: move.uci, san: move.san }],
     primary: move,
     siblings: userMovesAt(tree, move.epdBefore),
-    note: noteFor(catalog, move.epdBefore, move.uci) ?? null
+    note: noteFor(catalog, move.epdBefore, move.uci, line.side) ?? null
   };
 }
 

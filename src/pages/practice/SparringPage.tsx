@@ -208,7 +208,7 @@ function SparringGame({ side, onNewGame, onChangeSide }: { side: Color; onNewGam
         return true;
       }
 
-      const note = noteFor(catalog, move.epdBefore, repertoire[0].uci) ?? null;
+      const note = noteFor(catalog, move.epdBefore, repertoire[0].uci, side) ?? null;
       const judgement = judgeMove({ move, expected: repertoire, siblings: repertoire, note });
       const item = items[side].find((entry) => entry.key === `${side}|${move.epdBefore}`);
       if (item) {

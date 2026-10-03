@@ -149,8 +149,8 @@ function LineView({ lineId }: { lineId: string }) {
   };
 
   const pgn = useMemo(() => lineToPgn(line, { comments: true, notes: catalog }), [line, catalog]);
-  const note = current ? noteFor(catalog, current.epdBefore, current.uci) : undefined;
-  const nextNote = next && onLine ? noteFor(catalog, next.epdBefore, next.uci) : undefined;
+  const note = current ? noteFor(catalog, current.epdBefore, current.uci, line.side) : undefined;
+  const nextNote = next && onLine ? noteFor(catalog, next.epdBefore, next.uci, line.side) : undefined;
   const opening = book ? nameAt(book, [START_EPD, ...path.slice(0, cursor).map((move) => move.epdAfter)]) : null;
   const inRepertoire = current
     ? [...userMovesAt(tree, current.epdBefore), ...opponentRepliesAt(tree, current.epdBefore)].find((edge) => edge.uci === current.uci)
