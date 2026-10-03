@@ -6,6 +6,7 @@ import {
   EXPLAIN_SOUND_LOSS,
   EXPLANATION_HEADLINES,
   MAX_DETAILS,
+  MISTAKE_HEADLINES,
   describeBalance,
   explainMoveScore,
   type ExplainInput
@@ -130,7 +131,7 @@ describe("explainMoveScore headlines", () => {
     expect(at(4.99)).toMatchObject({ tone: "good", headline: EXPLANATION_HEADLINES.sound });
     expect(at(5)).toMatchObject({ tone: "warning", headline: "Playable but less accurate: it gives away part of your position." });
     expect(at(9.99)).toMatchObject({ tone: "warning", headline: EXPLANATION_HEADLINES.inaccurate });
-    expect(at(10)).toMatchObject({ tone: "bad", headline: "A real mistake: it gives the opponent a clear edge." });
+    expect(at(10)).toMatchObject({ tone: "bad", headline: "A real mistake: it gives away a large part of your position." });
   });
 
   it("refuses a score that belongs to another move or position, or a broken loss", () => {
@@ -198,7 +199,7 @@ describe("explainMoveScore: an inaccuracy", () => {
       tone: "warning",
       headline: "Playable but less accurate: it gives away part of your position.",
       details: [
-        "After 4.O-O you are slightly worse.",
+        "After 4.O-O you are slightly worse; after the engine's choice it would be roughly equal.",
         "It brings the queen out early, where the opponent's minor pieces can chase it and gain time.",
         "The engine prefers 3...Nf6: it develops the knight."
       ],
@@ -233,7 +234,7 @@ describe("explainMoveScore: material", () => {
   it("3...b5 is a real mistake that loses a pawn", () => {
     expect(explainMoveScore(scored(ITALIAN, ITALIAN_NF6_B, ITALIAN_B5))).toEqual({
       tone: "bad",
-      headline: "A real mistake: it gives the opponent a clear edge.",
+      headline: "A real mistake: it gives away a large part of your position.",
       details: ["After 4.Bxb5 you lose a pawn.", "The engine prefers 3...Nf6: it develops the knight."],
       bestSan: "Nf6",
       replySan: "Bxb5"
@@ -266,19 +267,19 @@ describe("explainMoveScore: material", () => {
     // 3...h6 4.Nxe5? Qe7 5.Nf3 Qxe4+: the pawn comes back at once.
     const back = "info depth 14 multipv 2 score cp -150 nodes 1 pv h7h6 f3e5 d8e7 e5f3 e7e4 d1e2 e4e2 e1e2";
     expect(explainMoveScore(scored(["e4", "e5", "Nf3"], "info depth 14 multipv 1 score cp -30 nodes 1 pv b8c6 f1b5", back)).details[0]).toBe(
-      "After 3.Nxe5 you are slightly worse."
+      "After 3.Nxe5 you are slightly worse; after the engine's choice it would be roughly equal."
     );
     // A pawn first taken on the line's sixth ply is not put down to the move.
     const late = "info depth 14 multipv 2 score cp -150 nodes 1 pv a7a6 d2d4 d7d6 f1c4 g8f6 d4e5 f6g4";
     expect(explainMoveScore(scored(["e4", "e5", "Nf3"], "info depth 14 multipv 1 score cp -30 nodes 1 pv b8c6 f1b5", late)).details[0]).toBe(
-      "After 3.d4 you are slightly worse."
+      "After 3.d4 you are slightly worse; after the engine's choice it would be roughly equal."
     );
   });
 
   it("only mentions a gain in a weaker move's line when the move itself takes something", () => {
     // 3...Nb4?! 4.d4 exd4: the pawn is the opponent's to win back, so it is not "won".
     const nb4 = "info depth 12 multipv 2 score cp -204 nodes 1 pv c6b4 d2d4 e5d4 e1g1 b4c6 c2c3";
-    expect(explainMoveScore(scored(ITALIAN, ITALIAN_NF6, nb4)).details[0]).toBe("After 4.d4 you are slightly worse.");
+    expect(explainMoveScore(scored(ITALIAN, ITALIAN_NF6, nb4)).details[0]).toBe("After 4.d4 you are slightly worse; after the engine's choice it would be roughly equal.");
     // A pawn grab the engine dislikes: the move itself takes the pawn.
     const grab = "info depth 12 multipv 2 score cp -150 nodes 1 pv d5c4 e2e4 e7e5 g1f3";
     const greedy = explainMoveScore(scored(["d4", "d5", "c4"], "info depth 12 multipv 1 score cp -30 nodes 1 pv e7e6 b1c3", grab));
@@ -299,7 +300,7 @@ describe("explainMoveScore: mate", () => {
     expect(input.score.loss).toBeGreaterThan(EXPLAIN_MISTAKE_LOSS);
     expect(explainMoveScore(input)).toEqual({
       tone: "bad",
-      headline: "A real mistake: it gives the opponent a clear edge.",
+      headline: "A real mistake: it allows a forced mate.",
       details: ["After 4...Qxf2# you are checkmated.", "The engine prefers 4.e3: it stops the mate threat on f2."],
       bestSan: "e3",
       replySan: "Qxf2#"
@@ -393,7 +394,7 @@ describe("explainMoveScore details", () => {
     const explanation = explainMoveScore(scored(["e4", "e5", "Bc4", "Nc6"], best, played));
     expect(explanation.details).toHaveLength(MAX_DETAILS);
     expect(explanation.details).toEqual([
-      "After 3...Nf6 the position is roughly equal.",
+      "After 3...Nf6 the position is roughly equal, but worse for you than after the engine's choice.",
       "It moves the same piece again while other pieces are still at home.",
       "The engine prefers 3.Nf3: it develops the knight."
     ]);
@@ -427,7 +428,7 @@ describe("explainMoveScore details", () => {
     const input = scored(ITALIAN, ITALIAN_NF6, "info depth 14 multipv 3 score cp -105 nodes 1 pv d8e7");
     const explanation = explainMoveScore(input);
     expect(explanation.replySan).toBeUndefined();
-    expect(explanation.details[0]).toBe("With best play you are slightly worse.");
+    expect(explanation.details[0]).toBe("With best play you are slightly worse; after the engine's choice it would be roughly equal.");
   });
 
   it("never shows a raw evaluation", () => {
@@ -449,5 +450,39 @@ describe("explainMoveScore details", () => {
         expect(text).toMatch(/^[A-Z].*[.]$/);
       }
     }
+  });
+});
+
+describe("explainMoveScore: review regressions", () => {
+  const QGD_BG5 = ["d4", "d5", "c4", "e6", "Nc3", "Nf6", "Bg5"];
+  const QGD_BE7 = "info depth 10 multipv 1 score cp -29 nodes 1 pv f8e7 e2e3 e8g8 g1f3 c7c5 d4c5";
+
+  it("does not claim a pawn the line wins back before it is cut off mid-exchange", () => {
+    // 4...dxc4 5.e4 c5 6.d5 Be7 7.Bxc4 O-O 8.Nf3 Nxd5: the pawn comes back on move 7.
+    const dxc4 = "info depth 10 multipv 2 score cp -31 nodes 1 pv d5c4 e2e4 c7c5 d4d5 f8e7 f1c4 e8g8 g1f3 f6d5";
+    const explanation = explainMoveScore(scored(QGD_BG5, QGD_BE7, dxc4));
+    expect(explanation.details.join(" ")).not.toMatch(/pawn/);
+  });
+
+  it("does not count a queen trade as lost when the line stops before the recapture", () => {
+    // 4...Kd7 ... 8.Bxd8 Bb4+ 9.Kd1: ...Kxd8 is still to come.
+    const kd7 = "info depth 10 multipv 2 score cp -900 nodes 1 pv e8d7 c4d5 e6d5 c3d5 f6d5 d1a4 b8c6 g5d8 f8b4 e1d1";
+    const explanation = explainMoveScore(scored(QGD_BG5, QGD_BE7, kd7));
+    expect(explanation.details.join(" ")).not.toMatch(/queen/);
+    expect(explanation.headline).toBe(MISTAKE_HEADLINES.clearlyWorse);
+  });
+
+  it("sets a mistake that still leaves the balance level against the engine's choice", () => {
+    const nf3 = "info depth 12 multipv 1 score cp 61 nodes 1 pv g1f3 c8g4 f1e2 b8c6 d2d4 d5d7";
+    const f3 = "info depth 12 multipv 2 score cp -69 nodes 1 pv f2f3 b8c6 b1c3 d5d6 f1b5 c8d7";
+    const explanation = explainMoveScore(scored(["e4", "d5", "exd5", "Qxd5"], nf3, f3));
+    expect(explanation.headline).toBe(EXPLANATION_HEADLINES.mistake);
+    expect(explanation.details[0]).toBe("After 3...Nc6 the position is roughly equal, but worse for you than after the engine's choice.");
+  });
+
+  it("accepts a FEN that writes an en-passant square no capture can use", () => {
+    const fen = "rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR b KQkq e3 0 1";
+    const input = scored([], "info depth 10 multipv 1 score cp -30 nodes 1 pv e7e5 g1f3", "info depth 10 multipv 2 score cp -60 nodes 1 pv a7a6 d2d4", fen);
+    expect(() => explainMoveScore(input)).not.toThrow();
   });
 });

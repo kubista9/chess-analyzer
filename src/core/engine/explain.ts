@@ -54,8 +54,24 @@ export const MAX_DETAILS = 3;
 export const EXPLANATION_HEADLINES = {
   sound: "Sound: the engine rates it close to its first choice.",
   inaccurate: "Playable but less accurate: it gives away part of your position.",
-  mistake: "A real mistake: it gives the opponent a clear edge."
+  mistake: "A real mistake: it gives away a large part of your position."
 } as const;
+
+/** Sharper mistake headlines when the result itself is bad, not only worse than the engine's choice. */
+export const MISTAKE_HEADLINES = {
+  mated: "A real mistake: it allows a forced mate.",
+  clearlyWorse: "A real mistake: it gives the opponent a clear edge."
+} as const;
+
+function headlineFor(grade: Grade, score: MoveScore): string {
+  if (grade !== "mistake") {
+    return EXPLANATION_HEADLINES[grade];
+  }
+  if (score.played.mate !== null && score.played.mate <= 0) {
+    return MISTAKE_HEADLINES.mated;
+  }
+  return score.played.winPct <= BALANCE_BANDS.clearlyWorse ? MISTAKE_HEADLINES.clearlyWorse : EXPLANATION_HEADLINES.mistake;
+}
 
 type Grade = keyof typeof EXPLANATION_HEADLINES;
 
@@ -103,7 +119,9 @@ export interface ExplainInput {
  */
 export function explainMoveScore(input: ExplainInput): Explanation {
   const { score, move, history } = input;
-  if (score.uci !== move.uci || score.played.uci !== move.uci || toEpd(score.fen) !== move.epdBefore) {
+  // Compare positions as chess.js writes them (it drops an en-passant square no capture can use).
+  const scoredEpd = applyMove(score.fen, score.uci)?.epdBefore ?? toEpd(score.fen);
+  if (score.uci !== move.uci || score.played.uci !== move.uci || scoredEpd !== move.epdBefore) {
     throw new Error(`The score is for ${score.played.uci} in "${score.fen}", not for ${move.uci} in "${move.fenBefore}"`);
   }
   if (!Number.isFinite(score.loss) || score.loss < 0) {
@@ -137,7 +155,7 @@ export function explainMoveScore(input: ExplainInput): Explanation {
     kept.push(closing);
   }
 
-  const explanation: Explanation = { tone: TONES[grade], headline: EXPLANATION_HEADLINES[grade], details: kept };
+  const explanation: Explanation = { tone: TONES[grade], headline: headlineFor(grade, score), details: kept };
   if (!isBest) {
     explanation.bestSan = score.best.san;
   }
@@ -261,10 +279,41 @@ function cancelTrades(lost: PieceSymbol[], won: PieceSymbol[]): void {
   won.sort(byValue);
 }
 
-/** True when the position after ply `index` is settled: that ply is not a check and the next ply is not a capture, promotion or check. */
+/**
+ * True when the position after ply `index` is settled: that ply is not a check and the next ply is
+ * not a capture, promotion or check. The last ply of a line is settled only when it is itself quiet
+ * and leaves nothing hanging: an engine line often stops in the middle of an exchange.
+ */
 function isQuiet(line: readonly AppliedMove[], index: number): boolean {
+  const move = line[index];
   const next = line[index + 1];
-  return !line[index].check && (next === undefined || (next.captured === null && next.promotion === null && !next.check));
+  if (move.check) {
+    return false;
+  }
+  if (next === undefined) {
+    return move.captured === null && move.promotion === null && !hasCheapCapture(move.fenAfter);
+  }
+  return next.captured === null && next.promotion === null && !next.check;
+}
+
+/**
+ * True when the side to move can take a knight or more that is undefended or worth more than the
+ * capturer: the material at the end of a line is not final then (a pending recapture).
+ */
+function hasCheapCapture(fen: string): boolean {
+  let chess: Chess;
+  try {
+    chess = new Chess(fenOf(fen));
+  } catch {
+    return false;
+  }
+  const enemy = chess.turn() === "w" ? "b" : "w";
+  return chess.moves({ verbose: true }).some((candidate) => {
+    if (!candidate.captured || PIECE_VALUES[candidate.captured] < PIECE_VALUES.n) {
+      return false;
+    }
+    return PIECE_VALUES[candidate.captured] > PIECE_VALUES[candidate.piece] || !chess.isAttacked(candidate.to as Square, enemy);
+  });
 }
 
 /**
@@ -303,14 +352,16 @@ function materialSwing(line: readonly AppliedMove[], user: Color): MaterialSwing
     return null;
   }
   const net = netAt(point);
-  // The last settled position of the whole line must keep the change (same side, still worth a mention).
-  let last = line.length - 1;
-  while (last > point && !isQuiet(line, last)) {
-    last -= 1;
-  }
-  const kept = netAt(last);
-  if (Math.sign(kept) !== Math.sign(net) || Math.abs(kept) < MATERIAL_MIN_PAWNS) {
-    return null;
+  // Every later settled position, and the line's last position even mid-exchange, must keep the
+  // change (same side, still worth a mention): material the line wins back was never really won or lost.
+  for (let index = point + 1; index < line.length; index += 1) {
+    if (index !== line.length - 1 && !isQuiet(line, index)) {
+      continue;
+    }
+    const kept = netAt(index);
+    if (Math.sign(kept) !== Math.sign(net) || Math.abs(kept) < MATERIAL_MIN_PAWNS) {
+      return null;
+    }
   }
 
   const lost: PieceSymbol[] = [];
@@ -440,11 +491,16 @@ function playedConsequence(context: Context): string | null {
   if (grade === "sound") {
     return null;
   }
-  // Still better after an inaccuracy: say so, so the sentence does not read as praise.
+  // The balance is always set against the engine's choice, so "roughly equal" after a real mistake
+  // does not read as if nothing was lost, and "still better" does not read as praise.
+  const after = describeBalance(score.played.winPct);
+  const instead = describeBalance(score.best.winPct);
   const balance =
     score.played.winPct >= BALANCE_BANDS.slightlyBetter
-      ? `${describeBalance(score.played.winPct).replace("you are ", "you are still ")}, though less so than after the engine's choice`
-      : describeBalance(score.played.winPct);
+      ? `${after.replace("you are ", "you are still ")}, though less so than after the engine's choice`
+      : after === instead
+        ? `${after}, but worse for you than after the engine's choice`
+        : `${after}; after the engine's choice ${instead.replace("you are ", "you would be ").replace("the position is ", "it would be ")}`;
   const reply = played[1];
   return reply ? `After ${moveLabel(context.ply + 1, reply.san)} ${balance}.` : `With best play ${balance}.`;
 }

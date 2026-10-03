@@ -212,6 +212,18 @@ describe("UciEngine abort", () => {
     expect(engine.alive).toBe(true);
   });
 
+  it("rejects with AbortError when the signal aborts after a stop was already sent", async () => {
+    const { transport, engine } = await started({ searches: [TRANSCRIPTS.waitStop] });
+    const controller = new AbortController();
+    const running = engine.analyse(START_FEN, { depth: 30, signal: controller.signal });
+    await settle();
+    engine.stop();
+    controller.abort();
+    const error = await running.catch((reason: unknown) => reason);
+    expect(isAbortError(error)).toBe(true);
+    expect(transport.commands.filter((command) => command === "stop")).toHaveLength(1);
+  });
+
   it("removes a queued search without sending anything for it", async () => {
     const { transport, engine } = await started({ searches: [TRANSCRIPTS.waitStop] });
     const running = engine.analyse(START_FEN, { depth: 30 });

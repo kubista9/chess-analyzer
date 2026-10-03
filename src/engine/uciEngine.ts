@@ -347,6 +347,8 @@ export class UciEngine {
     }
     const collector = new MultiPvCollector(request.expectedRanks);
     let stopReason: "timeout" | "abort" | "stop" | null = null;
+    // An abort always ends in an AbortError, even when a stop or the watchdog came first.
+    let aborted = false;
     let grace: Timer | null = null;
 
     const settle = () => {
@@ -367,11 +369,14 @@ export class UciEngine {
       grace = setTimeout(() => {
         settle();
         const error = new EngineTimeoutError(`The engine ignored "stop" for ${this.stopGraceMs} ms and was shut down`);
-        reject(reason === "abort" ? abortError() : error);
+        reject(aborted || reason === "abort" ? abortError() : error);
         this.fail(error);
       }, this.stopGraceMs);
     };
-    const onAbort = () => requestStop("abort");
+    const onAbort = () => {
+      aborted = true;
+      requestStop("abort");
+    };
     const watchdog = setTimeout(() => requestStop("timeout"), request.timeoutMs);
 
     this.active = {
@@ -381,10 +386,10 @@ export class UciEngine {
           return;
         }
         settle();
-        if (stopReason === "timeout") {
-          reject(new EngineTimeoutError(`The search took longer than ${request.timeoutMs} ms`));
-        } else if (stopReason === "abort") {
+        if (aborted || stopReason === "abort") {
           reject(abortError());
+        } else if (stopReason === "timeout") {
+          reject(new EngineTimeoutError(`The search took longer than ${request.timeoutMs} ms`));
         } else {
           const { lines, depth, complete } = collector.result();
           resolve({ lines, depth, complete });
